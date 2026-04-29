@@ -1,48 +1,73 @@
 const http        = require('http');
+const https       = require('https');
 const fs          = require('fs');
 const path        = require('path');
 const os          = require('os');
-const { execFile } = require('child_process');
 const Database = require('better-sqlite3');
 const bambu = require('./bambu');
 
-// GET Bambu API avec token (contourne Cloudflare)
+const BROWSER_HEADERS = {
+  'Accept': 'application/json',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+};
+
+// GET Bambu API avec token
 function curlGet(url, token) {
   return new Promise((resolve, reject) => {
-    execFile('curl', [
-      '-s', '--max-time', '15',
-      '-H', `Authorization: Bearer ${token}`,
-      '-H', 'Accept: application/json',
-      '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      url,
-    ], (err, stdout) => {
-      if (err) return reject(new Error('curl: ' + err.message));
-      if (stdout.trimStart().startsWith('<')) return reject(new Error('Bloqué par Cloudflare'));
-      try { resolve(JSON.parse(stdout)); }
-      catch { reject(new Error('Réponse inattendue : ' + stdout.slice(0, 200))); }
+    const parsed = new URL(url);
+    const options = {
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'GET',
+      headers: { ...BROWSER_HEADERS, 'Authorization': `Bearer ${token}` },
+      timeout: 15000,
+    };
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (data.trimStart().startsWith('<')) return reject(new Error('Bloqué par Cloudflare'));
+        try { resolve(JSON.parse(data)); }
+        catch { reject(new Error('Réponse inattendue : ' + data.slice(0, 200))); }
+      });
     });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    req.end();
   });
 }
 
-// POST Bambu via curl (contourne le fingerprint TLS Cloudflare)
+// POST Bambu API
 function curlPost(url, body) {
   return new Promise((resolve, reject) => {
-    execFile('curl', [
-      '-s', '--max-time', '15',
-      '-X', 'POST',
-      '-H', 'Content-Type: application/json',
-      '-H', 'Accept: application/json',
-      '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      '-H', 'Origin: https://bambulab.com',
-      '-H', 'Referer: https://bambulab.com/fr/sign-in',
-      '--data', JSON.stringify(body),
-      url,
-    ], (err, stdout) => {
-      if (err) return reject(new Error('curl: ' + err.message));
-      if (stdout.trimStart().startsWith('<')) return reject(new Error('Bloqué par Cloudflare'));
-      try { resolve(JSON.parse(stdout)); }
-      catch { reject(new Error('Réponse inattendue : ' + stdout.slice(0, 200))); }
+    const parsed = new URL(url);
+    const payload = JSON.stringify(body);
+    const options = {
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      headers: {
+        ...BROWSER_HEADERS,
+        'Content-Type': 'application/json',
+        'Origin': 'https://bambulab.com',
+        'Referer': 'https://bambulab.com/fr/sign-in',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+      timeout: 15000,
+    };
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (data.trimStart().startsWith('<')) return reject(new Error('Bloqué par Cloudflare'));
+        try { resolve(JSON.parse(data)); }
+        catch { reject(new Error('Réponse inattendue : ' + data.slice(0, 200))); }
+      });
     });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    req.write(payload);
+    req.end();
   });
 }
 
@@ -147,14 +172,29 @@ function downloadToUploads(remoteUrl) {
     const ext = ['jpg','jpeg','png','webp','gif'].includes(rawExt) ? (rawExt === 'jpeg' ? 'jpg' : rawExt) : 'jpg';
     const filename = `thumb_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
     const filepath  = path.join(UPLOADS_DIR, filename);
-    execFile('curl', ['-s', '--max-time', '20', '--location', '-o', filepath, remoteUrl], err => {
-      if (err || !fs.existsSync(filepath) || fs.statSync(filepath).size < 100) {
-        try { fs.unlinkSync(filepath); } catch {}
-        resolve(null);
-      } else {
-        resolve(`/uploads/${filename}`);
-      }
-    });
+    const doDownload = (downloadUrl, redirects = 0) => {
+      if (redirects > 5) { resolve(null); return; }
+      const parsed = new URL(downloadUrl);
+      const mod = parsed.protocol === 'https:' ? https : http;
+      mod.get(downloadUrl, { timeout: 20000 }, res => {
+        if ([301,302,303,307,308].includes(res.statusCode) && res.headers.location) {
+          return doDownload(res.headers.location, redirects + 1);
+        }
+        const out = fs.createWriteStream(filepath);
+        res.pipe(out);
+        out.on('finish', () => {
+          out.close();
+          if (!fs.existsSync(filepath) || fs.statSync(filepath).size < 100) {
+            try { fs.unlinkSync(filepath); } catch {}
+            resolve(null);
+          } else {
+            resolve(`/uploads/${filename}`);
+          }
+        });
+        res.on('error', () => resolve(null));
+      }).on('error', () => resolve(null));
+    };
+    doDownload(remoteUrl);
   });
 }
 

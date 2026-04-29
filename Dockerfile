@@ -3,7 +3,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install build deps for better-sqlite3 native addon
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ curl
 
 # Install dependencies first (layer cache)
 COPY package*.json ./
