@@ -46,8 +46,8 @@ function curlPost(url, body) {
   });
 }
 
-const PORT      = 3000;
-const DB_FILE   = path.join(__dirname, 'stock.db');
+const PORT      = process.env.PORT || 3000;
+const DB_FILE   = process.env.DB_PATH || path.join(process.env.RENDER ? '/data' : __dirname, 'stock.db');
 const HTML_FILE = path.join(__dirname, 'index.html');
 
 // ── BASE DE DONNÉES ───────────────────────────────────────────────────────

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: onlyfab
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        fromService:
+          type: web
+          name: onlyfab
+          envVarKey: PORT
+    disk:
+      name: onlyfab-data
+      mountPath: /data
+      sizeGB: 1
