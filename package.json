@@ -2,6 +2,9 @@
   "name": "onlyfab",
   "version": "1.0.0",
   "main": "server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "dependencies": {
     "mqtt": "^5.10.1"
   }
