@@ -32,7 +32,7 @@
       --glow: 0 0 60px rgba(108,71,255,0.15);
     }
 
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; background: var(--bg); }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
@@ -41,7 +41,13 @@
       min-height: 100vh;
       overflow-x: hidden;
       line-height: 1.6;
+      -webkit-tap-highlight-color: transparent;
     }
+    /* Masquage anti-flash : si le check d'auth redirige vers /app, on n'affiche
+       pas la landing en attendant. Si l'utilisateur n'est pas connecté, le script
+       ajoute la classe `auth-checked` immédiatement. */
+    body.auth-pending { visibility: hidden; }
+    body.auth-checked { visibility: visible; }
 
     /* ── SCROLLBAR ── */
     ::-webkit-scrollbar { width: 6px; }
@@ -1027,10 +1033,53 @@
     @media (max-width: 480px) {
       .nav-actions .btn-ghost { display: none; }
       .mockup-cards { grid-template-columns: 1fr; }
+      .container { padding: 0 16px; }
+      section { padding: 48px 0; }
+      .hero { padding: 56px 0 40px; }
+      .hero-actions { gap: 10px; }
+      .hero-actions .btn { width: 100%; }
+      .hero-stats { gap: 18px; }
+      .register-card { padding: 24px 18px; border-radius: 16px; }
+      .pricing-card { padding: 24px 18px; }
+      .modal { padding: 24px 18px; }
+      .nav-logo .logo-name { font-size: 1.05rem; }
+      .feat-grid { grid-template-columns: 1fr !important; }
+      .form-input { font-size: 16px; } /* iOS: prevent zoom on focus */
+      .footer-inner { gap: 14px; }
+    }
+
+    /* iOS safe-area + tap polish */
+    @supports (padding: env(safe-area-inset-bottom)) {
+      body { padding-bottom: env(safe-area-inset-bottom); }
     }
   </style>
 </head>
-<body>
+<body class="auth-pending">
+
+<script>
+  // Masque la landing si une session active redirige vers /app (anti-flash mobile).
+  // Sans réponse rapide, on révèle la page après 250ms pour ne pas bloquer.
+  (function () {
+    var revealed = false;
+    function reveal() {
+      if (revealed) return;
+      revealed = true;
+      document.body.classList.remove('auth-pending');
+      document.body.classList.add('auth-checked');
+    }
+    setTimeout(reveal, 250);
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.user) {
+          window.location.replace('/app');
+        } else {
+          reveal();
+        }
+      })
+      .catch(reveal);
+  })();
+</script>
 
 <!-- ── NAV ── -->
 <nav>
@@ -1453,23 +1502,36 @@
       </div>
       <button type="submit" class="form-submit" id="login-submit">Se connecter</button>
     </form>
+    <div class="form-footer" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <a onclick="openForgot()" style="cursor:pointer">Mot de passe oublié ?</a>
+      <span>Pas encore de compte ? <a onclick="closeLogin(); document.getElementById('register').scrollIntoView({behavior:'smooth'});">Créer un compte</a></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── FORGOT PASSWORD MODAL ── -->
+<div class="modal-overlay" id="forgotModal" onclick="closeForgotOnOverlay(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeForgot()">✕</button>
+    <h2>Mot de passe oublié</h2>
+    <p>Saisissez votre adresse email. Si un compte existe, vous recevrez un lien de réinitialisation valable une heure.</p>
+    <div id="forgot-alert" class="alert" style="display:none;"></div>
+    <form id="forgotForm" onsubmit="handleForgot(event)" novalidate>
+      <div class="form-group">
+        <label for="forgot-email">Email</label>
+        <input type="email" id="forgot-email" class="form-input" placeholder="vous@exemple.com" required autocomplete="email">
+      </div>
+      <button type="submit" class="form-submit" id="forgot-submit">Envoyer le lien</button>
+    </form>
     <div class="form-footer">
-      Pas encore de compte ? <a onclick="closeLogin(); document.getElementById('register').scrollIntoView({behavior:'smooth'});">Créer un compte</a>
+      <a onclick="closeForgot(); openLogin();" style="cursor:pointer">← Retour à la connexion</a>
     </div>
   </div>
 </div>
 
 <script>
-  // ── Check auth at startup ──────────────────────────────────────────────
-  (async () => {
-    try {
-      const r = await fetch('/api/auth/me').then(r => r.json());
-      if (r.user) {
-        // Already logged in → redirect to app
-        window.location.href = '/app';
-      }
-    } catch { /* not authenticated, stay on landing */ }
-  })();
+  // Auth check is handled by the inline script at the top of <body> to avoid
+  // any flash of unauthenticated content on mobile. See top of body.
 
   // ── Login modal ────────────────────────────────────────────────────────
   function openLogin() {
@@ -1535,6 +1597,48 @@
       btn.disabled = false;
       btn.classList.remove('loading');
       btn.textContent = 'Se connecter';
+    }
+  }
+
+  // ── Forgot password modal ───────────────────────────────────────────────
+  function openForgot() {
+    closeLogin();
+    document.getElementById('forgotModal').classList.add('open');
+    setTimeout(() => document.getElementById('forgot-email').focus(), 100);
+  }
+  function closeForgot() {
+    document.getElementById('forgotModal').classList.remove('open');
+    document.getElementById('forgot-alert').style.display = 'none';
+    document.getElementById('forgotForm').reset();
+  }
+  function closeForgotOnOverlay(e) {
+    if (e.target === document.getElementById('forgotModal')) closeForgot();
+  }
+
+  async function handleForgot(e) {
+    e.preventDefault();
+    const email = document.getElementById('forgot-email').value.trim();
+    const btn   = document.getElementById('forgot-submit');
+    if (!email) { showAlert('forgot-alert', 'error', 'Email requis.'); return; }
+    btn.disabled = true; btn.textContent = 'Envoi...';
+    try {
+      const res = await fetch('/api/auth/forgot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showAlert('forgot-alert', 'error', data.error || 'Erreur');
+      } else {
+        let msg = 'Si un compte existe pour cet email, un lien a été envoyé. Vérifiez votre boîte de réception.';
+        if (data.devLink) msg += ' (DEV: ' + data.devLink + ')';
+        showAlert('forgot-alert', 'success', msg);
+      }
+    } catch {
+      showAlert('forgot-alert', 'error', 'Erreur réseau.');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Envoyer le lien';
     }
   }
 

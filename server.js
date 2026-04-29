@@ -189,6 +189,21 @@ addColumnIfMissing('categories', 'user_id', 'TEXT');
 addColumnIfMissing('print_jobs', 'user_id', 'TEXT');
 addColumnIfMissing('history',    'user_id', 'TEXT');
 
+// Migrations users (admin + reset password)
+addColumnIfMissing('users', 'is_admin', 'INTEGER DEFAULT 0');
+addColumnIfMissing('users', 'last_login', 'TEXT');
+
+// Premier utilisateur créé = admin par défaut (uniquement si aucun admin n'existe)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS password_resets (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used       INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+`);
+
 // ── DOSSIER UPLOADS ───────────────────────────────────────────────────────
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -326,6 +341,64 @@ const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
     <path d="M120,-65 L120,65 L0,130 L0,0 Z" stroke="#6c47ff" stroke-width="14"/>
   </g>
 </svg>`;
+
+// ── PAGE HTML : réinitialisation mot de passe ────────────────────────────
+const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Réinitialiser le mot de passe — BambuStock</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f0f13;color:#e8e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+  .card{background:#1a1a24;border:1px solid #2e2e45;border-radius:16px;padding:32px 28px;max-width:420px;width:100%;box-shadow:0 8px 40px rgba(108,71,255,0.15)}
+  h1{font-size:1.4rem;margin-bottom:8px;color:#fff}
+  p{font-size:0.92rem;color:#7070a0;margin-bottom:22px;line-height:1.5}
+  label{display:block;font-size:0.82rem;color:#7070a0;margin-bottom:6px;font-weight:600}
+  input{width:100%;background:#20202e;border:1px solid #2e2e45;border-radius:10px;color:#e8e8f0;padding:12px 14px;font-size:16px;outline:none;margin-bottom:14px;font-family:inherit}
+  input:focus{border-color:#6c47ff}
+  button{width:100%;background:#6c47ff;color:#fff;border:none;border-radius:10px;padding:13px;font-size:0.95rem;font-weight:700;cursor:pointer;transition:background .15s}
+  button:hover{background:#5535d4}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  .alert{padding:11px 13px;border-radius:8px;font-size:0.85rem;margin-bottom:14px;display:none}
+  .alert.error{background:rgba(255,71,87,.1);border:1px solid rgba(255,71,87,.3);color:#ff4757;display:block}
+  .alert.ok{background:rgba(0,212,170,.1);border:1px solid rgba(0,212,170,.3);color:#00d4aa;display:block}
+  a{color:#6c47ff;text-decoration:none;font-size:0.85rem}
+</style></head><body>
+<div class="card">
+  <h1>Nouveau mot de passe</h1>
+  <p>Choisissez un nouveau mot de passe pour votre compte BambuStock. Toutes vos sessions actives seront déconnectées.</p>
+  <div id="alert" class="alert"></div>
+  <form id="form">
+    <label for="pw">Nouveau mot de passe</label>
+    <input id="pw" type="password" required minlength="8" autocomplete="new-password" placeholder="8 caractères minimum">
+    <label for="pw2">Confirmer</label>
+    <input id="pw2" type="password" required minlength="8" autocomplete="new-password" placeholder="Retaper le mot de passe">
+    <button id="submit" type="submit">Réinitialiser le mot de passe</button>
+  </form>
+  <p style="margin-top:18px;text-align:center"><a href="/">← Retour à l'accueil</a></p>
+</div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  const alertEl = document.getElementById('alert');
+  function showAlert(type, msg){ alertEl.className='alert '+type; alertEl.textContent=msg; }
+  if (!token){ showAlert('error', 'Lien invalide ou incomplet.'); document.getElementById('submit').disabled=true; }
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = document.getElementById('pw').value;
+    const pw2 = document.getElementById('pw2').value;
+    if (pw !== pw2){ showAlert('error', 'Les mots de passe ne correspondent pas.'); return; }
+    if (pw.length < 8){ showAlert('error', 'Mot de passe trop court (8 caractères minimum).'); return; }
+    const btn = document.getElementById('submit');
+    btn.disabled = true; btn.textContent = 'En cours...';
+    try {
+      const r = await fetch('/api/auth/reset', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token, password: pw})});
+      const data = await r.json();
+      if (!r.ok){ showAlert('error', data.error || 'Erreur'); btn.disabled=false; btn.textContent='Réinitialiser le mot de passe'; return; }
+      showAlert('ok', 'Mot de passe réinitialisé. Redirection...');
+      setTimeout(() => location.href='/', 1500);
+    } catch { showAlert('error', 'Erreur réseau.'); btn.disabled=false; btn.textContent='Réinitialiser le mot de passe'; }
+  });
+</script></body></html>`;
 
 // ── MANIFEST PWA ──────────────────────────────────────────────────────────
 const MANIFEST = JSON.stringify({
@@ -610,7 +683,10 @@ http.createServer(async (req, res) => {
     if (req.method === 'GET' && url === '/api/auth/me') {
       const user = getSessionUser(req);
       if (!user) { json(res, { user: null }); return; }
-      json(res, { user: { id: user.id, email: user.email, name: user.name, plan: user.plan } });
+      json(res, { user: {
+        id: user.id, email: user.email, name: user.name, plan: user.plan,
+        is_admin: !!user.is_admin, created_at: user.created_at,
+      }});
       return;
     }
 
@@ -618,12 +694,16 @@ http.createServer(async (req, res) => {
       const b = await parseBody(req);
       const { email, password, name } = b;
       if (!email || !password) { json(res, { error: 'Email et mot de passe requis' }, 400); return; }
+      if (password.length < 8) { json(res, { error: 'Mot de passe trop court (8 caractères min)' }, 400); return; }
       const existing = db.prepare('SELECT id FROM users WHERE email=?').get(email.toLowerCase());
       if (existing) { json(res, { error: 'Email déjà utilisé' }, 409); return; }
       const hash = await bcrypt.hash(password, 12);
       const uid = nanoid();
-      db.prepare('INSERT INTO users (id,email,password_hash,name,created_at) VALUES (?,?,?,?,?)')
-        .run(uid, email.toLowerCase(), hash, name || null, new Date().toISOString());
+      // Premier utilisateur créé = admin
+      const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+      const isAdmin = userCount === 0 ? 1 : 0;
+      db.prepare('INSERT INTO users (id,email,password_hash,name,is_admin,created_at) VALUES (?,?,?,?,?,?)')
+        .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString());
       // Assigner items existants sans user_id au premier utilisateur
       const orphans = db.prepare('SELECT COUNT(*) as c FROM items WHERE user_id IS NULL').get().c;
       if (orphans > 0) {
@@ -636,7 +716,10 @@ http.createServer(async (req, res) => {
       const expires = new Date(Date.now() + 30*24*3600*1000).toISOString();
       db.prepare('INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)').run(token, uid, expires);
       setSessionCookie(res, token);
-      json(res, { user: { id: uid, email: email.toLowerCase(), name: name || null, plan: 'beta' } });
+      json(res, { user: {
+        id: uid, email: email.toLowerCase(), name: name || null, plan: 'beta',
+        is_admin: !!isAdmin, created_at: new Date().toISOString(),
+      }});
       return;
     }
 
@@ -650,13 +733,71 @@ http.createServer(async (req, res) => {
       const token = crypto.randomBytes(32).toString('hex');
       const expires = new Date(Date.now() + 30*24*3600*1000).toISOString();
       db.prepare('INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)').run(token, user.id, expires);
+      db.prepare('UPDATE users SET last_login=? WHERE id=?').run(new Date().toISOString(), user.id);
       setSessionCookie(res, token);
       // Auto-connect Bambu si token valide
       if (user.bambu_token && !isTokenExpired(user.bambu_token)) {
         const printers = JSON.parse(user.bambu_printers || '[]');
         connectBambu(user.id, user.bambu_token, printers, user.bambu_email);
       }
-      json(res, { user: { id: user.id, email: user.email, name: user.name, plan: user.plan } });
+      json(res, { user: {
+        id: user.id, email: user.email, name: user.name, plan: user.plan,
+        is_admin: !!user.is_admin, created_at: user.created_at,
+      }});
+      return;
+    }
+
+    // ── PASSWORD RESET (publiques) ──────────────────────────────────────
+    // POST /api/auth/forgot { email } → renvoie toujours { ok: true } pour ne pas
+    // divulguer la liste des emails. Crée un token de reset valable 1h.
+    if (req.method === 'POST' && url === '/api/auth/forgot') {
+      const b = await parseBody(req).catch(() => ({}));
+      const email = (b.email || '').toLowerCase().trim();
+      if (!email) { json(res, { error: 'Email requis' }, 400); return; }
+      const user = db.prepare('SELECT id, email FROM users WHERE email=?').get(email);
+      if (user) {
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)')
+          .run(token, user.id, expires);
+        // En attendant l'envoi d'email réel (SMTP), on log le lien (visible dans
+        // les logs Fly.io) et on le renvoie en dev seulement.
+        const resetUrl = `https://bambustock.com/reset-password?token=${token}`;
+        console.log(`  [Password Reset] ${user.email} → ${resetUrl}`);
+        const devReply = process.env.NODE_ENV !== 'production'
+          ? { ok: true, devLink: resetUrl }
+          : { ok: true };
+        json(res, devReply);
+        return;
+      }
+      // Réponse identique pour empêcher l'énumération d'emails
+      json(res, { ok: true });
+      return;
+    }
+
+    // POST /api/auth/reset { token, password } → réinitialise le mot de passe
+    if (req.method === 'POST' && url === '/api/auth/reset') {
+      const b = await parseBody(req).catch(() => ({}));
+      const { token: rtoken, password } = b;
+      if (!rtoken || !password) { json(res, { error: 'Token et mot de passe requis' }, 400); return; }
+      if (password.length < 8) { json(res, { error: 'Mot de passe trop court (8 caractères min)' }, 400); return; }
+      const row = db.prepare(
+        "SELECT user_id, used FROM password_resets WHERE token=? AND expires_at>datetime('now')"
+      ).get(rtoken);
+      if (!row || row.used) { json(res, { error: 'Lien invalide ou expiré' }, 400); return; }
+      const hash = await bcrypt.hash(password, 12);
+      db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, row.user_id);
+      db.prepare('UPDATE password_resets SET used=1 WHERE token=?').run(rtoken);
+      // Invalide toutes les sessions actives pour ce user
+      db.prepare('DELETE FROM sessions WHERE user_id=?').run(row.user_id);
+      json(res, { ok: true });
+      return;
+    }
+
+    // GET /reset-password → page HTML de saisie du nouveau mot de passe
+    if (req.method === 'GET' && url === '/reset-password') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(RESET_PASSWORD_HTML);
       return;
     }
 
@@ -1291,6 +1432,184 @@ http.createServer(async (req, res) => {
         db.prepare('DELETE FROM items WHERE id = :id AND user_id = :uid').run({ id, uid: userId });
         if (item) logHistory(id, item.name, 'delete', null);
         json(res, { ok: true });
+        return;
+      }
+
+      // ── PROFIL UTILISATEUR ───────────────────────────────────────────────
+      // GET /api/profile → retourne les infos détaillées du compte courant
+      if (req.method === 'GET' && url === '/api/profile') {
+        const u = db.prepare(
+          'SELECT id,email,name,plan,is_admin,bambu_email,created_at,last_login FROM users WHERE id=?'
+        ).get(userId);
+        const stats = {
+          items:  db.prepare('SELECT COUNT(*) AS c FROM items WHERE user_id=?').get(userId).c,
+          history: db.prepare('SELECT COUNT(*) AS c FROM history WHERE user_id=?').get(userId).c,
+          prints: db.prepare('SELECT COUNT(*) AS c FROM print_jobs WHERE user_id=?').get(userId).c,
+        };
+        json(res, { user: { ...u, is_admin: !!u.is_admin }, stats });
+        return;
+      }
+
+      // PATCH /api/profile { name?, email? } → modifie infos non sensibles
+      if (req.method === 'PATCH' && url === '/api/profile') {
+        const b = await parseBody(req);
+        const updates = [];
+        const params = {};
+        if (typeof b.name === 'string') {
+          updates.push('name=:name'); params.name = b.name.trim() || null;
+        }
+        if (typeof b.email === 'string') {
+          const newEmail = b.email.toLowerCase().trim();
+          if (!newEmail.includes('@')) { json(res, { error: 'Email invalide' }, 400); return; }
+          if (newEmail !== user.email) {
+            const taken = db.prepare('SELECT id FROM users WHERE email=? AND id<>?').get(newEmail, userId);
+            if (taken) { json(res, { error: 'Email déjà utilisé' }, 409); return; }
+            updates.push('email=:email'); params.email = newEmail;
+          }
+        }
+        if (!updates.length) { json(res, { ok: true }); return; }
+        params.id = userId;
+        db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id=:id`).run(params);
+        json(res, { ok: true });
+        return;
+      }
+
+      // POST /api/profile/password { currentPassword, newPassword }
+      if (req.method === 'POST' && url === '/api/profile/password') {
+        const b = await parseBody(req);
+        const { currentPassword, newPassword } = b;
+        if (!currentPassword || !newPassword) { json(res, { error: 'Champs requis' }, 400); return; }
+        if (newPassword.length < 8) { json(res, { error: 'Nouveau mot de passe trop court (8 min)' }, 400); return; }
+        const fresh = db.prepare('SELECT password_hash FROM users WHERE id=?').get(userId);
+        const ok = await bcrypt.compare(currentPassword, fresh.password_hash);
+        if (!ok) { json(res, { error: 'Mot de passe actuel incorrect' }, 401); return; }
+        const hash = await bcrypt.hash(newPassword, 12);
+        db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, userId);
+        // Invalide les autres sessions
+        const cookie = req.headers.cookie || '';
+        const m = cookie.match(/(?:^|;\s*)bs_session=([^;]+)/);
+        const currentToken = m ? m[1] : null;
+        if (currentToken) {
+          db.prepare('DELETE FROM sessions WHERE user_id=? AND token<>?').run(userId, currentToken);
+        }
+        json(res, { ok: true });
+        return;
+      }
+
+      // DELETE /api/profile { password } → supprime le compte et toutes ses données
+      if (req.method === 'DELETE' && url === '/api/profile') {
+        const b = await parseBody(req).catch(() => ({}));
+        if (!b.password) { json(res, { error: 'Mot de passe requis pour confirmer' }, 400); return; }
+        const fresh = db.prepare('SELECT password_hash FROM users WHERE id=?').get(userId);
+        const ok = await bcrypt.compare(b.password, fresh.password_hash);
+        if (!ok) { json(res, { error: 'Mot de passe incorrect' }, 401); return; }
+        // Déconnecter Bambu
+        const state = bambuByUser.get(userId);
+        if (state?.client) state.client.end(true);
+        bambuByUser.delete(userId);
+        // Suppression cascade
+        const tx = db.transaction(() => {
+          db.prepare('DELETE FROM items      WHERE user_id=?').run(userId);
+          db.prepare('DELETE FROM categories WHERE user_id=?').run(userId);
+          db.prepare('DELETE FROM print_jobs WHERE user_id=?').run(userId);
+          db.prepare('DELETE FROM history    WHERE user_id=?').run(userId);
+          db.prepare('DELETE FROM sessions   WHERE user_id=?').run(userId);
+          db.prepare('DELETE FROM password_resets WHERE user_id=?').run(userId);
+          db.prepare('DELETE FROM users      WHERE id=?').run(userId);
+        });
+        tx();
+        setSessionCookie(res, '');
+        json(res, { ok: true });
+        return;
+      }
+
+      // ── ADMIN PANEL (réservé aux admins) ─────────────────────────────────
+      if (url.startsWith('/api/admin/')) {
+        if (!user.is_admin) { json(res, { error: 'Accès admin requis' }, 403); return; }
+
+        // GET /api/admin/users → liste tous les comptes avec stats
+        if (req.method === 'GET' && url === '/api/admin/users') {
+          const rows = db.prepare(`
+            SELECT u.id, u.email, u.name, u.plan, u.is_admin, u.bambu_email,
+                   u.created_at, u.last_login,
+                   (SELECT COUNT(*) FROM items      WHERE user_id=u.id) AS items_count,
+                   (SELECT COUNT(*) FROM print_jobs WHERE user_id=u.id) AS prints_count,
+                   (SELECT COUNT(*) FROM sessions   WHERE user_id=u.id AND expires_at>datetime('now')) AS active_sessions
+            FROM users u ORDER BY u.created_at DESC
+          `).all();
+          json(res, rows.map(r => ({ ...r, is_admin: !!r.is_admin, bambu_connected: getBambuStatus(r.id) })));
+          return;
+        }
+
+        // PATCH /api/admin/users/:id { plan?, is_admin? }
+        if (req.method === 'PATCH' && parts[2] === 'users' && parts[3]) {
+          const targetId = parts[3];
+          const b = await parseBody(req);
+          const updates = []; const params = {};
+          if (typeof b.plan === 'string') { updates.push('plan=:plan'); params.plan = b.plan; }
+          if (typeof b.is_admin === 'boolean') {
+            // Empêcher de retirer le dernier admin
+            if (!b.is_admin) {
+              const admins = db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_admin=1').get().c;
+              const target = db.prepare('SELECT is_admin FROM users WHERE id=?').get(targetId);
+              if (target && target.is_admin && admins <= 1) {
+                json(res, { error: 'Impossible de retirer le dernier admin' }, 400);
+                return;
+              }
+            }
+            updates.push('is_admin=:ia'); params.ia = b.is_admin ? 1 : 0;
+          }
+          if (!updates.length) { json(res, { ok: true }); return; }
+          params.id = targetId;
+          db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id=:id`).run(params);
+          json(res, { ok: true });
+          return;
+        }
+
+        // DELETE /api/admin/users/:id → supprime un compte (interdit pour soi)
+        if (req.method === 'DELETE' && parts[2] === 'users' && parts[3]) {
+          const targetId = parts[3];
+          if (targetId === userId) { json(res, { error: 'Vous ne pouvez pas supprimer votre propre compte ici' }, 400); return; }
+          const target = db.prepare('SELECT is_admin FROM users WHERE id=?').get(targetId);
+          if (!target) { json(res, { error: 'Utilisateur introuvable' }, 404); return; }
+          if (target.is_admin) {
+            const admins = db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_admin=1').get().c;
+            if (admins <= 1) { json(res, { error: 'Impossible de supprimer le dernier admin' }, 400); return; }
+          }
+          const state = bambuByUser.get(targetId);
+          if (state?.client) state.client.end(true);
+          bambuByUser.delete(targetId);
+          const tx = db.transaction(() => {
+            db.prepare('DELETE FROM items      WHERE user_id=?').run(targetId);
+            db.prepare('DELETE FROM categories WHERE user_id=?').run(targetId);
+            db.prepare('DELETE FROM print_jobs WHERE user_id=?').run(targetId);
+            db.prepare('DELETE FROM history    WHERE user_id=?').run(targetId);
+            db.prepare('DELETE FROM sessions   WHERE user_id=?').run(targetId);
+            db.prepare('DELETE FROM password_resets WHERE user_id=?').run(targetId);
+            db.prepare('DELETE FROM users      WHERE id=?').run(targetId);
+          });
+          tx();
+          json(res, { ok: true });
+          return;
+        }
+
+        // GET /api/admin/stats → métriques globales
+        if (req.method === 'GET' && url === '/api/admin/stats') {
+          const stats = {
+            users:        db.prepare('SELECT COUNT(*) AS c FROM users').get().c,
+            users_7d:     db.prepare("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-7 days')").get().c,
+            users_30d:    db.prepare("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-30 days')").get().c,
+            active_24h:   db.prepare("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-1 day')").get().c,
+            active_7d:    db.prepare("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-7 days')").get().c,
+            items_total:  db.prepare('SELECT COUNT(*) AS c FROM items').get().c,
+            prints_total: db.prepare('SELECT COUNT(*) AS c FROM print_jobs').get().c,
+            bambu_connected: [...bambuByUser.values()].filter(b => b.status === 'connected').length,
+          };
+          json(res, stats);
+          return;
+        }
+
+        json(res, { error: 'Route admin inconnue' }, 404);
         return;
       }
 
