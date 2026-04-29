@@ -1,0 +1,28 @@
+# Dépendances
+node_modules/
+
+# Base de données (données locales/privées)
+*.db
+*.db-shm
+*.db-wal
+
+# Uploads (fichiers utilisateur)
+uploads/
+
+# Config sensible (tokens Bambu, etc.)
+config.json
+
+# Données JSON locales (stock/export)
+3dstock.json
+onlyfab-connector.json
+
+# Fichiers Windows
+deploy.bat
+start.bat
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

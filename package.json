@@ -1,0 +1,8 @@
+{
+  "name": "onlyfab",
+  "version": "1.0.0",
+  "main": "server.js",
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  }
+}
