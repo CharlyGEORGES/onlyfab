@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "main": "server.js",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=18.0.0"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "mqtt": "^5.10.1"
   }
 }

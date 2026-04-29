@@ -3,7 +3,7 @@ const fs          = require('fs');
 const path        = require('path');
 const os          = require('os');
 const { execFile } = require('child_process');
-const { DatabaseSync } = require('node:sqlite');
+const Database = require('better-sqlite3');
 const bambu = require('./bambu');
 
 // GET Bambu API avec token (contourne Cloudflare)
@@ -51,7 +51,7 @@ const DB_FILE   = process.env.DB_PATH || path.join(process.env.RENDER ? '/data' 
 const HTML_FILE = path.join(__dirname, 'index.html');
 
 // ── BASE DE DONNÉES ───────────────────────────────────────────────────────
-const db = new DatabaseSync(DB_FILE);
+const db = new Database(DB_FILE);
 db.exec('PRAGMA journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS items (
