@@ -71,8 +71,10 @@ function curlPost(url, body) {
   });
 }
 
-const PORT      = process.env.PORT || 3000;
-const DB_FILE   = process.env.DB_PATH || path.join(__dirname, 'stock.db');
+const PORT        = process.env.PORT || 3000;
+const DATA_DIR    = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : __dirname;
+const DB_FILE     = process.env.DB_PATH || path.join(__dirname, 'stock.db');
+const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const HTML_FILE = path.join(__dirname, 'index.html');
 
 // ── BASE DE DONNÉES ───────────────────────────────────────────────────────
@@ -393,7 +395,7 @@ function onStateChange(status) { bambuStatus = status; broadcast('bambu-status',
 
 // Enrichit un job MQTT depuis l'historique Bambu (thumbnail, filament, poids…)
 async function enrichJobFromHistory(jobId, fileName) {
-  const CONFIG_FILE = path.join(__dirname, 'config.json');
+
   try {
     const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
     const token = cfg.bambu?.token;
@@ -490,7 +492,7 @@ function connectBambu(token, printers, userEmail) {
 
 // Sauvegarde un token Bambu dans config.json
 function saveBambuToken(token) {
-  const CONFIG_FILE = path.join(__dirname, 'config.json');
+
   const cfg = fs.existsSync(CONFIG_FILE)
     ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
     : { bambu: { printers: [] } };
@@ -653,8 +655,9 @@ http.createServer(async (req, res) => {
         const cfg = saveBambuToken(token);
         // Sauvegarde l'email pour fallback parseUserId au redémarrage
         cfg.bambu.email = b.email;
-        fs.writeFileSync(path.join(__dirname, 'config.json'), JSON.stringify(cfg, null, 2));
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
         connectBambu(token, cfg.bambu.printers, b.email);
+        onStateChange('connected');
         json(res, { ok: true });
       } catch(e) {
         json(res, { error: e.message }, 401);
@@ -684,8 +687,10 @@ http.createServer(async (req, res) => {
         const cfg = saveBambuToken(token);
         // Sauvegarde l'email pour fallback parseUserId au redémarrage
         cfg.bambu.email = email;
-        fs.writeFileSync(path.join(__dirname, 'config.json'), JSON.stringify(cfg, null, 2));
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
         connectBambu(token, cfg.bambu.printers, email);
+        // Token valide → on signale "connecté" même si aucune imprimante configurée
+        onStateChange('connected');
         json(res, { ok: true });
       } catch(e) {
         json(res, { error: e.message }, 401);
@@ -741,7 +746,7 @@ http.createServer(async (req, res) => {
           allowedDomains.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d));
         if (!ok) { res.writeHead(403); res.end('Domaine non autorisé'); return; }
       } catch { res.writeHead(400); res.end('URL invalide'); return; }
-      const CONFIG_FILE = path.join(__dirname, 'config.json');
+    
       const token = fs.existsSync(CONFIG_FILE)
         ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).bambu?.token
         : null;
@@ -760,7 +765,7 @@ http.createServer(async (req, res) => {
 
     // Historique des tâches Bambu Cloud
     if (req.method === 'GET' && url.startsWith('/api/bambu/tasks')) {
-      const CONFIG_FILE = path.join(__dirname, 'config.json');
+    
       if (!fs.existsSync(CONFIG_FILE)) { json(res, { error: 'Non configuré' }, 400); return; }
       const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
       const token = cfg.bambu?.token;
@@ -1111,7 +1116,7 @@ http.createServer(async (req, res) => {
   console.log('');
 
   // ── CONNEXION BAMBU LAB ──────────────────────────────────────────────────
-  const CONFIG_FILE = path.join(__dirname, 'config.json');
+
   if (!fs.existsSync(CONFIG_FILE)) {
     console.log('  [Bambu] Pas de config.json — connexion Bambu désactivée.');
     return;
