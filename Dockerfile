@@ -10,7 +10,7 @@ COPY package*.json ./
 RUN npm install --omit=dev
 
 # Copy app files
-COPY server.js bambu.js index.html ./
+COPY server.js bambu.js index.html landing.html ./
 
 # Create uploads dir
 RUN mkdir -p /data/uploads

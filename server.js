@@ -3,8 +3,10 @@ const https       = require('https');
 const fs          = require('fs');
 const path        = require('path');
 const os          = require('os');
-const Database = require('better-sqlite3');
-const bambu = require('./bambu');
+const crypto      = require('crypto');
+const bcrypt      = require('bcryptjs');
+const Database    = require('better-sqlite3');
+const bambu       = require('./bambu');
 
 const BROWSER_HEADERS = {
   'Accept': 'application/json',
@@ -71,11 +73,11 @@ function curlPost(url, body) {
   });
 }
 
-const PORT        = process.env.PORT || 3000;
-const DATA_DIR    = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : __dirname;
-const DB_FILE     = process.env.DB_PATH || path.join(__dirname, 'stock.db');
-const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-const HTML_FILE = path.join(__dirname, 'index.html');
+const PORT     = process.env.PORT || 3000;
+const DATA_DIR = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : __dirname;
+const DB_FILE  = process.env.DB_PATH || path.join(__dirname, 'stock.db');
+const HTML_FILE     = path.join(__dirname, 'index.html');
+const LANDING_FILE  = path.join(__dirname, 'landing.html');
 
 // ── BASE DE DONNÉES ───────────────────────────────────────────────────────
 const db = new Database(DB_FILE);
@@ -108,7 +110,6 @@ db.exec(`
 function addColumnIfMissing(table, col, def) {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); }
   catch (e) {
-    // "duplicate column name" est normal au redémarrage — tout autre erreur est inattendue
     if (!e.message.includes('duplicate column name')) {
       console.error(`  [Migration] Erreur ALTER TABLE ${table}.${col} :`, e.message);
     }
@@ -161,6 +162,32 @@ db.exec(`
 addColumnIfMissing('print_jobs', 'thumbnail', 'TEXT');
 addColumnIfMissing('print_jobs', 'weight',    'REAL');
 addColumnIfMissing('print_jobs', 'duration',  'INTEGER');
+
+// ── TABLES MULTI-TENANT ───────────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    email         TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    name          TEXT,
+    plan          TEXT DEFAULT 'beta',
+    bambu_token   TEXT,
+    bambu_printers TEXT DEFAULT '[]',
+    bambu_email   TEXT,
+    created_at    TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
+`);
+
+// Migrations multi-tenant
+addColumnIfMissing('items',      'user_id', 'TEXT');
+addColumnIfMissing('categories', 'user_id', 'TEXT');
+addColumnIfMissing('print_jobs', 'user_id', 'TEXT');
+addColumnIfMissing('history',    'user_id', 'TEXT');
 
 // ── DOSSIER UPLOADS ───────────────────────────────────────────────────────
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
@@ -249,7 +276,8 @@ function downloadToUploads(remoteUrl) {
 })();
 
 // Cache HTML — chargé une seule fois au démarrage (pm2 restart à chaque déploiement)
-let htmlCache = fs.readFileSync(HTML_FILE, 'utf8');
+let htmlCache     = fs.readFileSync(HTML_FILE, 'utf8');
+let landingCache  = fs.readFileSync(LANDING_FILE, 'utf8');
 
 // Nettoyage des fichiers orphelins dans /uploads (pas référencés en BDD)
 (function cleanOrphanUploads() {
@@ -257,13 +285,10 @@ let htmlCache = fs.readFileSync(HTML_FILE, 'utf8');
     const files = fs.readdirSync(UPLOADS_DIR);
     if (!files.length) return;
     const referenced = new Set();
-    // items.photo
     db.prepare("SELECT photo FROM items WHERE photo LIKE '/uploads/%'").all()
       .forEach(r => referenced.add(path.basename(r.photo)));
-    // print_jobs.thumbnail
     db.prepare("SELECT thumbnail FROM print_jobs WHERE thumbnail LIKE '/uploads/%'").all()
       .forEach(r => referenced.add(path.basename(r.thumbnail)));
-    // parts[].photo (photos de pièces stockées dans le JSON parts)
     db.prepare("SELECT parts FROM items WHERE parts LIKE '%/uploads/%'").all().forEach(r => {
       try {
         const parts = safeParseJson(r.parts);
@@ -304,10 +329,10 @@ const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 
 // ── MANIFEST PWA ──────────────────────────────────────────────────────────
 const MANIFEST = JSON.stringify({
-  name: 'Onlyfab | Gestion du stock',
-  short_name: 'Onlyfab',
+  name: 'BambuStock | Gestion du stock',
+  short_name: 'BambuStock',
   description: 'Gestion du stock impression 3D',
-  start_url: '/',
+  start_url: '/app',
   display: 'standalone',
   background_color: '#0f0f13',
   theme_color: '#6c47ff',
@@ -378,27 +403,50 @@ function isTokenExpired(token) {
   } catch { return false; }
 }
 
-// ── SERVER-SENT EVENTS ────────────────────────────────────────────────────
-const sseClients = new Set();
-let bambuStatus = 'disconnected'; // connected | reconnecting | error | disconnected
-
-function broadcast(event, data) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const client of sseClients) {
-    try { client.write(msg); }
-    catch { sseClients.delete(client); }
-  }
+// ── SESSION HELPERS ───────────────────────────────────────────────────────
+function getSessionUser(req) {
+  const cookie = req.headers.cookie || '';
+  const m = cookie.match(/(?:^|;\s*)bs_session=([^;]+)/);
+  if (!m) return null;
+  return db.prepare(
+    "SELECT u.* FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires_at>datetime('now')"
+  ).get(m[1]) || null;
 }
 
-// ── BAMBU CALLBACKS (module-level pour être accessibles partout) ──────────
-function onStateChange(status) { bambuStatus = status; broadcast('bambu-status', { status }); }
+function setSessionCookie(res, token) {
+  res.setHeader('Set-Cookie', `bs_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30*24*3600}`);
+}
+
+function nanoid() {
+  return crypto.randomBytes(10).toString('base64url').slice(0, 14);
+}
+
+// ── SERVER-SENT EVENTS (per-user) ─────────────────────────────────────────
+const sseByUser   = new Map(); // userId → Set<res>
+const bambuByUser = new Map(); // userId → { status, client? }
+
+function broadcast(userId, event, data) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  const clients = sseByUser.get(userId) || new Set();
+  for (const c of clients) { try { c.write(msg); } catch { clients.delete(c); } }
+}
+
+function getBambuStatus(userId) {
+  return (bambuByUser.get(userId) || {}).status || 'disconnected';
+}
+
+function onStateChange(userId, status) {
+  bambuByUser.set(userId, { ...(bambuByUser.get(userId) || {}), status });
+  broadcast(userId, 'bambu-status', { status });
+}
+
+// ── BAMBU CALLBACKS ───────────────────────────────────────────────────────
 
 // Enrichit un job MQTT depuis l'historique Bambu (thumbnail, filament, poids…)
-async function enrichJobFromHistory(jobId, fileName) {
-
+async function enrichJobFromHistory(userId, jobId, fileName) {
   try {
-    const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    const token = cfg.bambu?.token;
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    const token = user?.bambu_token;
     if (!token) return;
     const d = await curlGet(
       'https://api.bambulab.com/v1/user-service/my/tasks?deviceId=&limit=20&offset=0',
@@ -435,19 +483,19 @@ async function enrichJobFromHistory(jobId, fileName) {
     `).run({ fc, ft, th, wt, du, id: jobId });
 
     const updated = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: jobId });
-    broadcast('print-update', { ...updated, source: 'mqtt' });
+    broadcast(userId, 'print-update', { ...updated, source: 'mqtt' });
     console.log(`  [Bambu] Job enrichi depuis l'historique : ${fileName}`);
   } catch(e) {
     console.warn(`  [Bambu] Enrichissement impossible : ${e.message}`);
   }
 }
 
-function onPrintComplete(job) {
+function onPrintCompleteForUser(userId, job) {
   // Règle 1 : déjà dans la queue en attente → inutile d'en ajouter un autre
   const alreadyPending = db.prepare(`
     SELECT id FROM print_jobs
-    WHERE printer_serial=:ps AND file_name=:fn AND status='pending'
-  `).get({ ps: job.printerSerial, fn: job.fileName });
+    WHERE printer_serial=:ps AND file_name=:fn AND status='pending' AND user_id=:uid
+  `).get({ ps: job.printerSerial, fn: job.fileName, uid: userId });
   if (alreadyPending) {
     console.log(`  [Bambu] Doublon ignoré : ${job.fileName} (déjà en attente)`);
     return;
@@ -455,55 +503,51 @@ function onPrintComplete(job) {
   // Règle 2 : reçu il y a moins de 10 min (Bambu renvoie souvent FINISH plusieurs fois)
   const justReceived = db.prepare(`
     SELECT id FROM print_jobs
-    WHERE printer_serial=:ps AND file_name=:fn
+    WHERE printer_serial=:ps AND file_name=:fn AND user_id=:uid
       AND ts > datetime('now','-10 minutes')
-  `).get({ ps: job.printerSerial, fn: job.fileName });
+  `).get({ ps: job.printerSerial, fn: job.fileName, uid: userId });
   if (justReceived) {
     console.log(`  [Bambu] Doublon ignoré : ${job.fileName} (reçu il y a moins de 10 min)`);
     return;
   }
   console.log(`  [Bambu] Impression terminée : ${job.fileName} (${job.printerName})`);
   const row = db.prepare(`
-    INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers)
-    VALUES (:ps, :pn, :fn, :fc, :ft, :tl)
+    INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers, user_id)
+    VALUES (:ps, :pn, :fn, :fc, :ft, :tl, :uid)
   `).run({
     ps: job.printerSerial, pn: job.printerName, fn: job.fileName,
-    fc: normColor(job.filamentColor),           // normalise #RRGGBBAA → #RRGGBB
+    fc: normColor(job.filamentColor),
     ft: job.filamentType, tl: job.totalLayers,
+    uid: userId,
   });
   const newJob = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: row.lastInsertRowid });
-  broadcast('print-complete', { ...newJob, source: 'mqtt' });
+  broadcast(userId, 'print-complete', { ...newJob, source: 'mqtt' });
   // 10 s après, enrichir depuis l'API historique (thumbnail, poids, durée…)
-  setTimeout(() => enrichJobFromHistory(newJob.id, job.fileName), 10_000);
+  setTimeout(() => enrichJobFromHistory(userId, newJob.id, job.fileName), 10_000);
 }
 
-function connectBambu(token, printers, userEmail) {
-  if (global._bambuClient) global._bambuClient.end(true);
-  // Capture la référence du nouveau client pour ignorer les events de l'ancien
+function connectBambu(userId, token, printers, userEmail) {
+  const prev = bambuByUser.get(userId);
+  if (prev?.client) prev.client.end(true);
   let client;
-  client = global._bambuClient = bambu.connect({
-    token, printers: printers || [], onPrintComplete, userEmail,
+  client = bambu.connect({
+    token, printers: printers || [], userEmail,
+    onPrintComplete: job => onPrintCompleteForUser(userId, job),
     onStateChange: status => {
-      if (global._bambuClient === client) onStateChange(status);
-      // sinon : event de l'ancien client après remplacement → ignoré
+      if ((bambuByUser.get(userId) || {}).client === client) onStateChange(userId, status);
     },
   });
+  bambuByUser.set(userId, { status: 'connecting', client });
 }
 
-// Sauvegarde un token Bambu dans config.json
-function saveBambuToken(token) {
-
-  const cfg = fs.existsSync(CONFIG_FILE)
-    ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
-    : { bambu: { printers: [] } };
-  cfg.bambu = cfg.bambu || {};
-  cfg.bambu.token = token;
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
-  return cfg;
+// Sauvegarde un token Bambu dans la table users
+function saveBambuToken(userId, token, printers, email) {
+  db.prepare('UPDATE users SET bambu_token=?, bambu_printers=?, bambu_email=? WHERE id=?')
+    .run(token, JSON.stringify(printers || []), email || null, userId);
 }
 
 // Sessions 2FA en attente (stockées en mémoire, expirent en 10 min)
-const pendingTfa = new Map(); // sessionId → { email, password, expires }
+const pendingTfa = new Map(); // sessionId → { email, password, expires, userId }
 // Purge automatique toutes les 2 min pour éviter de garder des credentials en RAM indéfiniment
 setInterval(() => {
   const now = Date.now();
@@ -526,7 +570,14 @@ http.createServer(async (req, res) => {
   try {
 
     // ── STATIC ──────────────────────────────────────────────────────────
-    if (req.method === 'GET' && (url === '/' || url === '/index.html')) {
+    if (req.method === 'GET' && url === '/') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(landingCache);
+      return;
+    }
+    if (req.method === 'GET' && (url === '/app' || url === '/app/')) {
+      const user = getSessionUser(req);
+      if (!user) { res.writeHead(302, { Location: '/' }); res.end(); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(htmlCache);
       return;
@@ -546,7 +597,6 @@ http.createServer(async (req, res) => {
     if (req.method === 'GET' && parts[0] === 'uploads' && parts[1]) {
       const filename = path.basename(parts[1]);
       const filepath = path.join(UPLOADS_DIR, filename);
-      // Extension whitelist — refuse tout ce qui n'est pas une image
       const ext = path.extname(filename).slice(1).toLowerCase();
       const mimeMap = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif' };
       if (!mimeMap[ext]) { res.writeHead(403); res.end('Type de fichier non autorisé'); return; }
@@ -556,597 +606,705 @@ http.createServer(async (req, res) => {
       return;
     }
 
-    // ── UPLOAD PHOTO ─────────────────────────────────────────────────────
-    if (req.method === 'POST' && url === '/api/upload') {
+    // ── AUTH ROUTES (publiques) ──────────────────────────────────────────
+    if (req.method === 'GET' && url === '/api/auth/me') {
+      const user = getSessionUser(req);
+      if (!user) { json(res, { user: null }); return; }
+      json(res, { user: { id: user.id, email: user.email, name: user.name, plan: user.plan } });
+      return;
+    }
+
+    if (req.method === 'POST' && url === '/api/auth/register') {
       const b = await parseBody(req);
-      if (!b.data || !b.data.startsWith('data:image')) {
-        json(res, { error: 'Données image invalides' }, 400); return;
+      const { email, password, name } = b;
+      if (!email || !password) { json(res, { error: 'Email et mot de passe requis' }, 400); return; }
+      const existing = db.prepare('SELECT id FROM users WHERE email=?').get(email.toLowerCase());
+      if (existing) { json(res, { error: 'Email déjà utilisé' }, 409); return; }
+      const hash = await bcrypt.hash(password, 12);
+      const uid = nanoid();
+      db.prepare('INSERT INTO users (id,email,password_hash,name,created_at) VALUES (?,?,?,?,?)')
+        .run(uid, email.toLowerCase(), hash, name || null, new Date().toISOString());
+      // Assigner items existants sans user_id au premier utilisateur
+      const orphans = db.prepare('SELECT COUNT(*) as c FROM items WHERE user_id IS NULL').get().c;
+      if (orphans > 0) {
+        db.prepare('UPDATE items SET user_id=? WHERE user_id IS NULL').run(uid);
+        db.prepare('UPDATE categories SET user_id=? WHERE user_id IS NULL').run(uid);
+        db.prepare('UPDATE print_jobs SET user_id=? WHERE user_id IS NULL').run(uid);
+        db.prepare('UPDATE history SET user_id=? WHERE user_id IS NULL').run(uid);
       }
-      const m = b.data.match(/^data:image\/(\w+);base64,(.+)$/s);
-      if (!m) { json(res, { error: 'Format image invalide' }, 400); return; }
-      // Limite 5 Mo (base64 ~1,33× le binaire, donc 6,7 Mo de chaîne max)
-      const MAX_IMG = 5 * 1024 * 1024;
-      if (m[2].length > MAX_IMG * 1.4) {
-        json(res, { error: 'Image trop volumineuse (max 5 Mo)' }, 413); return;
+      const token = crypto.randomBytes(32).toString('hex');
+      const expires = new Date(Date.now() + 30*24*3600*1000).toISOString();
+      db.prepare('INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)').run(token, uid, expires);
+      setSessionCookie(res, token);
+      json(res, { user: { id: uid, email: email.toLowerCase(), name: name || null, plan: 'beta' } });
+      return;
+    }
+
+    if (req.method === 'POST' && url === '/api/auth/login') {
+      const b = await parseBody(req);
+      const { email, password } = b;
+      const user = db.prepare('SELECT * FROM users WHERE email=?').get((email||'').toLowerCase());
+      if (!user) { json(res, { error: 'Email ou mot de passe incorrect' }, 401); return; }
+      const ok = await bcrypt.compare(password, user.password_hash);
+      if (!ok) { json(res, { error: 'Email ou mot de passe incorrect' }, 401); return; }
+      const token = crypto.randomBytes(32).toString('hex');
+      const expires = new Date(Date.now() + 30*24*3600*1000).toISOString();
+      db.prepare('INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)').run(token, user.id, expires);
+      setSessionCookie(res, token);
+      // Auto-connect Bambu si token valide
+      if (user.bambu_token && !isTokenExpired(user.bambu_token)) {
+        const printers = JSON.parse(user.bambu_printers || '[]');
+        connectBambu(user.id, user.bambu_token, printers, user.bambu_email);
       }
-      const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-      const rawExt = m[1].toLowerCase();
-      if (!allowedExts.includes(rawExt)) {
-        json(res, { error: 'Format image non supporté' }, 415); return;
+      json(res, { user: { id: user.id, email: user.email, name: user.name, plan: user.plan } });
+      return;
+    }
+
+    if (req.method === 'POST' && url === '/api/auth/logout') {
+      const cookie = req.headers.cookie || '';
+      const m = cookie.match(/(?:^|;\s*)bs_session=([^;]+)/);
+      const sessionToken = m ? m[1] : null;
+      let userId = null;
+      if (sessionToken) {
+        const sess = db.prepare('SELECT user_id FROM sessions WHERE token=?').get(sessionToken);
+        if (sess) userId = sess.user_id;
+        db.prepare('DELETE FROM sessions WHERE token=?').run(sessionToken);
+        // Déconnecter Bambu si plus de sessions actives pour cet user
+        if (userId) {
+          const otherSessions = db.prepare('SELECT COUNT(*) as c FROM sessions WHERE user_id=?').get(userId).c;
+          if (otherSessions === 0) {
+            const state = bambuByUser.get(userId);
+            if (state?.client) state.client.end(true);
+            bambuByUser.delete(userId);
+          }
+        }
       }
-      const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
-      const filename = `photo_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(m[2], 'base64'));
-      json(res, { url: `/uploads/${filename}` });
+      setSessionCookie(res, '');
+      json(res, { ok: true });
       return;
     }
 
     // ── SSE ──────────────────────────────────────────────────────────────
-    if (req.method === 'GET' && url === '/api/events') {
-      res.writeHead(200, {
-        'Content-Type':  'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection':    'keep-alive',
-      });
-      // Premier message : état actuel Bambu + jobs en attente
-      const pending = db.prepare("SELECT * FROM print_jobs WHERE status='pending' ORDER BY ts DESC").all();
-      res.write(`event: init\ndata: ${JSON.stringify({ bambuStatus, pending })}\n\n`);
-      sseClients.add(res);
+    if (req.method === 'GET' && url === '/sse') {
+      const user = getSessionUser(req);
+      if (!user) { res.writeHead(401); res.end(); return; }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+      res.write(`event: bambu-status\ndata: ${JSON.stringify({ status: getBambuStatus(user.id) })}\n\n`);
+      if (!sseByUser.has(user.id)) sseByUser.set(user.id, new Set());
+      sseByUser.get(user.id).add(res);
       const keepalive = setInterval(() => res.write(': ping\n\n'), 25_000);
-      req.on('close', () => { sseClients.delete(res); clearInterval(keepalive); });
-      return;
-    }
-
-    // ── PRINT JOBS ───────────────────────────────────────────────────────
-    if (req.method === 'GET' && url === '/api/print-jobs') {
-      json(res, db.prepare("SELECT * FROM print_jobs WHERE status='pending' ORDER BY ts DESC").all());
-      return;
-    }
-    // Ignorer tous les prints en attente d'un coup
-    if (req.method === 'DELETE' && url === '/api/print-jobs') {
-      db.prepare("UPDATE print_jobs SET status='dismissed' WHERE status='pending'").run();
-      json(res, { ok: true });
-      return;
-    }
-    if (req.method === 'DELETE' && parts[1] === 'print-jobs' && id) {
-      db.prepare('UPDATE print_jobs SET status=:s WHERE id=:id').run({ s: 'dismissed', id });
-      json(res, { ok: true });
-      return;
-    }
-    // Marquer comme traité (après création item ou ajout quantité)
-    if (req.method === 'PATCH' && parts[1] === 'print-jobs' && id && sub === 'done') {
-      db.prepare('UPDATE print_jobs SET status=:s WHERE id=:id').run({ s: 'done', id });
-      json(res, { ok: true });
-      return;
-    }
-    // Version de l'application
-    if (req.method === 'GET' && url === '/api/version') {
-      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
-      json(res, {
-        version: process.env.APP_VERSION || pkg.version,
-        commit:  process.env.GIT_COMMIT  || 'dev',
+      req.on('close', () => {
+        clearInterval(keepalive);
+        const s = sseByUser.get(user.id);
+        if (s) { s.delete(res); if (!s.size) sseByUser.delete(user.id); }
       });
       return;
     }
-    // Statut connexion Bambu
-    if (req.method === 'GET' && url === '/api/bambu/status') {
-      json(res, { status: bambuStatus });
-      return;
-    }
-    // Auth Bambu email/password → token (via curl pour contourner Cloudflare)
-    if (req.method === 'POST' && url === '/api/bambu/auth') {
-      const b = await parseBody(req);
-      if (!b.email || !b.password) { json(res, { error: 'Email et mot de passe requis' }, 400); return; }
-      try {
-        const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', {
-          account: b.email, password: b.password,
-        });
-        // 2FA requis : il faut d'abord demander explicitement l'envoi du code
-        if (d.loginType === 'verifyCode') {
-          // Déclenche l'envoi du code par email
-          try {
-            await curlPost('https://api.bambulab.com/v1/user-service/user/sendemail/code', {
-              email: b.email,
-              type:  'codeLogin',
-            });
-            console.log(`  [Bambu] Code 2FA envoyé à ${b.email}`);
-          } catch(sendErr) {
-            console.warn('  [Bambu] Avertissement envoi code :', sendErr.message);
-            // On continue quand même — certaines réponses non-JSON ne sont pas fatales
-          }
-          const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2);
-          pendingTfa.set(sessionId, { email: b.email, password: b.password, expires: Date.now() + 10 * 60_000 });
-          json(res, { needsCode: true, sessionId });
-          return;
-        }
-        const token = d.accessToken || d.token || d.data?.accessToken;
-        if (!token) throw new Error(d.message || d.error || 'Pas de token dans la réponse');
-        const cfg = saveBambuToken(token);
-        // Sauvegarde l'email pour fallback parseUserId au redémarrage
-        cfg.bambu.email = b.email;
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
-        connectBambu(token, cfg.bambu.printers, b.email);
-        onStateChange('connected');
-        json(res, { ok: true });
-      } catch(e) {
-        json(res, { error: e.message }, 401);
-      }
-      return;
-    }
 
-    // Validation du code 2FA Bambu
-    if (req.method === 'POST' && url === '/api/bambu/verify') {
-      const b = await parseBody(req);
-      const { code, sessionId } = b;
-      if (!code || !sessionId) { json(res, { error: 'Code et session requis' }, 400); return; }
-      const tfa = pendingTfa.get(sessionId);
-      if (!tfa || Date.now() > tfa.expires) {
-        pendingTfa.delete(sessionId);
-        json(res, { error: 'Session expirée — recommence la connexion' }, 400);
+    // ── MIDDLEWARE AUTH (toutes les routes /api/* suivantes) ─────────────
+    if (url.startsWith('/api/')) {
+      const user = getSessionUser(req);
+      if (!user) { json(res, { error: 'Non authentifié' }, 401); return; }
+      const userId = user.id;
+
+      // ── UPLOAD PHOTO ─────────────────────────────────────────────────
+      if (req.method === 'POST' && url === '/api/upload') {
+        const b = await parseBody(req);
+        if (!b.data || !b.data.startsWith('data:image')) {
+          json(res, { error: 'Données image invalides' }, 400); return;
+        }
+        const m = b.data.match(/^data:image\/(\w+);base64,(.+)$/s);
+        if (!m) { json(res, { error: 'Format image invalide' }, 400); return; }
+        const MAX_IMG = 5 * 1024 * 1024;
+        if (m[2].length > MAX_IMG * 1.4) {
+          json(res, { error: 'Image trop volumineuse (max 5 Mo)' }, 413); return;
+        }
+        const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+        const rawExt = m[1].toLowerCase();
+        if (!allowedExts.includes(rawExt)) {
+          json(res, { error: 'Format image non supporté' }, 415); return;
+        }
+        const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+        const filename = `photo_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(m[2], 'base64'));
+        json(res, { url: `/uploads/${filename}` });
         return;
       }
-      try {
-        const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', {
-          account: tfa.email, password: tfa.password, code: code.trim(),
+
+      // ── SSE (legacy endpoint) ─────────────────────────────────────────
+      if (req.method === 'GET' && url === '/api/events') {
+        res.writeHead(200, {
+          'Content-Type':  'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection':    'keep-alive',
         });
-        const token = d.accessToken || d.token || d.data?.accessToken;
-        if (!token) throw new Error(d.message || d.error || 'Code invalide ou expiré');
-        const email = tfa.email;
-        pendingTfa.delete(sessionId);
-        const cfg = saveBambuToken(token);
-        // Sauvegarde l'email pour fallback parseUserId au redémarrage
-        cfg.bambu.email = email;
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
-        connectBambu(token, cfg.bambu.printers, email);
-        // Token valide → on signale "connecté" même si aucune imprimante configurée
-        onStateChange('connected');
+        const pending = db.prepare("SELECT * FROM print_jobs WHERE status='pending' AND user_id=? ORDER BY ts DESC").all(userId);
+        res.write(`event: init\ndata: ${JSON.stringify({ bambuStatus: getBambuStatus(userId), pending })}\n\n`);
+        if (!sseByUser.has(userId)) sseByUser.set(userId, new Set());
+        sseByUser.get(userId).add(res);
+        const keepalive = setInterval(() => res.write(': ping\n\n'), 25_000);
+        req.on('close', () => {
+          clearInterval(keepalive);
+          const s = sseByUser.get(userId);
+          if (s) { s.delete(res); if (!s.size) sseByUser.delete(userId); }
+        });
+        return;
+      }
+
+      // ── PRINT JOBS ───────────────────────────────────────────────────
+      if (req.method === 'GET' && url === '/api/print-jobs') {
+        json(res, db.prepare("SELECT * FROM print_jobs WHERE status='pending' AND user_id=? ORDER BY ts DESC").all(userId));
+        return;
+      }
+      if (req.method === 'DELETE' && url === '/api/print-jobs') {
+        db.prepare("UPDATE print_jobs SET status='dismissed' WHERE status='pending' AND user_id=?").run(userId);
         json(res, { ok: true });
-      } catch(e) {
-        json(res, { error: e.message }, 401);
+        return;
       }
-      return;
-    }
-
-    // Enregistre un token Bambu manuellement et reconnecte MQTT
-    if (req.method === 'POST' && url === '/api/bambu/token') {
-      const b = await parseBody(req);
-      const token = (b.token || '').trim();
-      if (!token || !token.startsWith('eyJ')) {
-        json(res, { error: 'Token invalide (doit commencer par eyJ)' }, 400); return;
-      }
-      try {
-        const cfg = saveBambuToken(token);
-        connectBambu(token, cfg.bambu.printers);
+      if (req.method === 'DELETE' && parts[1] === 'print-jobs' && id) {
+        db.prepare('UPDATE print_jobs SET status=:s WHERE id=:id AND user_id=:uid').run({ s: 'dismissed', id, uid: userId });
         json(res, { ok: true });
-      } catch(e) {
-        json(res, { error: e.message }, 500);
+        return;
       }
-      return;
-    }
-    // ⚠️ Endpoint de test — simule une impression terminée
-    if (req.method === 'POST' && url === '/api/print-jobs/test') {
-      const b = await parseBody(req).catch(() => ({}));
-      const row = db.prepare(`
-        INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers)
-        VALUES (:ps, :pn, :fn, :fc, :ft, :tl)
-      `).run({
-        ps: 'TEST00000000000',
-        pn: b.printerName   || 'H2D (test)',
-        fn: b.fileName      || 'Support_plateau_v3',
-        fc: b.filamentColor || '#6c47ff',
-        ft: b.filamentType  || 'PETG',
-        tl: 142,
-      });
-      const newJob = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: row.lastInsertRowid });
-      broadcast('print-complete', { ...newJob, source: 'mqtt' }); // test simulé MQTT
-      json(res, newJob, 201);
-      return;
-    }
-
-    // Proxy image Bambu (miniature protégée par auth)
-    if (req.method === 'GET' && url === '/api/bambu/image') {
-      const imgUrl = new URLSearchParams(req.url.split('?')[1] || '').get('url');
-      if (!imgUrl) { res.writeHead(400); res.end('url manquante'); return; }
-      // Anti-SSRF : seuls les domaines Bambu Lab sont autorisés
-      try {
-        const parsed = new URL(imgUrl);
-        const allowedDomains = ['bambulab.com', 'bambulab.cn', 'bblmw.com'];
-        const ok = parsed.protocol === 'https:' &&
-          allowedDomains.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d));
-        if (!ok) { res.writeHead(403); res.end('Domaine non autorisé'); return; }
-      } catch { res.writeHead(400); res.end('URL invalide'); return; }
-    
-      const token = fs.existsSync(CONFIG_FILE)
-        ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')).bambu?.token
-        : null;
-      const args = ['-s', '--max-time', '15', '--location'];
-      if (token) args.push('-H', `Authorization: Bearer ${token}`);
-      args.push(imgUrl);
-      execFile('curl', args, { encoding: 'buffer' }, (err, stdout) => {
-        if (err || !stdout?.length) { res.writeHead(502); res.end('Erreur image'); return; }
-        const ext = (imgUrl.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
-        const mime = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp' }[ext] || 'image/jpeg';
-        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' });
-        res.end(stdout);
-      });
-      return;
-    }
-
-    // Historique des tâches Bambu Cloud
-    if (req.method === 'GET' && url.startsWith('/api/bambu/tasks')) {
-    
-      if (!fs.existsSync(CONFIG_FILE)) { json(res, { error: 'Non configuré' }, 400); return; }
-      const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      const token = cfg.bambu?.token;
-      if (!token) { json(res, { error: 'Token Bambu absent — connecte-toi d\'abord' }, 401); return; }
-      const qs     = req.url.includes('?') ? req.url.split('?')[1] : '';
-      const params = new URLSearchParams(qs);
-      const limit  = Math.min(parseInt(params.get('limit')  || '30'), 50);
-      const offset = parseInt(params.get('offset') || '0');
-      try {
-        const d = await curlGet(
-          `https://api.bambulab.com/v1/user-service/my/tasks?deviceId=&limit=${limit}&offset=${offset}`,
-          token,
-        );
-        // Enrichir chaque tâche avec le statut dans notre base locale
-        const cleanName = s => (s || '').replace(/\.gcode\.3mf$|\.gcode$|\.3mf$/i, '').trim() || 'Impression';
-        const tasks = d.hits || d.data?.hits || d.tasks || [];
-        for (const t of tasks) {
-          const name = cleanName(t.designTitle || t.title || t.name || t.subtaskName || '');
-          const row = db.prepare(
-            'SELECT status FROM print_jobs WHERE file_name=:fn ORDER BY ts DESC LIMIT 1'
-          ).get({ fn: name });
-          t._localStatus = row?.status || null; // 'pending' | 'done' | 'dismissed' | null
-        }
-        json(res, d);
-      } catch(e) {
-        json(res, { error: e.message }, 500);
+      if (req.method === 'PATCH' && parts[1] === 'print-jobs' && id && sub === 'done') {
+        db.prepare('UPDATE print_jobs SET status=:s WHERE id=:id AND user_id=:uid').run({ s: 'done', id, uid: userId });
+        json(res, { ok: true });
+        return;
       }
-      return;
-    }
 
-    // Import manuel d'un task Bambu dans la queue "À valider"
-    if (req.method === 'POST' && url === '/api/print-jobs/import') {
-      const b = await parseBody(req);
-      // Vérifier que ce task n'est pas déjà dans la queue (status pending)
-      const existing = db.prepare(
-        "SELECT id FROM print_jobs WHERE printer_serial=:ps AND file_name=:fn AND status='pending'"
-      ).get({ ps: b.printer_serial || '', fn: b.file_name || '' });
-      if (existing) { json(res, { error: 'Déjà dans la queue', id: existing.id }, 409); return; }
-
-      // Télécharger la vignette sur le Pi → URL locale (évite CORS côté navigateur)
-      const localThumb = await downloadToUploads(b.thumbnail || null);
-      if (b.thumbnail && localThumb) console.log(`  [Import] Vignette téléchargée : ${localThumb}`);
-      else if (b.thumbnail)          console.warn('  [Import] Vignette non téléchargée (CDN inaccessible ?)');
-
-      const row = db.prepare(`
-        INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers, thumbnail, weight, duration)
-        VALUES (:ps, :pn, :fn, :fc, :ft, :tl, :th, :wt, :du)
-      `).run({
-        ps: b.printer_serial || '',
-        pn: b.printer_name   || '',
-        fn: b.file_name      || '',
-        fc: b.filament_color || null,
-        ft: b.filament_type  || null,
-        tl: b.total_layers   || null,
-        th: localThumb       || b.thumbnail || null, // local en priorité, CDN en fallback
-        wt: b.weight         || null,
-        du: b.duration       || null,
-      });
-      const newJob = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: row.lastInsertRowid });
-      broadcast('print-complete', { ...newJob, source: 'import' });
-      json(res, newJob, 201);
-      return;
-    }
-
-    // ── CATÉGORIES ──────────────────────────────────────────────────────
-    if (req.method === 'GET' && url === '/api/categories') {
-      json(res, db.prepare('SELECT * FROM categories ORDER BY name ASC').all());
-      return;
-    }
-    if (req.method === 'POST' && url === '/api/categories') {
-      const b = await parseBody(req);
-      const name = (b.name || '').trim();
-      if (!name) { json(res, { error: 'Nom requis' }, 400); return; }
-      try {
-        db.prepare('INSERT INTO categories (name) VALUES (:name)').run({ name });
-        const row = db.prepare('SELECT * FROM categories WHERE name = :name').get({ name });
-        json(res, row, 201);
-      } catch {
-        json(res, { error: 'Cette catégorie existe déjà' }, 409);
+      // Version de l'application
+      if (req.method === 'GET' && url === '/api/version') {
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        json(res, {
+          version: process.env.APP_VERSION || pkg.version,
+          commit:  process.env.GIT_COMMIT  || 'dev',
+        });
+        return;
       }
-      return;
-    }
-    if (req.method === 'PUT' && parts[1] === 'categories' && id) {
-      const b = await parseBody(req);
-      const name = (b.name || '').trim();
-      if (!name) { json(res, { error: 'Nom requis' }, 400); return; }
-      const old = db.prepare('SELECT name FROM categories WHERE id = :id').get({ id });
-      if (!old) { json(res, { error: 'Catégorie introuvable' }, 404); return; }
-      try {
-        db.prepare('UPDATE categories SET name = :name WHERE id = :id').run({ name, id });
-        db.prepare('UPDATE items SET category = :name, updatedAt = :now WHERE category = :oldName')
-          .run({ name, id, now: new Date().toISOString(), oldName: old.name });
-        json(res, { ok: true, name });
-      } catch { json(res, { error: 'Cette catégorie existe déjà' }, 409); }
-      return;
-    }
-    if (req.method === 'DELETE' && parts[1] === 'categories' && id) {
-      db.prepare('DELETE FROM categories WHERE id = :id').run({ id });
-      json(res, { ok: true });
-      return;
-    }
 
-    // ── ITEMS ────────────────────────────────────────────────────────────
-    if (req.method === 'GET' && url === '/api/items') {
-      json(res, db.prepare('SELECT * FROM items ORDER BY createdAt DESC').all());
-      return;
-    }
+      // Statut connexion Bambu
+      if (req.method === 'GET' && url === '/api/bambu/status') {
+        json(res, { status: getBambuStatus(userId) });
+        return;
+      }
 
-    // Import en masse — remplace tout le stock en une seule transaction atomique
-    if (req.method === 'POST' && url === '/api/import') {
-      const data = await parseBody(req);
-      if (!Array.isArray(data)) { json(res, { error: 'Tableau JSON attendu' }, 400); return; }
-      const normArr = v => {
-        if (Array.isArray(v)) return v;
-        if (typeof v === 'string') { try { return JSON.parse(v); } catch { return []; } }
-        return [];
-      };
-      const partSum = p => Math.floor((normArr(p.variants)).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
-      const importAll = db.transaction(items => {
-        db.prepare('DELETE FROM items').run();
-        const stmt = db.prepare(`INSERT INTO items
-          (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt)
-          VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt)`);
-        for (const b of items) {
-          const vArr = normArr(b.variants);
-          const vJson = JSON.stringify(vArr);
-          const pArr  = normArr(b.parts);
-          const pJson = JSON.stringify(pArr);
-          const qty   = pArr.length > 0 ? Math.min(...pArr.map(partSum)) : totalQty(vJson);
-          const aItems = typeof b.assembledItems === 'string'
-            ? b.assembledItems
-            : JSON.stringify(b.assembledItems || []);
-          stmt.run({
-            id: b.id, name: b.name, desc: b.desc || null,
-            filament: b.filament || null, color: '', colorName: '',
-            qty, threshold: b.threshold ?? 3, photo: b.photo || null,
-            category: b.category || null,
-            trackStock: (b.trackStock === false || b.trackStock === 0) ? 0 : 1,
-            variants: vJson, parts: pJson,
-            assembledQty: b.assembledQty || 0, assembledItems: aItems,
-            createdAt: b.createdAt || new Date().toISOString(),
-            updatedAt: b.updatedAt || new Date().toISOString(),
+      // Auth Bambu email/password → token
+      if (req.method === 'POST' && url === '/api/bambu/auth') {
+        const b = await parseBody(req);
+        if (!b.email || !b.password) { json(res, { error: 'Email et mot de passe requis' }, 400); return; }
+        try {
+          const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', {
+            account: b.email, password: b.password,
           });
+          if (d.loginType === 'verifyCode') {
+            try {
+              await curlPost('https://api.bambulab.com/v1/user-service/user/sendemail/code', {
+                email: b.email,
+                type:  'codeLogin',
+              });
+              console.log(`  [Bambu] Code 2FA envoyé à ${b.email}`);
+            } catch(sendErr) {
+              console.warn('  [Bambu] Avertissement envoi code :', sendErr.message);
+            }
+            const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+            pendingTfa.set(sessionId, { email: b.email, password: b.password, expires: Date.now() + 10 * 60_000, userId });
+            json(res, { needsCode: true, sessionId });
+            return;
+          }
+          const token = d.accessToken || d.token || d.data?.accessToken;
+          if (!token) throw new Error(d.message || d.error || 'Pas de token dans la réponse');
+          const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(userId);
+          const printers = JSON.parse(currentUser?.bambu_printers || '[]');
+          saveBambuToken(userId, token, printers, b.email);
+          connectBambu(userId, token, printers, b.email);
+          onStateChange(userId, 'connected');
+          json(res, { ok: true });
+        } catch(e) {
+          json(res, { error: e.message }, 401);
         }
-      });
-      importAll(data);
-      json(res, { ok: true, count: data.length });
-      return;
-    }
+        return;
+      }
 
-    if (req.method === 'POST' && url === '/api/items') {
-      const b = await parseBody(req);
-      const now = new Date().toISOString();
-      // Normalise variants : peut être un tableau ou une chaîne JSON
-      const variantsArr = typeof b.variants === 'string'
-        ? (() => { try { return JSON.parse(b.variants); } catch { return []; } })()
-        : (Array.isArray(b.variants) ? b.variants : []);
-      const variantsJson = JSON.stringify(variantsArr);
-      // Supporte b.parts tableau ou chaîne JSON (double-sécurité)
-      const partsArr  = Array.isArray(b.parts) ? b.parts
-                      : (b.parts ? (() => { try { return JSON.parse(b.parts); } catch { return []; } })() : []);
-      const partsJson = JSON.stringify(partsArr);
-      // Tient compte du count (nb de cette pièce par assemblage)
-      const partSum   = p => Math.floor(
-        (p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1)
-      );
-      const effectiveQty = partsArr.length > 0
-        ? Math.min(...partsArr.map(partSum))
-        : totalQty(variantsJson);
-      db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt)
-        VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt)`)
-        .run({
-          id: b.id,
-          name: b.name,
-          desc: b.desc || null,
-          filament: b.filament || null,
-          color: '',
-          colorName: '',
-          qty: effectiveQty,
-          threshold: b.threshold ?? 3,
-          photo: b.photo || null,
-          category: b.category || null,
-          trackStock: b.trackStock !== false ? 1 : 0,
-          variants: variantsJson,
-          parts: partsJson,
-          assembledQty: b.assembledQty || 0,
-          assembledItems: b.assembledItems || null,
-          createdAt: now,
-          updatedAt: now,
+      // Validation du code 2FA Bambu
+      if (req.method === 'POST' && url === '/api/bambu/verify') {
+        const b = await parseBody(req);
+        const { code, sessionId } = b;
+        if (!code || !sessionId) { json(res, { error: 'Code et session requis' }, 400); return; }
+        const tfa = pendingTfa.get(sessionId);
+        if (!tfa || Date.now() > tfa.expires) {
+          pendingTfa.delete(sessionId);
+          json(res, { error: 'Session expirée — recommence la connexion' }, 400);
+          return;
+        }
+        try {
+          const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', {
+            account: tfa.email, password: tfa.password, code: code.trim(),
+          });
+          const token = d.accessToken || d.token || d.data?.accessToken;
+          if (!token) throw new Error(d.message || d.error || 'Code invalide ou expiré');
+          const email = tfa.email;
+          const tfaUserId = tfa.userId || userId;
+          pendingTfa.delete(sessionId);
+          const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(tfaUserId);
+          const printers = JSON.parse(currentUser?.bambu_printers || '[]');
+          saveBambuToken(tfaUserId, token, printers, email);
+          connectBambu(tfaUserId, token, printers, email);
+          onStateChange(tfaUserId, 'connected');
+          json(res, { ok: true });
+        } catch(e) {
+          json(res, { error: e.message }, 401);
+        }
+        return;
+      }
+
+      // Enregistre un token Bambu manuellement et reconnecte MQTT
+      if (req.method === 'POST' && url === '/api/bambu/token') {
+        const b = await parseBody(req);
+        const token = (b.token || '').trim();
+        if (!token || !token.startsWith('eyJ')) {
+          json(res, { error: 'Token invalide (doit commencer par eyJ)' }, 400); return;
+        }
+        try {
+          const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(userId);
+          const printers = JSON.parse(currentUser?.bambu_printers || '[]');
+          saveBambuToken(userId, token, printers, null);
+          connectBambu(userId, token, printers);
+          json(res, { ok: true });
+        } catch(e) {
+          json(res, { error: e.message }, 500);
+        }
+        return;
+      }
+
+      // ⚠️ Endpoint de test — simule une impression terminée
+      if (req.method === 'POST' && url === '/api/print-jobs/test') {
+        const b = await parseBody(req).catch(() => ({}));
+        const row = db.prepare(`
+          INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers, user_id)
+          VALUES (:ps, :pn, :fn, :fc, :ft, :tl, :uid)
+        `).run({
+          ps: 'TEST00000000000',
+          pn: b.printerName   || 'H2D (test)',
+          fn: b.fileName      || 'Support_plateau_v3',
+          fc: b.filamentColor || '#6c47ff',
+          ft: b.filamentType  || 'PETG',
+          tl: 142,
+          uid: userId,
         });
-      logHistory(b.id, b.name, 'add', { totalQty: totalQty(variantsJson), filament: b.filament });
-      json(res, { ok: true });
-      return;
-    }
+        const newJob = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: row.lastInsertRowid });
+        broadcast(userId, 'print-complete', { ...newJob, source: 'mqtt' });
+        json(res, newJob, 201);
+        return;
+      }
 
-    if (req.method === 'PUT' && id && !sub) {
-      const b = await parseBody(req);
-      const variantsJson = typeof b.variants === 'string' ? b.variants : JSON.stringify(b.variants || []);
-      const tQty = totalQty(variantsJson);
-      const partsArrUpd  = typeof b.parts === 'string' ? JSON.parse(b.parts || '[]') : (b.parts || []);
-      const partsJsonUpd = typeof b.parts === 'string' ? b.parts : JSON.stringify(b.parts || []);
-      const partSumUpd   = p => Math.floor((p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
-      const effectiveQtyUpd = partsArrUpd.length > 0
-        ? Math.min(...partsArrUpd.map(partSumUpd))
-        : tQty;
-      // Préserver assembledItems existant si le client n'en envoie pas (et lire le nom courant pour l'historique)
-      const existingRow = db.prepare('SELECT assembledItems, name FROM items WHERE id=:id').get({ id });
-      const assembledItemsUpd = b.assembledItems !== undefined
-        ? (typeof b.assembledItems === 'string' ? b.assembledItems : JSON.stringify(b.assembledItems || []))
-        : (existingRow?.assembledItems || null);
-      db.prepare(`UPDATE items SET name=:name,"desc"=:desc,filament=:filament,color=:color,
-        colorName=:colorName,qty=:qty,threshold=:threshold,photo=:photo,
-        category=:category,trackStock=:trackStock,variants=:variants,parts=:parts,
-        assembledQty=:assembledQty,assembledItems=:assembledItems,updatedAt=:updatedAt
-        WHERE id=:id`)
-        .run({
-          id,
-          name: b.name,
-          desc: b.desc || null,
-          filament: b.filament || null,
-          color: '',
-          colorName: '',
-          qty: effectiveQtyUpd,
-          threshold: b.threshold ?? 3,
-          photo: b.photo || null,
-          category: b.category || null,
-          trackStock: b.trackStock !== false ? 1 : 0,
-          variants: variantsJson,
-          parts: partsJsonUpd,
-          assembledQty: b.assembledQty || 0,
-          assembledItems: assembledItemsUpd,
-          updatedAt: new Date().toISOString(),
+      // Proxy image Bambu (miniature protégée par auth)
+      if (req.method === 'GET' && url === '/api/bambu/image') {
+        const imgUrl = new URLSearchParams(req.url.split('?')[1] || '').get('url');
+        if (!imgUrl) { res.writeHead(400); res.end('url manquante'); return; }
+        try {
+          const parsed = new URL(imgUrl);
+          const allowedDomains = ['bambulab.com', 'bambulab.cn', 'bblmw.com'];
+          const ok = parsed.protocol === 'https:' &&
+            allowedDomains.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d));
+          if (!ok) { res.writeHead(403); res.end('Domaine non autorisé'); return; }
+        } catch { res.writeHead(400); res.end('URL invalide'); return; }
+        const currentUser = db.prepare('SELECT bambu_token FROM users WHERE id=?').get(userId);
+        const token = currentUser?.bambu_token;
+        // Use https module to proxy instead of execFile curl
+        const imgParsed = new URL(imgUrl);
+        const imgOpts = {
+          hostname: imgParsed.hostname,
+          path: imgParsed.pathname + imgParsed.search,
+          method: 'GET',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+          timeout: 15000,
+        };
+        const imgReq = https.request(imgOpts, imgRes => {
+          if (!imgRes.statusCode || imgRes.statusCode >= 400) {
+            res.writeHead(502); res.end('Erreur image'); return;
+          }
+          const ext = (imgUrl.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
+          const mime = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp' }[ext] || 'image/jpeg';
+          res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' });
+          imgRes.pipe(res);
         });
-      logHistory(id, b.name || existingRow?.name || id, 'update', { totalQty: tQty });
-      json(res, { ok: true });
-      return;
-    }
+        imgReq.on('error', () => { res.writeHead(502); res.end('Erreur image'); });
+        imgReq.end();
+        return;
+      }
 
-    // Déclarer N assemblages : déduit des pièces + incrémente assembledQty
-    if (req.method === 'PATCH' && id && sub === 'assembled') {
-      const b    = await parseBody(req);
-      const row  = db.prepare('SELECT * FROM items WHERE id = :id').get({ id });
-      if (!row) { json(res, { error: 'Introuvable' }, 404); return; }
+      // Historique des tâches Bambu Cloud
+      if (req.method === 'GET' && url.startsWith('/api/bambu/tasks')) {
+        const currentUser = db.prepare('SELECT * FROM users WHERE id=?').get(userId);
+        const token = currentUser?.bambu_token;
+        if (!token) { json(res, { error: 'Token Bambu absent — connecte-toi d\'abord' }, 401); return; }
+        const qs     = req.url.includes('?') ? req.url.split('?')[1] : '';
+        const params = new URLSearchParams(qs);
+        const limit  = Math.min(parseInt(params.get('limit')  || '30'), 50);
+        const offset = parseInt(params.get('offset') || '0');
+        try {
+          const d = await curlGet(
+            `https://api.bambulab.com/v1/user-service/my/tasks?deviceId=&limit=${limit}&offset=${offset}`,
+            token,
+          );
+          const cleanName = s => (s || '').replace(/\.gcode\.3mf$|\.gcode$|\.3mf$/i, '').trim() || 'Impression';
+          const tasks = d.hits || d.data?.hits || d.tasks || [];
+          for (const t of tasks) {
+            const name = cleanName(t.designTitle || t.title || t.name || t.subtaskName || '');
+            const row = db.prepare(
+              'SELECT status FROM print_jobs WHERE file_name=:fn AND user_id=:uid ORDER BY ts DESC LIMIT 1'
+            ).get({ fn: name, uid: userId });
+            t._localStatus = row?.status || null;
+          }
+          json(res, d);
+        } catch(e) {
+          json(res, { error: e.message }, 500);
+        }
+        return;
+      }
 
-      // ── op: setItems — remplacement direct de la liste (ajout/retrait manuel par ligne) ──
-      if (b.op === 'setItems' && Array.isArray(b.assembledItems)) {
-        const newArr      = b.assembledItems;
-        const newAssembled = newArr.length;
-        const currentParts = safeParseJson(row.parts);
-        const pSumFn = p => Math.floor((p.variants||[]).reduce((s,v)=>s+(v.qty||0),0)/(p.count||1));
-        const newQty = currentParts.length ? Math.min(...currentParts.map(pSumFn)) : 0;
-        db.prepare(`UPDATE items SET assembledQty=:a, assembledItems=:ai, qty=:qty, updatedAt=:u WHERE id=:id`)
-          .run({ a: newAssembled, ai: JSON.stringify(newArr), qty: newQty, u: new Date().toISOString(), id });
+      // Import manuel d'un task Bambu dans la queue "À valider"
+      if (req.method === 'POST' && url === '/api/print-jobs/import') {
+        const b = await parseBody(req);
+        const existing = db.prepare(
+          "SELECT id FROM print_jobs WHERE printer_serial=:ps AND file_name=:fn AND status='pending' AND user_id=:uid"
+        ).get({ ps: b.printer_serial || '', fn: b.file_name || '', uid: userId });
+        if (existing) { json(res, { error: 'Déjà dans la queue', id: existing.id }, 409); return; }
+
+        const localThumb = await downloadToUploads(b.thumbnail || null);
+        if (b.thumbnail && localThumb) console.log(`  [Import] Vignette téléchargée : ${localThumb}`);
+        else if (b.thumbnail)          console.warn('  [Import] Vignette non téléchargée (CDN inaccessible ?)');
+
+        const row = db.prepare(`
+          INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers, thumbnail, weight, duration, user_id)
+          VALUES (:ps, :pn, :fn, :fc, :ft, :tl, :th, :wt, :du, :uid)
+        `).run({
+          ps: b.printer_serial || '',
+          pn: b.printer_name   || '',
+          fn: b.file_name      || '',
+          fc: b.filament_color || null,
+          ft: b.filament_type  || null,
+          tl: b.total_layers   || null,
+          th: localThumb       || b.thumbnail || null,
+          wt: b.weight         || null,
+          du: b.duration       || null,
+          uid: userId,
+        });
+        const newJob = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: row.lastInsertRowid });
+        broadcast(userId, 'print-complete', { ...newJob, source: 'import' });
+        json(res, newJob, 201);
+        return;
+      }
+
+      // ── CATÉGORIES ──────────────────────────────────────────────────────
+      if (req.method === 'GET' && url === '/api/categories') {
+        json(res, db.prepare('SELECT * FROM categories WHERE user_id=? ORDER BY name ASC').all(userId));
+        return;
+      }
+      if (req.method === 'POST' && url === '/api/categories') {
+        const b = await parseBody(req);
+        const name = (b.name || '').trim();
+        if (!name) { json(res, { error: 'Nom requis' }, 400); return; }
+        try {
+          db.prepare('INSERT INTO categories (name, user_id) VALUES (:name, :uid)').run({ name, uid: userId });
+          const row = db.prepare('SELECT * FROM categories WHERE name = :name AND user_id = :uid').get({ name, uid: userId });
+          json(res, row, 201);
+        } catch {
+          json(res, { error: 'Cette catégorie existe déjà' }, 409);
+        }
+        return;
+      }
+      if (req.method === 'PUT' && parts[1] === 'categories' && id) {
+        const b = await parseBody(req);
+        const name = (b.name || '').trim();
+        if (!name) { json(res, { error: 'Nom requis' }, 400); return; }
+        const old = db.prepare('SELECT name FROM categories WHERE id = :id AND user_id = :uid').get({ id, uid: userId });
+        if (!old) { json(res, { error: 'Catégorie introuvable' }, 404); return; }
+        try {
+          db.prepare('UPDATE categories SET name = :name WHERE id = :id AND user_id = :uid').run({ name, id, uid: userId });
+          db.prepare('UPDATE items SET category = :name, updatedAt = :now WHERE category = :oldName AND user_id = :uid')
+            .run({ name, id, now: new Date().toISOString(), oldName: old.name, uid: userId });
+          json(res, { ok: true, name });
+        } catch { json(res, { error: 'Cette catégorie existe déjà' }, 409); }
+        return;
+      }
+      if (req.method === 'DELETE' && parts[1] === 'categories' && id) {
+        db.prepare('DELETE FROM categories WHERE id = :id AND user_id = :uid').run({ id, uid: userId });
+        json(res, { ok: true });
+        return;
+      }
+
+      // ── ITEMS ────────────────────────────────────────────────────────────
+      if (req.method === 'GET' && url === '/api/items') {
+        json(res, db.prepare('SELECT * FROM items WHERE user_id=? ORDER BY createdAt DESC').all(userId));
+        return;
+      }
+
+      // Import en masse — remplace tout le stock en une seule transaction atomique
+      if (req.method === 'POST' && url === '/api/import') {
+        const data = await parseBody(req);
+        if (!Array.isArray(data)) { json(res, { error: 'Tableau JSON attendu' }, 400); return; }
+        const normArr = v => {
+          if (Array.isArray(v)) return v;
+          if (typeof v === 'string') { try { return JSON.parse(v); } catch { return []; } }
+          return [];
+        };
+        const partSum = p => Math.floor((normArr(p.variants)).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
+        const importAll = db.transaction(items => {
+          db.prepare('DELETE FROM items WHERE user_id=?').run(userId);
+          const stmt = db.prepare(`INSERT INTO items
+            (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`);
+          for (const b of items) {
+            const vArr = normArr(b.variants);
+            const vJson = JSON.stringify(vArr);
+            const pArr  = normArr(b.parts);
+            const pJson = JSON.stringify(pArr);
+            const qty   = pArr.length > 0 ? Math.min(...pArr.map(partSum)) : totalQty(vJson);
+            const aItems = typeof b.assembledItems === 'string'
+              ? b.assembledItems
+              : JSON.stringify(b.assembledItems || []);
+            stmt.run({
+              id: b.id, name: b.name, desc: b.desc || null,
+              filament: b.filament || null, color: '', colorName: '',
+              qty, threshold: b.threshold ?? 3, photo: b.photo || null,
+              category: b.category || null,
+              trackStock: (b.trackStock === false || b.trackStock === 0) ? 0 : 1,
+              variants: vJson, parts: pJson,
+              assembledQty: b.assembledQty || 0, assembledItems: aItems,
+              createdAt: b.createdAt || new Date().toISOString(),
+              updatedAt: b.updatedAt || new Date().toISOString(),
+              uid: userId,
+            });
+          }
+        });
+        importAll(data);
+        json(res, { ok: true, count: data.length });
+        return;
+      }
+
+      // Export
+      if (req.method === 'GET' && url === '/api/export') {
+        json(res, db.prepare('SELECT * FROM items WHERE user_id=? ORDER BY createdAt DESC').all(userId));
+        return;
+      }
+
+      if (req.method === 'POST' && url === '/api/items') {
+        const b = await parseBody(req);
+        const now = new Date().toISOString();
+        const variantsArr = typeof b.variants === 'string'
+          ? (() => { try { return JSON.parse(b.variants); } catch { return []; } })()
+          : (Array.isArray(b.variants) ? b.variants : []);
+        const variantsJson = JSON.stringify(variantsArr);
+        const partsArr  = Array.isArray(b.parts) ? b.parts
+                        : (b.parts ? (() => { try { return JSON.parse(b.parts); } catch { return []; } })() : []);
+        const partsJson = JSON.stringify(partsArr);
+        const partSum   = p => Math.floor(
+          (p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1)
+        );
+        const effectiveQty = partsArr.length > 0
+          ? Math.min(...partsArr.map(partSum))
+          : totalQty(variantsJson);
+        db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+          VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
+          .run({
+            id: b.id,
+            name: b.name,
+            desc: b.desc || null,
+            filament: b.filament || null,
+            color: '',
+            colorName: '',
+            qty: effectiveQty,
+            threshold: b.threshold ?? 3,
+            photo: b.photo || null,
+            category: b.category || null,
+            trackStock: b.trackStock !== false ? 1 : 0,
+            variants: variantsJson,
+            parts: partsJson,
+            assembledQty: b.assembledQty || 0,
+            assembledItems: b.assembledItems || null,
+            createdAt: now,
+            updatedAt: now,
+            uid: userId,
+          });
+        logHistory(b.id, b.name, 'add', { totalQty: totalQty(variantsJson), filament: b.filament });
+        json(res, { ok: true });
+        return;
+      }
+
+      if (req.method === 'PUT' && id && !sub) {
+        const b = await parseBody(req);
+        const variantsJson = typeof b.variants === 'string' ? b.variants : JSON.stringify(b.variants || []);
+        const tQty = totalQty(variantsJson);
+        const partsArrUpd  = typeof b.parts === 'string' ? JSON.parse(b.parts || '[]') : (b.parts || []);
+        const partsJsonUpd = typeof b.parts === 'string' ? b.parts : JSON.stringify(b.parts || []);
+        const partSumUpd   = p => Math.floor((p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
+        const effectiveQtyUpd = partsArrUpd.length > 0
+          ? Math.min(...partsArrUpd.map(partSumUpd))
+          : tQty;
+        const existingRow = db.prepare('SELECT assembledItems, name FROM items WHERE id=:id AND user_id=:uid').get({ id, uid: userId });
+        if (!existingRow) { json(res, { error: 'Introuvable' }, 404); return; }
+        const assembledItemsUpd = b.assembledItems !== undefined
+          ? (typeof b.assembledItems === 'string' ? b.assembledItems : JSON.stringify(b.assembledItems || []))
+          : (existingRow?.assembledItems || null);
+        db.prepare(`UPDATE items SET name=:name,"desc"=:desc,filament=:filament,color=:color,
+          colorName=:colorName,qty=:qty,threshold=:threshold,photo=:photo,
+          category=:category,trackStock=:trackStock,variants=:variants,parts=:parts,
+          assembledQty=:assembledQty,assembledItems=:assembledItems,updatedAt=:updatedAt
+          WHERE id=:id AND user_id=:uid`)
+          .run({
+            id,
+            uid: userId,
+            name: b.name,
+            desc: b.desc || null,
+            filament: b.filament || null,
+            color: '',
+            colorName: '',
+            qty: effectiveQtyUpd,
+            threshold: b.threshold ?? 3,
+            photo: b.photo || null,
+            category: b.category || null,
+            trackStock: b.trackStock !== false ? 1 : 0,
+            variants: variantsJson,
+            parts: partsJsonUpd,
+            assembledQty: b.assembledQty || 0,
+            assembledItems: assembledItemsUpd,
+            updatedAt: new Date().toISOString(),
+          });
+        logHistory(id, b.name || existingRow?.name || id, 'update', { totalQty: tQty });
+        json(res, { ok: true });
+        return;
+      }
+
+      // Déclarer N assemblages : déduit des pièces + incrémente assembledQty
+      if (req.method === 'PATCH' && id && sub === 'assembled') {
+        const b    = await parseBody(req);
+        const row  = db.prepare('SELECT * FROM items WHERE id = :id AND user_id = :uid').get({ id, uid: userId });
+        if (!row) { json(res, { error: 'Introuvable' }, 404); return; }
+
+        if (b.op === 'setItems' && Array.isArray(b.assembledItems)) {
+          const newArr      = b.assembledItems;
+          const newAssembled = newArr.length;
+          const currentParts = safeParseJson(row.parts);
+          const pSumFn = p => Math.floor((p.variants||[]).reduce((s,v)=>s+(v.qty||0),0)/(p.count||1));
+          const newQty = currentParts.length ? Math.min(...currentParts.map(pSumFn)) : 0;
+          db.prepare(`UPDATE items SET assembledQty=:a, assembledItems=:ai, qty=:qty, updatedAt=:u WHERE id=:id AND user_id=:uid`)
+            .run({ a: newAssembled, ai: JSON.stringify(newArr), qty: newQty, u: new Date().toISOString(), id, uid: userId });
+          const updated = db.prepare('SELECT * FROM items WHERE id = :id').get({ id });
+          json(res, { ok: true, item: updated });
+          return;
+        }
+        const delta = b.delta || 0;
+        let newParts = row.parts;
+
+        const mkId = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+        let assembledArr = safeParseJson(row.assembledItems);
+
+        if (delta > 0 && !b.manual) {
+          const parts   = safeParseJson(row.parts);
+          const partSum = p => Math.floor(
+            (p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1)
+          );
+          const possible   = parts.length ? Math.min(...parts.map(partSum)) : 0;
+          const toAssemble = Math.min(delta, possible);
+
+          const selections = b.selections || [];
+
+          const resolvedParts = parts.map(part => {
+            const sel = selections.find(s => s.partId === part.id);
+            let target = sel ? part.variants.find(v => v.id === sel.variantId) : null;
+            if (!target) target = part.variants.reduce(
+              (best, v) => (v.qty || 0) > (best?.qty || 0) ? v : best, null
+            );
+            return { part, target };
+          });
+
+          for (const { part, target } of resolvedParts) {
+            if (target) {
+              const needed = (part.count || 1) * toAssemble;
+              target.qty = Math.max(0, (target.qty || 0) - needed);
+            }
+          }
+          newParts = JSON.stringify(parts);
+
+          const now = new Date().toISOString();
+          for (let n = 0; n < toAssemble; n++) {
+            assembledArr.push({
+              id:    mkId(),
+              date:  now,
+              parts: resolvedParts.map(({ part, target }) => ({
+                partId:    part.id,
+                partName:  part.name,
+                color:     target?.color     || '#888888',
+                colorName: target?.colorName || '',
+              })),
+            });
+          }
+
+        } else if (delta > 0 && b.manual) {
+          const toAdd = delta;
+          const now = new Date().toISOString();
+          for (let n = 0; n < toAdd; n++) {
+            assembledArr.push({ id: mkId(), date: now, manual: true, parts: [] });
+          }
+
+        } else if (delta < 0) {
+          const toRemove = Math.min(Math.abs(delta), assembledArr.length);
+          assembledArr.splice(assembledArr.length - toRemove, toRemove);
+        }
+
+        const newAssembled = assembledArr.length;
+        const newAssembledItems = JSON.stringify(assembledArr);
+
+        const updatedPartsArr = safeParseJson(newParts);
+        const partSumFn = p => Math.floor(
+          (p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1)
+        );
+        const newQty = updatedPartsArr.length ? Math.min(...updatedPartsArr.map(partSumFn)) : 0;
+
+        db.prepare(`UPDATE items SET assembledQty=:a, parts=:p, qty=:qty,
+          assembledItems=:ai, updatedAt=:u WHERE id=:id AND user_id=:uid`)
+          .run({ a: newAssembled, p: newParts, qty: newQty, ai: newAssembledItems,
+                 u: new Date().toISOString(), id, uid: userId });
         const updated = db.prepare('SELECT * FROM items WHERE id = :id').get({ id });
+        logHistory(id, row.name, 'assemble', { delta, assembledQty: newAssembled });
         json(res, { ok: true, item: updated });
         return;
       }
-      const delta = b.delta || 0; // positif = déclarer assemblage, négatif = défaire
-      let newParts = row.parts;
 
-      const mkId = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
-
-      // Tableau des objets assemblés (historique détaillé)
-      let assembledArr = safeParseJson(row.assembledItems);
-
-      if (delta > 0 && !b.manual) {
-        // ── Assemblage via le picker : déduit pièces + crée des enregistrements détaillés ──
-        const parts   = safeParseJson(row.parts);
-        const partSum = p => Math.floor(
-          (p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1)
-        );
-        const possible   = parts.length ? Math.min(...parts.map(partSum)) : 0;
-        const toAssemble = Math.min(delta, possible);
-
-        const selections = b.selections || []; // [{partId, variantId}]
-
-        // Résoudre les cibles (variante choisie par pièce) avant de déduire
-        const resolvedParts = parts.map(part => {
-          const sel = selections.find(s => s.partId === part.id);
-          let target = sel ? part.variants.find(v => v.id === sel.variantId) : null;
-          if (!target) target = part.variants.reduce(
-            (best, v) => (v.qty || 0) > (best?.qty || 0) ? v : best, null
-          );
-          return { part, target };
-        });
-
-        // Déduire le stock
-        for (const { part, target } of resolvedParts) {
-          if (target) {
-            const needed = (part.count || 1) * toAssemble;
-            target.qty = Math.max(0, (target.qty || 0) - needed);
-          }
-        }
-        newParts = JSON.stringify(parts);
-
-        // Créer un enregistrement par objet assemblé
-        const now = new Date().toISOString();
-        for (let n = 0; n < toAssemble; n++) {
-          assembledArr.push({
-            id:    mkId(),
-            date:  now,
-            parts: resolvedParts.map(({ part, target }) => ({
-              partId:    part.id,
-              partName:  part.name,
-              color:     target?.color     || '#888888',
-              colorName: target?.colorName || '',
-            })),
-          });
-        }
-
-      } else if (delta > 0 && b.manual) {
-        // ── Ajout manuel (sans déduire les pièces) ──
-        const toAdd = delta;
-        const now = new Date().toISOString();
-        for (let n = 0; n < toAdd; n++) {
-          assembledArr.push({ id: mkId(), date: now, manual: true, parts: [] });
-        }
-
-      } else if (delta < 0) {
-        // ── Retrait : supprime les derniers enregistrements ──
-        const toRemove = Math.min(Math.abs(delta), assembledArr.length);
-        assembledArr.splice(assembledArr.length - toRemove, toRemove);
+      // Mise à jour des variantes uniquement (changement de quantité rapide)
+      if (req.method === 'PATCH' && id && sub === 'variants') {
+        const b = await parseBody(req);
+        const variantsJson = JSON.stringify(b.variants || []);
+        const tQty = totalQty(variantsJson);
+        const old = db.prepare('SELECT qty, name FROM items WHERE id = :id AND user_id = :uid').get({ id, uid: userId });
+        if (!old) { json(res, { error: 'Introuvable' }, 404); return; }
+        db.prepare('UPDATE items SET variants=:variants, qty=:qty, updatedAt=:updatedAt WHERE id=:id AND user_id=:uid')
+          .run({ variants: variantsJson, qty: tQty, updatedAt: new Date().toISOString(), id, uid: userId });
+        if (old) logHistory(id, old.name, 'qty', { from: old.qty, to: tQty });
+        json(res, { ok: true });
+        return;
       }
 
-      const newAssembled = assembledArr.length;
-      const newAssembledItems = JSON.stringify(assembledArr);
+      if (req.method === 'DELETE' && id && !sub) {
+        const item = db.prepare('SELECT name FROM items WHERE id = :id AND user_id = :uid').get({ id, uid: userId });
+        db.prepare('DELETE FROM items WHERE id = :id AND user_id = :uid').run({ id, uid: userId });
+        if (item) logHistory(id, item.name, 'delete', null);
+        json(res, { ok: true });
+        return;
+      }
 
-      // Recalcul qty = assemblages possibles restants
-      const updatedPartsArr = safeParseJson(newParts);
-      const partSumFn = p => Math.floor(
-        (p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1)
-      );
-      const newQty = updatedPartsArr.length ? Math.min(...updatedPartsArr.map(partSumFn)) : 0;
+      // ── HISTORIQUE ───────────────────────────────────────────────────────
+      if (req.method === 'GET' && url === '/api/history') {
+        json(res, db.prepare('SELECT h.* FROM history h WHERE h.user_id=? ORDER BY h.ts DESC LIMIT 300').all(userId));
+        return;
+      }
+      if (req.method === 'GET' && parts[1] === 'history' && id) {
+        json(res, db.prepare('SELECT * FROM history WHERE item_id = :id AND user_id = :uid ORDER BY ts DESC').all({ id, uid: userId }));
+        return;
+      }
 
-      db.prepare(`UPDATE items SET assembledQty=:a, parts=:p, qty=:qty,
-        assembledItems=:ai, updatedAt=:u WHERE id=:id`)
-        .run({ a: newAssembled, p: newParts, qty: newQty, ai: newAssembledItems,
-               u: new Date().toISOString(), id });
-      const updated = db.prepare('SELECT * FROM items WHERE id = :id').get({ id });
-      logHistory(id, row.name, 'assemble', { delta, assembledQty: newAssembled });
-      json(res, { ok: true, item: updated });
-      return;
-    }
-
-    // Mise à jour des variantes uniquement (changement de quantité rapide)
-    if (req.method === 'PATCH' && id && sub === 'variants') {
-      const b = await parseBody(req);
-      const variantsJson = JSON.stringify(b.variants || []);
-      const tQty = totalQty(variantsJson);
-      const old = db.prepare('SELECT qty, name FROM items WHERE id = :id').get({ id });
-      db.prepare('UPDATE items SET variants=:variants, qty=:qty, updatedAt=:updatedAt WHERE id=:id')
-        .run({ variants: variantsJson, qty: tQty, updatedAt: new Date().toISOString(), id });
-      if (old) logHistory(id, old.name, 'qty', { from: old.qty, to: tQty });
-      json(res, { ok: true });
-      return;
-    }
-
-    if (req.method === 'DELETE' && id && !sub) {
-      const item = db.prepare('SELECT name FROM items WHERE id = :id').get({ id });
-      db.prepare('DELETE FROM items WHERE id = :id').run({ id });
-      if (item) logHistory(id, item.name, 'delete', null);
-      json(res, { ok: true });
-      return;
-    }
-
-    // ── HISTORIQUE ───────────────────────────────────────────────────────
-    if (req.method === 'GET' && url === '/api/history') {
-      json(res, db.prepare('SELECT * FROM history ORDER BY ts DESC LIMIT 300').all());
-      return;
-    }
-    if (req.method === 'GET' && parts[1] === 'history' && id) {
-      json(res, db.prepare('SELECT * FROM history WHERE item_id = :id ORDER BY ts DESC').all({ id }));
+      res.writeHead(404); res.end('Not found');
       return;
     }
 
@@ -1161,7 +1319,7 @@ http.createServer(async (req, res) => {
 }).listen(PORT, '0.0.0.0', () => {
   const ip = getLocalIP();
   console.log('');
-  console.log('  3D Stock demarre !');
+  console.log('  BambuStock SaaS demarre !');
   console.log('');
   console.log('  PC        : http://localhost:' + PORT);
   console.log('  Telephone : http://' + ip + ':' + PORT);
@@ -1170,76 +1328,23 @@ http.createServer(async (req, res) => {
   console.log('  Fermez cette fenetre pour arreter.');
   console.log('');
 
-  // ── CONNEXION BAMBU LAB ──────────────────────────────────────────────────
-
-  if (!fs.existsSync(CONFIG_FILE)) {
-    console.log('  [Bambu] Pas de config.json — connexion Bambu désactivée.');
-    return;
-  }
-  const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  if (!cfg.bambu?.token && !cfg.bambu?.email) {
-    console.log('  [Bambu] Aucune auth configurée — connecte-toi via l\'interface.');
-    return;
-  }
-  // Token présent mais aucune imprimante : on est "connecté" pour l'API cloud
-  // mais la détection automatique est désactivée (pas de MQTT)
-  if (!cfg.bambu?.printers?.length && cfg.bambu?.token && !isTokenExpired(cfg.bambu.token)) {
-    console.log('  [Bambu] Token valide, aucune imprimante configurée — import cloud disponible.');
-    bambuStatus = 'connected';
-    broadcast('bambu-status', { status: 'connected' });
-    return;
-  }
-
-  // Helper : (re)auth par email/password et connexion
-  function authWithCredentials(email, password, printers) {
-    console.log('  [Bambu] Tentative auth email/password...');
-    bambuStatus = 'reconnecting';
-    curlPost('https://api.bambulab.com/v1/user-service/user/login', {
-      account: email, password,
-    }).then(d => {
-      const token = d.accessToken || d.token || d.data?.accessToken;
-      if (!token) throw new Error(d.message || '2FA requis — utilise l\'interface pour te connecter');
-      const saved = saveBambuToken(token);
-      // Supprimer le mot de passe de config.json, conserver l'email comme fallback
-      delete saved.bambu.password;
-      saved.bambu.email = email;
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(saved, null, 2));
-      console.log('  [Bambu] Token obtenu et mot de passe retiré de config.json');
-      connectBambu(token, printers, email);
-    }).catch(err => {
-      console.error('  [Bambu] Auth échouée :', err.message);
-      console.log('  [Bambu] → Connecte-toi via l\'interface (onglet "À valider")');
-      bambuStatus = 'error';
-    });
-  }
-
-  // Token sauvegardé → vérifier l'expiration avant de se connecter
-  if (cfg.bambu.token) {
-    if (isTokenExpired(cfg.bambu.token)) {
-      console.log('  [Bambu] Token expiré.');
-      delete cfg.bambu.token;
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
-      // Si email+password dispo → re-auth auto
-      if (cfg.bambu.email && cfg.bambu.password) {
-        authWithCredentials(cfg.bambu.email, cfg.bambu.password, cfg.bambu.printers);
+  // ── AUTO-CONNECT BAMBU pour tous les users avec token valide ─────────────
+  const usersWithToken = db.prepare("SELECT * FROM users WHERE bambu_token IS NOT NULL").all();
+  for (const u of usersWithToken) {
+    if (!isTokenExpired(u.bambu_token)) {
+      const printers = JSON.parse(u.bambu_printers || '[]');
+      if (printers.length > 0) {
+        console.log(`  [Bambu] Auto-connect user ${u.email}...`);
+        connectBambu(u.id, u.bambu_token, printers, u.bambu_email);
       } else {
-        console.log('  [Bambu] → Reconnecte-toi via l\'interface (onglet "À valider")');
-        bambuStatus = 'error';
+        bambuByUser.set(u.id, { status: 'connected' });
+        console.log(`  [Bambu] User ${u.email} : token valide, pas d'imprimante configurée.`);
       }
     } else {
-      console.log('  [Bambu] Token valide — connexion MQTT...');
-      bambuStatus = 'reconnecting'; // "en cours" plutôt que "déconnecté" pendant la connexion initiale
-      try { connectBambu(cfg.bambu.token, cfg.bambu.printers, cfg.bambu.email || null); }
-      catch(e) { console.error('  [Bambu] Erreur connexion :', e.message); bambuStatus = 'error'; }
+      console.log(`  [Bambu] User ${u.email} : token expiré, reconnexion requise.`);
     }
-    return;
   }
-
-  // Pas de token → tenter email/password (première mise en service)
-  if (cfg.bambu.email && cfg.bambu.password) {
-    authWithCredentials(cfg.bambu.email, cfg.bambu.password, cfg.bambu.printers);
-    return;
+  if (!usersWithToken.length) {
+    console.log('  [Bambu] Aucun utilisateur avec token — connecte-toi via l\'interface.');
   }
-
-  console.log('  [Bambu] Aucun token — utilise l\'interface pour connecter Bambu Lab.');
 });
