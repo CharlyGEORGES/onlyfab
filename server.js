@@ -1122,8 +1122,16 @@ http.createServer(async (req, res) => {
     return;
   }
   const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  if (!cfg.bambu?.printers?.length) {
-    console.log('  [Bambu] config.json incomplet — connexion Bambu désactivée.');
+  if (!cfg.bambu?.token && !cfg.bambu?.email) {
+    console.log('  [Bambu] Aucune auth configurée — connecte-toi via l\'interface.');
+    return;
+  }
+  // Token présent mais aucune imprimante : on est "connecté" pour l'API cloud
+  // mais la détection automatique est désactivée (pas de MQTT)
+  if (!cfg.bambu?.printers?.length && cfg.bambu?.token && !isTokenExpired(cfg.bambu.token)) {
+    console.log('  [Bambu] Token valide, aucune imprimante configurée — import cloud disponible.');
+    bambuStatus = 'connected';
+    broadcast('bambu-status', { status: 'connected' });
     return;
   }
 
