@@ -8,12 +8,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        fromService:
-          type: web
-          name: onlyfab
-          envVarKey: PORT
-    disk:
-      name: onlyfab-data
-      mountPath: /data
-      sizeGB: 1
+      - key: RENDER
+        value: "true"
