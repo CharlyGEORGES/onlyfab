@@ -4247,18 +4247,31 @@
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async ev => {
+      // Retire le BOM UTF-8 si présent (fichiers Windows)
+      const text = ev.target.result.replace(/^\uFEFF/, '');
+      let data;
+      try { data = JSON.parse(text); } catch {
+        showToast('Fichier JSON invalide', 'error');
+        e.target.value = ''; return;
+      }
+      if (!Array.isArray(data)) {
+        showToast('Format invalide (tableau JSON attendu)', 'error');
+        e.target.value = ''; return;
+      }
+      if (!confirm(`Importer ${data.length} article(s) ? Les données actuelles seront remplacées.`)) {
+        e.target.value = ''; return;
+      }
       try {
-        const data = JSON.parse(ev.target.result);
-        if (!Array.isArray(data)) throw new Error();
-        if (!confirm(`Importer ${data.length} article(s) ? Les données actuelles seront remplacées.`)) return;
         if (USE_SERVER) {
-          for (const item of data) await api('POST', '/api/items', item).catch(() => {});
+          await api('POST', '/api/import', data);
           items = await api('GET', '/api/items');
         } else {
           items = data; await idbSet('items', items);
         }
         render(); showToast(`${data.length} article(s) importé(s) !`);
-      } catch { showToast('Fichier JSON invalide', 'error'); }
+      } catch (err) {
+        showToast('Erreur import : ' + (err.message || 'inconnue'), 'error');
+      }
       e.target.value = '';
     };
     reader.readAsText(file);

@@ -883,10 +883,56 @@ http.createServer(async (req, res) => {
       return;
     }
 
+    // Import en masse — remplace tout le stock en une seule transaction atomique
+    if (req.method === 'POST' && url === '/api/import') {
+      const data = await parseBody(req);
+      if (!Array.isArray(data)) { json(res, { error: 'Tableau JSON attendu' }, 400); return; }
+      const normArr = v => {
+        if (Array.isArray(v)) return v;
+        if (typeof v === 'string') { try { return JSON.parse(v); } catch { return []; } }
+        return [];
+      };
+      const partSum = p => Math.floor((normArr(p.variants)).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
+      const importAll = db.transaction(items => {
+        db.prepare('DELETE FROM items').run();
+        const stmt = db.prepare(`INSERT INTO items
+          (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt)
+          VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt)`);
+        for (const b of items) {
+          const vArr = normArr(b.variants);
+          const vJson = JSON.stringify(vArr);
+          const pArr  = normArr(b.parts);
+          const pJson = JSON.stringify(pArr);
+          const qty   = pArr.length > 0 ? Math.min(...pArr.map(partSum)) : totalQty(vJson);
+          const aItems = typeof b.assembledItems === 'string'
+            ? b.assembledItems
+            : JSON.stringify(b.assembledItems || []);
+          stmt.run({
+            id: b.id, name: b.name, desc: b.desc || null,
+            filament: b.filament || null, color: '', colorName: '',
+            qty, threshold: b.threshold ?? 3, photo: b.photo || null,
+            category: b.category || null,
+            trackStock: (b.trackStock === false || b.trackStock === 0) ? 0 : 1,
+            variants: vJson, parts: pJson,
+            assembledQty: b.assembledQty || 0, assembledItems: aItems,
+            createdAt: b.createdAt || new Date().toISOString(),
+            updatedAt: b.updatedAt || new Date().toISOString(),
+          });
+        }
+      });
+      importAll(data);
+      json(res, { ok: true, count: data.length });
+      return;
+    }
+
     if (req.method === 'POST' && url === '/api/items') {
       const b = await parseBody(req);
       const now = new Date().toISOString();
-      const variantsJson = JSON.stringify(b.variants || []);
+      // Normalise variants : peut être un tableau ou une chaîne JSON
+      const variantsArr = typeof b.variants === 'string'
+        ? (() => { try { return JSON.parse(b.variants); } catch { return []; } })()
+        : (Array.isArray(b.variants) ? b.variants : []);
+      const variantsJson = JSON.stringify(variantsArr);
       // Supporte b.parts tableau ou chaîne JSON (double-sécurité)
       const partsArr  = Array.isArray(b.parts) ? b.parts
                       : (b.parts ? (() => { try { return JSON.parse(b.parts); } catch { return []; } })() : []);
