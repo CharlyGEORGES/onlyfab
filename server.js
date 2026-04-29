@@ -619,6 +619,15 @@ http.createServer(async (req, res) => {
       json(res, { ok: true });
       return;
     }
+    // Version de l'application
+    if (req.method === 'GET' && url === '/api/version') {
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+      json(res, {
+        version: process.env.APP_VERSION || pkg.version,
+        commit:  process.env.GIT_COMMIT  || 'dev',
+      });
+      return;
+    }
     // Statut connexion Bambu
     if (req.method === 'GET' && url === '/api/bambu/status') {
       json(res, { status: bambuStatus });

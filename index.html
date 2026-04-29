@@ -1967,6 +1967,7 @@
     <span class="tab-badge" id="tabBadge">0</span>
   </button>
   <div class="tab-spacer"></div>
+  <span id="appVersion" style="font-size:0.6rem;color:var(--text-muted);padding:0 8px;align-self:center;opacity:0.5;user-select:none;"></span>
 </nav>
 
 <!-- MAIN -->
@@ -4265,6 +4266,12 @@
 
   // ── INIT ──────────────────────────────────────────────────────────────────
   loadData();
+
+  // Affichage de la version
+  fetch('/api/version').then(r => r.json()).then(v => {
+    const el = document.getElementById('appVersion');
+    if (el) el.textContent = `v${v.version} · ${v.commit}`;
+  }).catch(() => {});
 
   // ── ONGLETS ───────────────────────────────────────────────────────────────
   let currentTab = 'stock';
