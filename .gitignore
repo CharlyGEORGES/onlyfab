@@ -23,6 +23,9 @@ start.bat
 # Claude Code
 .claude/
 
+# Fly.io (contient tokens locaux)
+.fly/
+
 # OS
 .DS_Store
 Thumbs.db

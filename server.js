@@ -136,8 +136,8 @@ addColumnIfMissing('print_jobs', 'weight',    'REAL');
 addColumnIfMissing('print_jobs', 'duration',  'INTEGER');
 
 // ── DOSSIER UPLOADS ───────────────────────────────────────────────────────
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // Télécharge une image distante et la stocke dans /uploads/, retourne le chemin local ou null
 function downloadToUploads(remoteUrl) {
