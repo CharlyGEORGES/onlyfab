@@ -43,6 +43,7 @@
     html, body {
       background: var(--bg);
       height: 100%;
+      overflow: hidden; /* Empêche aussi html de scroller sur Android Chrome */
       /* Bloque TOTALEMENT le pull-to-refresh Chrome Android et l'élasticité
          de scroll, qui causent des flashes blancs/noirs spécifiques à
          Android (iOS Safari ne fait pas ça). */
@@ -1782,7 +1783,10 @@
       font-size: 0.88rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      /* Pas de transition : sur Android Chrome 'transition: all' déclenchait
+         des transitionend en cascade au switch d'onglet (4 events visibles
+         dans le debug overlay) qui ajoutaient du jank. Les couleurs changent
+         maintenant instantanément, beaucoup plus snappy. */
       margin-bottom: -1px;
       white-space: nowrap;
     }
@@ -5503,8 +5507,10 @@
       _tabScroll[currentTab] = main.scrollTop;
     }
     currentTab = tab;
-    // Pré-remplir le contenu de la vue cible avant le swap visuel.
-    if (tab === 'validate') renderPrintJobs();
+    // Note : on ne render PLUS ici. Les SSE handlers (init, print-complete,
+    // print-update) gardent #printJobsList à jour en permanence, même quand
+    // validateView est display:none. Le switch est donc 100% instantané :
+    // juste un toggle de classe CSS, pas de DOM rebuild bloquant.
 
     // Stratégie sans display:none : on bascule la classe .tab-active.
     // L'onglet inactif passe en position:absolute + visibility:hidden
@@ -6331,7 +6337,10 @@
       setBambuStatus(d.bambuStatus);   // met à jour le pill maintenant que _sseReady=true
       updateBambuStatusPill(_bambuStatus); // force l'affichage (pill était caché avant SSE)
       updateBambuBadge();
-      if (currentTab === 'validate') renderPrintJobs();
+      // Pré-render systématique : validateView est dans le DOM (display:none
+      // si pas tab-active) mais son contenu est à jour. Au switch d'onglet,
+      // plus rien à rendre = plus de LONG TASK 52ms = plus de flash.
+      renderPrintJobs();
     });
 
     // Quand le SSE perd la connexion, masquer le pill jusqu'à reconnexion
@@ -6345,7 +6354,10 @@
       const job = JSON.parse(e.data);
       printJobs.unshift(job);
       updateBambuBadge();
-      if (currentTab === 'validate') renderPrintJobs();
+      // Pré-render systématique : validateView est dans le DOM (display:none
+      // si pas tab-active) mais son contenu est à jour. Au switch d'onglet,
+      // plus rien à rendre = plus de LONG TASK 52ms = plus de flash.
+      renderPrintJobs();
       // Popup + notif OS uniquement pour les vrais prints MQTT (pas les imports manuels)
       if (job.source === 'mqtt') {
         showPrintPopup(job);
@@ -6365,7 +6377,10 @@
       const idx = printJobs.findIndex(j => j.id === job.id);
       if (idx >= 0) {
         printJobs[idx] = job;
-        if (currentTab === 'validate') renderPrintJobs();
+        // Pré-render systématique : validateView est dans le DOM (display:none
+      // si pas tab-active) mais son contenu est à jour. Au switch d'onglet,
+      // plus rien à rendre = plus de LONG TASK 52ms = plus de flash.
+      renderPrintJobs();
       }
     });
 
