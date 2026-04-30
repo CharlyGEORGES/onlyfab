@@ -3687,7 +3687,9 @@
     if (inventoryMode) { grid.className = ''; renderInventory(filtered, grid); return; }
     grid.className = 'grid';
 
-    grid.innerHTML = filtered.map(item => {
+    // Génère le HTML d'une seule card (utilisé en sync pour le 1er batch
+    // et en idle pour les suivantes — virtualisation simple sans complexité).
+    const buildCard = (item) => {
       const variants = parseVariants(item);
       const parts    = parseParts(item);
       const tQty = totalQty(variants);
@@ -3695,7 +3697,6 @@
       const isLow = tracked && tQty <= (item.threshold ?? 3);
 
       const variantsHtml = parts.length
-        // Mode multi-pièces : une puce par pièce avec les dots de toutes ses couleurs
         ? parts.map(p => {
             const dots = (p.variants || []).map(v =>
               `<span class="part-dot" style="background:${v.color||'#888'}" title="${escHtml(v.colorName||v.color||'')} · ${v.qty||0}"></span>`
@@ -3710,7 +3711,6 @@
               `<span style="opacity:.55;margin-left:1px">·${ptot}</span>` +
               `</span>`;
           }).join('')
-        // Mode simple : variantes couleur+quantité
         : variants.map(v =>
             `<span class="variant-chip"><span class="color-dot" style="background:${v.color||'#888'}"></span>${escHtml(v.colorName || v.color || '—')} · ${v.qty}</span>`
           ).join('');
@@ -3746,11 +3746,31 @@
             </div>
           </div>
         </div>`;
-    }).join('');
-    // Après chaque render : observer les <img> avec data-src pour les
-    // charger à mesure qu'elles entrent dans le viewport. Évite les
-    // décodages d'images simultanés au démarrage (LONG TASK 785ms).
+    };
+
+    // Virtualisation : on rend les 8 premières cards SYNCHRONEMENT (= visible
+    // immédiatement), et on différe le reste via requestIdleCallback. Évite
+    // que le main thread soit bloqué 500+ ms sur des grosses listes
+    // (la LONG TASK qu'on identifiait via le debug overlay).
+    const FIRST_BATCH = 8;
+    grid.innerHTML = filtered.slice(0, FIRST_BATCH).map(buildCard).join('');
     _hookLazyImages(grid);
+
+    if (filtered.length > FIRST_BATCH) {
+      const remaining = filtered.slice(FIRST_BATCH);
+      const renderRemaining = () => {
+        const frag = document.createElement('div');
+        frag.innerHTML = remaining.map(buildCard).join('');
+        // Append en une fois (un seul reflow, pas un par card)
+        while (frag.firstChild) grid.appendChild(frag.firstChild);
+        _hookLazyImages(grid);
+      };
+      if (window.requestIdleCallback) {
+        requestIdleCallback(renderRemaining, { timeout: 1000 });
+      } else {
+        setTimeout(renderRemaining, 0);
+      }
+    }
   }
 
   // ── MODE INVENTAIRE RAPIDE ────────────────────────────────────────────────
