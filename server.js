@@ -76,6 +76,7 @@ function curlPost(url, body) {
 const PORT     = process.env.PORT || 3000;
 const DATA_DIR = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : __dirname;
 const DB_FILE  = process.env.DB_PATH || path.join(__dirname, 'stock.db');
+const MAX_BETA_USERS = parseInt(process.env.BETA_MAX_USERS || '20', 10);
 const HTML_FILE     = path.join(__dirname, 'index.html');
 const LANDING_FILE  = path.join(__dirname, 'landing.html');
 
@@ -715,17 +716,32 @@ http.createServer(async (req, res) => {
       return;
     }
 
+    // GET /api/auth/seats → nombre de comptes restants pendant la bêta
+    if (req.method === 'GET' && url === '/api/auth/seats') {
+      const used = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+      const max = MAX_BETA_USERS;
+      json(res, { used, max, remaining: Math.max(0, max - used) });
+      return;
+    }
+
     if (req.method === 'POST' && url === '/api/auth/register') {
       const b = await parseBody(req);
       const { email, password, name } = b;
       if (!email || !password) { json(res, { error: 'Email et mot de passe requis' }, 400); return; }
       if (password.length < 8) { json(res, { error: 'Mot de passe trop court (8 caractères min)' }, 400); return; }
+      const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+      // Limite stricte de la bêta : on refuse les inscriptions au-delà de
+      // MAX_BETA_USERS. Variable d'environnement BETA_MAX_USERS pour modifier
+      // sans redéploiement de code.
+      if (userCount >= MAX_BETA_USERS) {
+        json(res, { error: `Bêta complète — ${MAX_BETA_USERS} comptes maximum, plus de places disponibles. Réessayez plus tard.` }, 403);
+        return;
+      }
       const existing = db.prepare('SELECT id FROM users WHERE email=?').get(email.toLowerCase());
       if (existing) { json(res, { error: 'Email déjà utilisé' }, 409); return; }
       const hash = await bcrypt.hash(password, 12);
       const uid = nanoid();
       // Premier utilisateur créé = admin
-      const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
       const isAdmin = userCount === 0 ? 1 : 0;
       db.prepare('INSERT INTO users (id,email,password_hash,name,is_admin,created_at) VALUES (?,?,?,?,?,?)')
         .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString());
@@ -1620,17 +1636,73 @@ http.createServer(async (req, res) => {
 
         // GET /api/admin/stats → métriques globales
         if (req.method === 'GET' && url === '/api/admin/stats') {
+          const c = (sql) => db.prepare(sql).get().c;
+          const totalUsers = c('SELECT COUNT(*) AS c FROM users');
+          const usersWithItems   = c('SELECT COUNT(DISTINCT user_id) AS c FROM items');
+          const usersWithPrints  = c('SELECT COUNT(DISTINCT user_id) AS c FROM print_jobs');
+          const usersWithBambu   = c('SELECT COUNT(*) AS c FROM users WHERE bambu_token IS NOT NULL');
+          let dbSize = 0; try { dbSize = fs.statSync(DB_FILE).size; } catch {}
+          let uploadsSize = 0;
+          try {
+            for (const f of fs.readdirSync(UPLOADS_DIR)) {
+              try { uploadsSize += fs.statSync(path.join(UPLOADS_DIR, f)).size; } catch {}
+            }
+          } catch {}
           const stats = {
-            users:        db.prepare('SELECT COUNT(*) AS c FROM users').get().c,
-            users_7d:     db.prepare("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-7 days')").get().c,
-            users_30d:    db.prepare("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-30 days')").get().c,
-            active_24h:   db.prepare("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-1 day')").get().c,
-            active_7d:    db.prepare("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-7 days')").get().c,
-            items_total:  db.prepare('SELECT COUNT(*) AS c FROM items').get().c,
-            prints_total: db.prepare('SELECT COUNT(*) AS c FROM print_jobs').get().c,
-            bambu_connected: [...bambuByUser.values()].filter(b => b.status === 'connected').length,
+            // ── Utilisateurs ──
+            users:           totalUsers,
+            users_max:       MAX_BETA_USERS,
+            users_capacity:  Math.round((totalUsers / MAX_BETA_USERS) * 100),
+            users_24h:       c("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-1 day')"),
+            users_7d:        c("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-7 days')"),
+            users_30d:       c("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-30 days')"),
+            // ── Activité ──
+            active_24h:      c("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-1 day')"),
+            active_7d:       c("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-7 days')"),
+            active_30d:      c("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-30 days')"),
+            never_logged:    c("SELECT COUNT(*) AS c FROM users WHERE last_login IS NULL"),
+            // ── Onboarding funnel ──
+            users_with_bambu:   usersWithBambu,
+            users_with_items:   usersWithItems,
+            users_with_prints:  usersWithPrints,
+            bambu_connected_now: [...bambuByUser.values()].filter(b => b.status === 'connected').length,
+            // ── Catalogue ──
+            items_total:        c('SELECT COUNT(*) AS c FROM items'),
+            categories_total:   c('SELECT COUNT(*) AS c FROM categories'),
+            avg_items_per_user: totalUsers ? Math.round((c('SELECT COUNT(*) AS c FROM items') / totalUsers) * 10) / 10 : 0,
+            // ── Impressions ──
+            prints_total:     c('SELECT COUNT(*) AS c FROM print_jobs'),
+            prints_pending:   c("SELECT COUNT(*) AS c FROM print_jobs WHERE status='pending'"),
+            prints_done:      c("SELECT COUNT(*) AS c FROM print_jobs WHERE status='done'"),
+            prints_dismissed: c("SELECT COUNT(*) AS c FROM print_jobs WHERE status='dismissed'"),
+            prints_24h:       c("SELECT COUNT(*) AS c FROM print_jobs WHERE ts > datetime('now','-1 day')"),
+            prints_7d:        c("SELECT COUNT(*) AS c FROM print_jobs WHERE ts > datetime('now','-7 days')"),
+            // ── Système ──
+            db_size_mb:       Math.round(dbSize / 1024 / 102.4) / 10,
+            uploads_size_mb:  Math.round(uploadsSize / 1024 / 102.4) / 10,
+            uptime_seconds:   Math.floor(process.uptime()),
+            version:          process.env.APP_VERSION || JSON.parse(fs.readFileSync(path.join(__dirname,'package.json'),'utf8')).version,
           };
           json(res, stats);
+          return;
+        }
+
+        // GET /api/admin/activity → 20 derniers événements (inscriptions + impressions)
+        if (req.method === 'GET' && url === '/api/admin/activity') {
+          const recentUsers = db.prepare(`
+            SELECT 'register' AS type, id AS id, email AS label, created_at AS ts
+            FROM users ORDER BY created_at DESC LIMIT 10
+          `).all();
+          const recentPrints = db.prepare(`
+            SELECT 'print' AS type, p.id AS id, p.file_name AS label, p.ts AS ts,
+                   p.status AS status, p.printer_name AS printer, u.email AS user_email
+            FROM print_jobs p LEFT JOIN users u ON p.user_id=u.id
+            ORDER BY p.ts DESC LIMIT 10
+          `).all();
+          const merged = [...recentUsers, ...recentPrints]
+            .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
+            .slice(0, 20);
+          json(res, merged);
           return;
         }
 

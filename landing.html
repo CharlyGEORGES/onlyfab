@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0f0f13">
   <title>BambuStock — Gestion de stock pour makers Bambu Lab</title>
-  <meta name="description" content="BambuStock est le logiciel de gestion de stock pensé pour les makers Bambu Lab. Inventaire filaments, suivi des impressions en temps réel, alertes stock bas.">
+  <meta name="description" content="BambuStock — Suivi automatique de vos impressions Bambu Lab. À chaque sortie d'imprimante, validez si l'objet rejoint votre stock. Conçu et hébergé en France.">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -282,187 +282,6 @@
       color: var(--text-muted);
       margin-top: 2px;
     }
-
-    /* ── MOCKUP ── */
-    .mockup-wrap {
-      position: relative;
-      max-width: 900px;
-      margin: 60px auto 0;
-    }
-
-    .mockup-glow {
-      position: absolute;
-      inset: -40px;
-      background: radial-gradient(ellipse 60% 40% at 50% 50%, rgba(108,71,255,0.2) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .mockup {
-      position: relative;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      overflow: hidden;
-      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(108,71,255,0.1);
-    }
-
-    .mockup-bar {
-      background: var(--surface2);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .mockup-dots {
-      display: flex;
-      gap: 6px;
-    }
-
-    .mockup-dot {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-    }
-
-    .mockup-dot:nth-child(1) { background: #ff5f57; }
-    .mockup-dot:nth-child(2) { background: #febc2e; }
-    .mockup-dot:nth-child(3) { background: #28c840; }
-
-    .mockup-url {
-      flex: 1;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 12px;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      font-family: 'SF Mono', 'Fira Code', monospace;
-    }
-
-    .mockup-body {
-      padding: 20px;
-      display: grid;
-      grid-template-columns: 200px 1fr;
-      gap: 16px;
-      min-height: 320px;
-    }
-
-    .mockup-sidebar {
-      background: var(--surface2);
-      border-radius: 10px;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .mockup-nav-item {
-      padding: 8px 10px;
-      border-radius: 7px;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .mockup-nav-item.active {
-      background: rgba(108,71,255,0.15);
-      color: var(--primary-light);
-    }
-
-    .mockup-nav-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--border);
-      flex-shrink: 0;
-    }
-
-    .mockup-nav-item.active .mockup-nav-dot {
-      background: var(--primary);
-    }
-
-    .mockup-main {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .mockup-cards {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-
-    .mockup-card {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-    }
-
-    .mockup-card-top {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-
-    .mockup-swatch {
-      width: 24px;
-      height: 24px;
-      border-radius: 6px;
-      flex-shrink: 0;
-    }
-
-    .mockup-card-name {
-      font-size: 0.72rem;
-      font-weight: 600;
-      color: var(--text);
-    }
-
-    .mockup-card-sub {
-      font-size: 0.65rem;
-      color: var(--text-muted);
-    }
-
-    .mockup-card-qty {
-      font-size: 1.5rem;
-      font-weight: 800;
-      color: var(--text);
-      letter-spacing: -0.03em;
-    }
-
-    .mockup-card-qty.low { color: var(--danger); }
-    .mockup-card-qty.ok { color: var(--accent); }
-
-    .mockup-bar-chart {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      display: flex;
-      align-items: flex-end;
-      gap: 6px;
-      height: 80px;
-    }
-
-    .mockup-bar-item {
-      flex: 1;
-      border-radius: 4px 4px 0 0;
-      background: rgba(108,71,255,0.3);
-      position: relative;
-    }
-
-    .mockup-bar-item:nth-child(2) { background: rgba(108,71,255,0.5); }
-    .mockup-bar-item:nth-child(3) { background: rgba(108,71,255,0.7); }
-    .mockup-bar-item:nth-child(4) { background: var(--primary); }
-    .mockup-bar-item:nth-child(5) { background: rgba(108,71,255,0.6); }
-    .mockup-bar-item:nth-child(6) { background: rgba(108,71,255,0.4); }
-    .mockup-bar-item:nth-child(7) { background: rgba(108,71,255,0.2); }
 
     /* ── SECTIONS ── */
     section { padding: 90px 0; }
@@ -1015,9 +834,6 @@
       .hero { padding: 70px 0 60px; }
       .hero-stats { gap: 24px; }
       section { padding: 64px 0; }
-      .mockup-body { grid-template-columns: 1fr; }
-      .mockup-sidebar { display: none; }
-      .mockup-cards { grid-template-columns: 1fr 1fr; }
       .steps-grid::before { display: none; }
       .step { padding: 0 16px; }
       .register-card { padding: 32px 24px; }
@@ -1028,7 +844,6 @@
 
     @media (max-width: 480px) {
       .nav-actions .btn-ghost { display: none; }
-      .mockup-cards { grid-template-columns: 1fr; }
       .container { padding: 0 16px; }
       section { padding: 48px 0; }
       .hero { padding: 56px 0 40px; }
@@ -1089,8 +904,8 @@
         <div class="hero-badge-dot"></div>
         Bêta ouverte — Accès gratuit
       </div>
-      <h1>La gestion de stock<br>pensée pour les <span class="grad-text">makers Bambu Lab</span></h1>
-      <p>Suivez votre stock de filaments, gérez vos imprimantes Bambu Lab et recevez des alertes en temps réel. Tout au même endroit, conçu pour les makers sérieux.</p>
+      <h1>À chaque impression terminée,<br>votre <span class="grad-text">stock est à jour</span></h1>
+      <p>Connectez votre compte Bambu Lab et chaque fois qu'une impression se termine, elle apparaît dans BambuStock. Vous décidez en un clic si l'objet rejoint votre stock — ou non. C'est tout.</p>
       <div class="hero-actions">
         <a href="#register" class="btn btn-primary btn-lg">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18">
@@ -1108,90 +923,12 @@
           <div class="hero-stat-label">Gratuit en bêta</div>
         </div>
         <div class="hero-stat">
-          <div class="hero-stat-val"><span>∞</span></div>
-          <div class="hero-stat-label">Items en stock</div>
+          <div class="hero-stat-val">20</div>
+          <div class="hero-stat-label">Places en bêta</div>
         </div>
         <div class="hero-stat">
-          <div class="hero-stat-val">MQTT</div>
-          <div class="hero-stat-label">Temps réel natif</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Mockup app -->
-    <div class="mockup-wrap">
-      <div class="mockup-glow"></div>
-      <div class="mockup">
-        <div class="mockup-bar">
-          <div class="mockup-dots">
-            <div class="mockup-dot"></div>
-            <div class="mockup-dot"></div>
-            <div class="mockup-dot"></div>
-          </div>
-          <div class="mockup-url">bambustock.app</div>
-        </div>
-        <div class="mockup-body">
-          <div class="mockup-sidebar">
-            <div class="mockup-nav-item active">
-              <div class="mockup-nav-dot"></div>
-              Stock
-            </div>
-            <div class="mockup-nav-item">
-              <div class="mockup-nav-dot"></div>
-              Impressions
-            </div>
-            <div class="mockup-nav-item">
-              <div class="mockup-nav-dot"></div>
-              Historique
-            </div>
-            <div class="mockup-nav-item">
-              <div class="mockup-nav-dot"></div>
-              Bambu Lab
-            </div>
-          </div>
-          <div class="mockup-main">
-            <div class="mockup-cards">
-              <div class="mockup-card">
-                <div class="mockup-card-top">
-                  <div class="mockup-swatch" style="background:#6c47ff;"></div>
-                  <div>
-                    <div class="mockup-card-name">PLA Violet</div>
-                    <div class="mockup-card-sub">Bambu Lab</div>
-                  </div>
-                </div>
-                <div class="mockup-card-qty ok">24</div>
-              </div>
-              <div class="mockup-card">
-                <div class="mockup-card-top">
-                  <div class="mockup-swatch" style="background:#00d4aa;"></div>
-                  <div>
-                    <div class="mockup-card-name">PETG Cyan</div>
-                    <div class="mockup-card-sub">Bambu Lab</div>
-                  </div>
-                </div>
-                <div class="mockup-card-qty">12</div>
-              </div>
-              <div class="mockup-card">
-                <div class="mockup-card-top">
-                  <div class="mockup-swatch" style="background:#ff4757;"></div>
-                  <div>
-                    <div class="mockup-card-name">ABS Rouge</div>
-                    <div class="mockup-card-sub">Bambu Lab</div>
-                  </div>
-                </div>
-                <div class="mockup-card-qty low">2</div>
-              </div>
-            </div>
-            <div class="mockup-bar-chart">
-              <div class="mockup-bar-item" style="height:35%"></div>
-              <div class="mockup-bar-item" style="height:55%"></div>
-              <div class="mockup-bar-item" style="height:75%"></div>
-              <div class="mockup-bar-item" style="height:90%"></div>
-              <div class="mockup-bar-item" style="height:65%"></div>
-              <div class="mockup-bar-item" style="height:45%"></div>
-              <div class="mockup-bar-item" style="height:30%"></div>
-            </div>
-          </div>
+          <div class="hero-stat-val">🇫🇷</div>
+          <div class="hero-stat-label">Conçu &amp; hébergé en France</div>
         </div>
       </div>
     </div>
@@ -1210,13 +947,25 @@
       <div class="feature-card">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+            <rect x="9" y="3" width="6" height="4" rx="1"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <h3>Détection des impressions terminées</h3>
+        <p>Dès qu'une impression sort de votre Bambu Lab, elle apparaît automatiquement dans la file « À valider ». Vous décidez en un clic : ajouter au stock, ou ignorer.</p>
+        <div class="feature-tag">100% automatique</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
             <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
           </svg>
         </div>
-        <h3>Inventaire filaments &amp; pièces</h3>
-        <p>Gérez chaque bobine, couleur et matériau avec précision. Suivez les quantités par variante, par couleur, par type. Jamais de surprise en pleine impression.</p>
-        <div class="feature-tag">Variants multi-couleurs</div>
+        <h3>Catalogue d'articles</h3>
+        <p>Vos objets imprimés sont classés par article (avec déclinaisons couleur, pièces démontables, photos). Le stock se met à jour à chaque impression validée.</p>
+        <div class="feature-tag">Variantes &amp; assemblages</div>
       </div>
       <div class="feature-card">
         <div class="feature-icon">
@@ -1225,31 +974,9 @@
             <path d="M7 7h10M7 12h10M7 17h4"/>
           </svg>
         </div>
-        <h3>Intégration Bambu Lab native</h3>
-        <p>Connectez votre compte Bambu Lab en quelques secondes. BambuStock se synchronise directement avec vos imprimantes via MQTT — aucun plugin tiers.</p>
-        <div class="feature-tag">MQTT natif</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-        </div>
-        <h3>Suivi en temps réel</h3>
-        <p>Recevez une notification dès qu'une impression se termine. Validez ou ignorez chaque job directement depuis l'interface, mise à jour en temps réel via SSE.</p>
-        <div class="feature-tag">Server-Sent Events</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        </div>
-        <h3>Alertes stock bas automatiques</h3>
-        <p>Définissez un seuil par item. BambuStock vous alerte visuellement quand votre stock descend en dessous du minimum pour ne jamais manquer de matériaux.</p>
-        <div class="feature-tag">Seuil configurable</div>
+        <h3>Connexion Bambu Lab</h3>
+        <p>Entrez vos identifiants Bambu Lab une fois, BambuStock écoute discrètement vos imprimantes et vous prévient à chaque fin d'impression. Aucun plugin à installer.</p>
+        <div class="feature-tag">Setup en 30 secondes</div>
       </div>
       <div class="feature-card">
         <div class="feature-icon">
@@ -1273,8 +1000,19 @@
           </svg>
         </div>
         <h3>Historique complet</h3>
-        <p>Chaque action est tracée : ajout, modification, assemblage, impression. Retrouvez l'historique de n'importe quel item ou consultez les 300 dernières actions.</p>
-        <div class="feature-tag">Audit trail complet</div>
+        <p>Chaque action est tracée : ajout, modification, assemblage, impression validée. Retrouvez en un clin d'œil tout ce qui s'est passé sur votre stock.</p>
+        <div class="feature-tag">Traçabilité totale</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3z"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+        </div>
+        <h3>Conçu &amp; hébergé en France 🇫🇷</h3>
+        <p>BambuStock est développé en France. Toutes vos données (compte, articles, photos, historique) sont stockées sur des serveurs situés à Paris. Conformité RGPD native.</p>
+        <div class="feature-tag">Données 100% France</div>
       </div>
     </div>
   </div>
@@ -1292,17 +1030,17 @@
       <div class="step">
         <div class="step-num">1</div>
         <h3>Créer un compte</h3>
-        <p>Inscrivez-vous gratuitement avec votre email. Aucune carte bancaire requise pendant la bêta. Votre stock est privé et isolé des autres utilisateurs.</p>
+        <p>Inscrivez-vous gratuitement avec votre email. Aucune carte bancaire requise pendant la bêta. Votre stock est privé, isolé des autres utilisateurs.</p>
       </div>
       <div class="step">
         <div class="step-num">2</div>
         <h3>Connecter Bambu Lab</h3>
-        <p>Entrez vos identifiants Bambu Lab (ou copiez votre token). BambuStock se connecte à vos imprimantes et commence à surveiller vos impressions en temps réel.</p>
+        <p>Entrez vos identifiants Bambu Lab. BambuStock écoute alors vos imprimantes et détecte chaque fin d'impression, sans rien à installer.</p>
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <h3>Gérer votre stock</h3>
-        <p>Ajoutez vos filaments, définissez des seuils d'alerte, importez votre stock existant. Quand une impression se termine, validez ou ignorez le job depuis l'app.</p>
+        <h3>Imprimer normalement</h3>
+        <p>Quand une impression se termine, elle apparaît dans la file « À valider ». En un clic vous l'ajoutez à votre stock — ou vous l'ignorez. C'est tout.</p>
       </div>
     </div>
   </div>
@@ -1330,7 +1068,7 @@
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
             </div>
-            Stock illimité (filaments, pièces, kits)
+            Détection automatique des impressions terminées
           </li>
           <li class="pricing-feature">
             <div class="pricing-feature-icon">
@@ -1338,7 +1076,7 @@
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
             </div>
-            Connexion Bambu Lab MQTT native
+            Catalogue d'articles illimité (variantes, pièces, photos)
           </li>
           <li class="pricing-feature">
             <div class="pricing-feature-icon">
@@ -1346,15 +1084,7 @@
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
             </div>
-            Suivi des impressions en temps réel
-          </li>
-          <li class="pricing-feature">
-            <div class="pricing-feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </div>
-            Alertes stock bas automatiques
+            Connexion Bambu Lab native (sans plugin)
           </li>
           <li class="pricing-feature">
             <div class="pricing-feature-icon">
@@ -1388,6 +1118,14 @@
             </div>
             Installation PWA (mode application)
           </li>
+          <li class="pricing-feature">
+            <div class="pricing-feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            Données hébergées en France 🇫🇷
+          </li>
         </ul>
         <a href="#register" class="btn btn-primary" style="width:100%;justify-content:center;padding:14px;">
           Commencer gratuitement
@@ -1403,8 +1141,9 @@
   <div class="container">
     <div class="register-card">
       <h2>Créer votre compte</h2>
-      <p>Rejoignez BambuStock gratuitement et commencez à maîtriser votre stock dès aujourd'hui.</p>
+      <p>Rejoignez la bêta gratuite. <strong>20 places maximum</strong> pendant la phase de test — premiers arrivés, premiers servis. Données hébergées en France 🇫🇷.</p>
 
+      <div id="seatsRemaining" style="display:none;background:rgba(0,212,170,0.08);border:1px solid rgba(0,212,170,0.25);color:var(--accent);padding:8px 12px;border-radius:8px;font-size:0.82rem;margin-bottom:14px;text-align:center;font-weight:600"></div>
       <div id="register-alert" class="alert" style="display:none;"></div>
 
       <form id="registerForm" onsubmit="handleRegister(event)" novalidate>
@@ -1448,7 +1187,7 @@
         </svg>
         BambuStock
       </div>
-      <div class="footer-copy">© 2026 BambuStock — Fait avec passion pour les makers</div>
+      <div class="footer-copy">© 2026 BambuStock — Conçu &amp; hébergé en France 🇫🇷 pour les makers</div>
       <div class="footer-links">
         <a href="mailto:contact@bambustock.app">Contact</a>
       </div>
@@ -1506,6 +1245,31 @@
 <script>
   // Auth check is handled by the inline script at the top of <body> to avoid
   // any flash of unauthenticated content on mobile. See top of body.
+
+  // ── Affiche les places restantes en bêta ────────────────────────────────
+  (async () => {
+    try {
+      const r = await fetch('/api/auth/seats').then(r => r.json());
+      const el = document.getElementById('seatsRemaining');
+      if (!el) return;
+      el.style.display = 'block';
+      if (r.remaining <= 0) {
+        el.style.background = 'rgba(255,71,87,0.08)';
+        el.style.borderColor = 'rgba(255,71,87,0.25)';
+        el.style.color = 'var(--danger)';
+        el.textContent = `Bêta complète — ${r.used}/${r.max} places prises. Inscriptions fermées pour le moment.`;
+        const btn = document.getElementById('reg-submit');
+        if (btn) { btn.disabled = true; btn.textContent = 'Bêta complète'; }
+      } else if (r.remaining <= 5) {
+        el.style.background = 'rgba(245,158,11,0.08)';
+        el.style.borderColor = 'rgba(245,158,11,0.3)';
+        el.style.color = '#f59e0b';
+        el.textContent = `Plus que ${r.remaining} place${r.remaining>1?'s':''} disponible${r.remaining>1?'s':''} sur ${r.max} en bêta — dépêchez-vous !`;
+      } else {
+        el.textContent = `${r.remaining} places disponibles sur ${r.max} en bêta`;
+      }
+    } catch { /* silent */ }
+  })();
 
   // ── Login modal ────────────────────────────────────────────────────────
   function openLogin() {

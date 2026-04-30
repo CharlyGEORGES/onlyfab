@@ -2758,36 +2758,124 @@
     document.getElementById('adminModal').classList.remove('open');
   }
   function escAttr(s) { return String(s ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+  function fmtUptime(s) {
+    s = s || 0;
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s/60) + 'min';
+    if (s < 86400) return Math.floor(s/3600) + 'h' + String(Math.floor((s%3600)/60)).padStart(2,'0');
+    return Math.floor(s/86400) + 'j ' + Math.floor((s%86400)/3600) + 'h';
+  }
   async function refreshAdminPanel() {
     try {
-      const [stats, users] = await Promise.all([
+      const [stats, users, activity] = await Promise.all([
         fetch('/api/admin/stats').then(r => r.json()),
         fetch('/api/admin/users').then(r => r.json()),
+        fetch('/api/admin/activity').then(r => r.json()).catch(() => []),
       ]);
-      const statsEl = document.getElementById('adminStats');
-      const cards = [
-        ['Utilisateurs', stats.users],
-        ['Inscrits 7j',  stats.users_7d],
-        ['Inscrits 30j', stats.users_30d],
-        ['Actifs 24h',   stats.active_24h],
-        ['Actifs 7j',    stats.active_7d],
-        ['Articles',     stats.items_total],
-        ['Impressions',  stats.prints_total],
-        ['Bambu live',   stats.bambu_connected],
-      ];
-      statsEl.innerHTML = cards.map(([label, val]) => `
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:1.3rem;font-weight:800;color:var(--primary)">${val ?? 0}</div>
-          <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">${label}</div>
-        </div>
-      `).join('');
 
+      // Section 1 : capacité bêta + onboarding funnel
+      const cap = stats.users_capacity || 0;
+      const capColor = cap >= 90 ? 'var(--danger)' : cap >= 70 ? '#f59e0b' : 'var(--accent)';
+      document.getElementById('adminStats').innerHTML = `
+        <div style="grid-column:1/-1;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600">Capacité bêta</div>
+            <div style="font-size:0.78rem;color:var(--text-muted)">${stats.users}/${stats.users_max} comptes — v${stats.version} — uptime ${fmtUptime(stats.uptime_seconds)}</div>
+          </div>
+          <div style="background:var(--bg);border-radius:6px;height:10px;overflow:hidden">
+            <div style="background:${capColor};width:${Math.min(100,cap)}%;height:100%;transition:width .3s"></div>
+          </div>
+          <div style="font-size:0.7rem;color:${capColor};margin-top:6px;font-weight:600">${cap}% des places utilisées · ${stats.users_max - stats.users} restante${(stats.users_max - stats.users)>1?'s':''}</div>
+        </div>
+        ${[
+          ['👤 Utilisateurs', stats.users, 'total'],
+          ['+ 24h', stats.users_24h, 'inscrits'],
+          ['+ 7j',  stats.users_7d,  'inscrits'],
+          ['+ 30j', stats.users_30d, 'inscrits'],
+          ['🔥 Actifs 24h', stats.active_24h, 'connectés'],
+          ['Actifs 7j',  stats.active_7d, 'connectés'],
+          ['Actifs 30j', stats.active_30d, 'connectés'],
+          ['😴 Jamais loggés', stats.never_logged, 'comptes'],
+        ].map(([l,v,sub]) => `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--primary)">${v ?? 0}</div>
+            <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">${l}</div>
+            <div style="font-size:0.6rem;color:var(--text-muted);opacity:.7">${sub}</div>
+          </div>`).join('')}
+
+        <div style="grid-column:1/-1;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin:14px 0 4px">Funnel d'activation</div>
+        ${[
+          ['Bambu connecté (DB)', stats.users_with_bambu, stats.users],
+          ['Bambu live (MQTT ON)', stats.bambu_connected_now, stats.users],
+          ['Avec articles', stats.users_with_items, stats.users],
+          ['Avec impressions', stats.users_with_prints, stats.users],
+        ].map(([l, v, total]) => {
+          const pct = total ? Math.round((v / total) * 100) : 0;
+          return `
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+              <div style="font-size:1.2rem;font-weight:800;color:var(--accent)">${v}<span style="font-size:0.7rem;color:var(--text-muted);font-weight:500"> / ${total} (${pct}%)</span></div>
+              <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">${l}</div>
+            </div>`;
+        }).join('')}
+
+        <div style="grid-column:1/-1;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin:14px 0 4px">Catalogue & impressions</div>
+        ${[
+          ['📦 Articles', stats.items_total, 'au total'],
+          ['Catégories', stats.categories_total, 'créées'],
+          ['Articles/user', stats.avg_items_per_user, 'moyenne'],
+          ['🖨 Impressions', stats.prints_total, 'reçues'],
+          ['⏳ En attente', stats.prints_pending, 'à valider'],
+          ['✅ Validées', stats.prints_done, 'ajoutées au stock'],
+          ['🗑 Ignorées', stats.prints_dismissed, 'rejetées'],
+          ['+ 7j', stats.prints_7d, 'impressions'],
+        ].map(([l,v,sub]) => `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+            <div style="font-size:1.3rem;font-weight:800;color:var(--text)">${v ?? 0}</div>
+            <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">${l}</div>
+            <div style="font-size:0.6rem;color:var(--text-muted);opacity:.7">${sub}</div>
+          </div>`).join('')}
+
+        <div style="grid-column:1/-1;font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin:14px 0 4px">Système</div>
+        ${[
+          ['💾 Base SQLite', stats.db_size_mb + ' Mo'],
+          ['🖼 Uploads', stats.uploads_size_mb + ' Mo'],
+          ['⚙️ Uptime', fmtUptime(stats.uptime_seconds)],
+        ].map(([l,v]) => `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+            <div style="font-size:1rem;font-weight:800;color:var(--text)">${v}</div>
+            <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">${l}</div>
+          </div>`).join('')}
+      `;
+
+      // Section activité récente
+      let activityHtml = '<div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin:18px 0 8px">Activité récente</div>';
+      if (Array.isArray(activity) && activity.length) {
+        activityHtml += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px">';
+        activityHtml += activity.map(a => {
+          const when = a.ts ? new Date(a.ts).toLocaleString('fr-FR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+          if (a.type === 'register') {
+            return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:0.8rem;display:flex;justify-content:space-between;gap:10px;align-items:center">
+              <span>👤 <strong>Nouveau compte</strong> · ${escHtml(a.label)}</span>
+              <span style="color:var(--text-muted);font-size:0.72rem;flex-shrink:0">${when}</span>
+            </div>`;
+          }
+          const statusBadge = a.status === 'pending' ? '⏳' : a.status === 'done' ? '✅' : '🗑';
+          return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:0.8rem;display:flex;justify-content:space-between;gap:10px;align-items:center">
+            <span>${statusBadge} <strong>${escHtml(a.label || 'Impression')}</strong> · ${escHtml(a.printer || '')} · ${escHtml(a.user_email || '')}</span>
+            <span style="color:var(--text-muted);font-size:0.72rem;flex-shrink:0">${when}</span>
+          </div>`;
+        }).join('');
+        activityHtml += '</div>';
+      }
+      // Insère l'activité avant la liste utilisateurs
       const usersEl = document.getElementById('adminUsers');
       if (!Array.isArray(users) || !users.length) {
-        usersEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px">Aucun utilisateur</div>';
+        usersEl.innerHTML = activityHtml + '<div style="text-align:center;color:var(--text-muted);padding:24px">Aucun utilisateur</div>';
         return;
       }
-      usersEl.innerHTML = users.map(u => {
+      usersEl.innerHTML = activityHtml +
+        '<div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px">Tous les utilisateurs</div>' +
+        users.map(u => {
         const created = u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '—';
         const lastLog = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR') : 'jamais';
         return `
