@@ -1921,7 +1921,8 @@
       .btn-icon-header { width: 34px; height: 34px; }
       .btn-icon-header svg { width: 16px; height: 16px; }
       #userDisplay { display: none; }
-      #appVersion { display: none !important; }
+      /* Version reste visible sur mobile pour faciliter le debug à distance. */
+      #appVersion { font-size: 0.55rem !important; padding: 0 6px !important; opacity: 0.6 !important; }
       .main-inner { padding: 16px 12px; }
       .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
       .filters { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
