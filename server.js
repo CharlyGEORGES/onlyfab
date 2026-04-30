@@ -655,8 +655,29 @@ http.createServer(async (req, res) => {
     if (req.method === 'GET' && (url === '/app' || url === '/app/')) {
       const user = getSessionUser(req);
       if (!user) { res.writeHead(302, { Location: '/' }); res.end(); return; }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(htmlCache);
+      // SSR : on inline les items + catégories de l'utilisateur dans le HTML
+      // pour que la page arrive rendue (zéro fetch côté client = zéro flash).
+      const items = db.prepare('SELECT * FROM items WHERE user_id=? ORDER BY createdAt DESC').all(user.id);
+      const categories = db.prepare('SELECT * FROM categories WHERE user_id=? ORDER BY name ASC').all(user.id);
+      const initialData = {
+        user: {
+          id: user.id, email: user.email, name: user.name, plan: user.plan,
+          is_admin: !!user.is_admin, created_at: user.created_at,
+        },
+        items, categories,
+      };
+      // Échappe `<` pour empêcher l'injection d'un `</script>` via les noms d'items.
+      const safeJson = JSON.stringify(initialData).replace(/</g, '\\u003c');
+      const html = htmlCache.replace(
+        '<!-- INITIAL_DATA -->',
+        `<script>window.__INITIAL_DATA__=${safeJson};</script>`
+      );
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        // Pas de cache : les données sont per-user
+        'Cache-Control': 'private, no-store',
+      });
+      res.end(html);
       return;
     }
     if (req.method === 'GET' && url === '/manifest.json') {

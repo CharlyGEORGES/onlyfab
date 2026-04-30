@@ -224,29 +224,6 @@
       gap: 16px;
     }
 
-    /* SKELETON LOADER (visible avant que /api/items ne réponde) */
-    .skeleton-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      height: 280px;
-      position: relative;
-      overflow: hidden;
-    }
-    .skeleton-card::after {
-      content: '';
-      position: absolute; inset: 0;
-      background: linear-gradient(90deg,
-        transparent 0%,
-        rgba(108,71,255,0.05) 50%,
-        transparent 100%);
-      animation: skeleton-shimmer 1.4s ease-in-out infinite;
-    }
-    @keyframes skeleton-shimmer {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
-    }
-
     /* CARD */
     .card {
       background: var(--surface);
@@ -2083,14 +2060,7 @@
         <input id="searchInput" type="text" placeholder="Rechercher un objet...">
       </div>
     </div>
-    <div class="grid" id="grid">
-      <!-- Skeleton loader affiché tant que /api/items n'a pas répondu : évite
-           que la grille soit vide (= grand espace noir perçu comme un flash). -->
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-      <div class="skeleton-card"></div>
-    </div>
+    <div class="grid" id="grid"></div>
   </div>
 
   <!-- VUE À VALIDER -->
@@ -2654,28 +2624,34 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- Données utilisateur + items + catégories injectées par le serveur pour
+     éviter tout flash : au premier paint le contenu est déjà disponible,
+     pas besoin d'attendre /api/items. -->
+<!-- INITIAL_DATA -->
+
 <script>
   // ── AUTH ──────────────────────────────────────────────────────────────────
-  // Note : si on est ici, le serveur a déjà validé la session (sinon il aurait
-  // renvoyé un 302 vers /). On affiche donc l'app immédiatement et on récupère
-  // les infos utilisateur en arrière-plan, pour éviter tout flash visuel.
-  (async () => {
-    let r;
-    try {
-      r = await fetch('/api/auth/me', { credentials: 'same-origin' }).then(r => r.json());
-    } catch { return; }
-    if (!r || !r.user) {
-      // Cas rare : la session vient d'expirer entre le rendu HTML et ce fetch.
-      window.location.replace('/');
-      return;
-    }
-    window.currentUser = r.user;
+  // Le serveur injecte les infos utilisateur dans window.__INITIAL_DATA__,
+  // ce qui évite tout fetch au démarrage. Un check /api/auth/me en arrière-plan
+  // gère uniquement le cas (rare) d'une session expirée entre temps.
+  (function applyUser() {
+    const u = (window.__INITIAL_DATA__ || {}).user || null;
+    if (!u) return;
+    window.currentUser = u;
     const userEl = document.getElementById('userDisplay');
-    if (userEl) userEl.textContent = r.user.name || r.user.email;
-    if (r.user.is_admin) {
+    if (userEl) userEl.textContent = u.name || u.email;
+    if (u.is_admin) {
       const btn = document.getElementById('adminBtn');
       if (btn) btn.style.display = '';
     }
+  })();
+  // Vérification de session en arrière-plan (sans bloquer ni masquer l'UI)
+  (async () => {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' }).then(r => r.json());
+      if (!r || !r.user) window.location.replace('/');
+      else window.currentUser = r.user;
+    } catch { /* silent — le serveur a déjà validé la session pour servir cette page */ }
   })();
 
   async function logout() {
@@ -2950,6 +2926,20 @@
 
   // ── DATA ──────────────────────────────────────────────────────────────────
   async function loadData() {
+    // Si le serveur a déjà injecté les données dans window.__INITIAL_DATA__,
+    // on rend immédiatement (zéro fetch, zéro flash). Le fetch ne sert plus
+    // qu'aux refreshes manuels (après création/modification d'items).
+    const initial = window.__INITIAL_DATA__;
+    if (initial && Array.isArray(initial.items) && Array.isArray(initial.categories)) {
+      items = initial.items;
+      categories = initial.categories;
+      // On consomme les données pour que les rafraîchissements ultérieurs
+      // refassent un fetch normal (sinon on resterait coincé sur l'état initial).
+      window.__INITIAL_DATA__ = null;
+      refreshCategorySelects();
+      render();
+      return;
+    }
     try {
       if (USE_SERVER) {
         [items, categories] = await Promise.all([
@@ -2968,7 +2958,7 @@
       categories = categories || [];
     }
     refreshCategorySelects();
-    render(); // remplace le skeleton, même si fetch a échoué
+    render();
   }
 
   async function opCreate(item) {
