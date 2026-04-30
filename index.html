@@ -120,7 +120,12 @@
       max-width: 1200px;
       margin: 0 auto;
       padding: 24px 16px;
+      /* Hauteur minimale stable entre les deux onglets : évite que la barre
+         d'URL mobile se replie/déplie quand la page passe d'une vue longue
+         (Stock) à une vue courte (Validate), ce qui génère un flash visuel. */
+      min-height: calc(100vh - 60px - 44px);
     }
+    #stockView, #validateView { min-height: inherit; }
 
     /* FILTERS */
     .filters {
@@ -4688,6 +4693,10 @@
 
   function switchTab(tab) {
     currentTab = tab;
+    // IMPORTANT : on rend le contenu de la vue cible AVANT de la rendre
+    // visible, sinon le navigateur peint d'abord une vue vide (= flash noir)
+    // puis applique le innerHTML une frame plus tard.
+    if (tab === 'validate') renderPrintJobs();
     document.getElementById('tab-stock').classList.toggle('active', tab === 'stock');
     document.getElementById('tab-validate').classList.toggle('active', tab === 'validate');
     document.getElementById('stockView').style.display    = tab === 'stock'    ? '' : 'none';
@@ -4696,7 +4705,6 @@
     // Mode inventaire disponible seulement sur l'onglet stock
     if (tab !== 'stock' && inventoryMode) toggleInventoryMode();
     document.getElementById('inventoryModeBtn').style.display = tab === 'stock' ? '' : 'none';
-    if (tab === 'validate') renderPrintJobs();
   }
 
   // ── BAMBU ─────────────────────────────────────────────────────────────────
