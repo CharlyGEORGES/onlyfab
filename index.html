@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" style="background:#0f0f13">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Onlyfab | Gestion du stock</title>
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#6c47ff">
+  <meta name="theme-color" content="#0f0f13">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -29,11 +29,13 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html, body { background: var(--bg); }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
     }
 
     /* HEADER */
@@ -1873,14 +1875,58 @@
     }
 
     /* RESPONSIVE */
+    @media (max-width: 768px) {
+      header { padding: 0 12px; height: 56px; gap: 6px; }
+      .logo svg { width: 24px; height: 24px; }
+      .logo > div > div:first-child { font-size: 0.95rem; }
+      .header-actions { gap: 4px; flex-wrap: nowrap; }
+      .btn-icon-header { width: 34px; height: 34px; }
+      .btn-icon-header svg { width: 16px; height: 16px; }
+      #userDisplay { display: none; }
+      #appVersion { display: none !important; }
+      main { padding: 16px 12px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+      .filters { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+      .filter-divider { display: none; }
+      .search-wrap { flex: 1 1 100%; }
+      #searchInput { width: 100% !important; }
+      .tab-bar { padding: 0 12px; top: 56px; overflow-x: auto; }
+      .tab-btn { padding: 0 12px; font-size: 0.82rem; height: 42px; }
+    }
+
     @media (max-width: 480px) {
       .form-row { grid-template-columns: 1fr; }
       .detail-meta { grid-template-columns: 1fr; }
-      main { padding: 16px 12px; }
-      .modal-body { padding: 16px; }
-      .modal-header { padding: 16px; }
+      main { padding: 14px 10px; }
+      .modal-overlay { padding: 8px; }
+      .modal { max-height: 94vh; border-radius: 14px; }
+      .modal-body { padding: 14px; }
+      .modal-header { padding: 14px; }
+      .modal-title { font-size: 1rem; }
       .history-panel { width: 100vw; }
-      .variant-row { grid-template-columns: 36px 1fr 30px 60px 30px 28px; gap: 4px; }
+      .variant-row { grid-template-columns: 32px 1fr 28px 56px 28px 26px; gap: 3px; }
+      .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .card-body { padding: 10px; }
+      .card-name { font-size: 0.95rem; }
+      .card-desc { font-size: 0.75rem; }
+      .card-img, .card-img-placeholder { aspect-ratio: 1 / 1; }
+      .fab { bottom: 16px; right: 16px; width: 52px; height: 52px; }
+      .print-job-card { padding: 10px; }
+      .print-job-name { font-size: 0.9rem; }
+      .print-job-actions { flex-wrap: wrap; gap: 6px; }
+      .print-job-actions button { flex: 1 1 calc(50% - 3px); min-width: 0; }
+    }
+
+    @media (max-width: 360px) {
+      .grid { grid-template-columns: 1fr; }
+      .btn-icon-header { width: 32px; height: 32px; }
+      .btn-icon-header svg { width: 15px; height: 15px; }
+    }
+
+    /* iOS safe-area for notch / home indicator */
+    @supports (padding: env(safe-area-inset-bottom)) {
+      body { padding-bottom: env(safe-area-inset-bottom); }
+      .fab { bottom: calc(24px + env(safe-area-inset-bottom)); }
     }
   </style>
 </head>
@@ -1945,6 +1991,18 @@
       </svg>
     </button>
     <span id="userDisplay" style="font-size:0.75rem;color:var(--text-muted);margin:0 8px;align-self:center;"></span>
+    <button class="btn-icon-header" id="adminBtn" onclick="openAdminModal()" title="Panel administrateur" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3z"/>
+        <path d="M9 12l2 2 4-4"/>
+      </svg>
+    </button>
+    <button class="btn-icon-header" onclick="openProfileModal()" title="Mon compte">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="8" r="4"/>
+        <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
+      </svg>
+    </button>
     <button class="btn-icon-header" onclick="logout()" title="Se déconnecter">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -2474,24 +2532,313 @@
   </div>
 </div>
 
+<!-- PROFILE MODAL -->
+<div class="modal-overlay" id="profileModal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title">Mon compte</div>
+      <button class="close-btn" onclick="closeProfileModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="profileError" style="display:none;background:rgba(255,71,87,.1);border:1px solid rgba(255,71,87,.3);color:var(--danger);padding:10px 12px;border-radius:8px;font-size:0.85rem;margin-bottom:14px"></div>
+      <div id="profileSuccess" style="display:none;background:rgba(0,212,170,.1);border:1px solid rgba(0,212,170,.3);color:var(--accent);padding:10px 12px;border-radius:8px;font-size:0.85rem;margin-bottom:14px"></div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+          <div id="profStatItems" style="font-size:1.4rem;font-weight:800;color:var(--primary)">—</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Articles</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+          <div id="profStatPrints" style="font-size:1.4rem;font-weight:800;color:var(--primary)">—</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Impressions</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+          <div id="profStatPlan" style="font-size:1rem;font-weight:800;color:var(--accent);text-transform:uppercase">—</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Plan</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Informations</h3>
+      <form id="profileInfoForm" onsubmit="saveProfileInfo(event)">
+        <div class="form-group">
+          <label>Nom / pseudo</label>
+          <input type="text" id="profileName" placeholder="Votre nom">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="profileEmail" required>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 14px">
+          Compte créé le <span id="profileCreatedAt">—</span> · Dernière connexion <span id="profileLastLogin">—</span>
+        </div>
+        <button type="submit" class="btn-primary" style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:0.9rem;font-weight:700;cursor:pointer;width:100%">Enregistrer</button>
+      </form>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:22px 0">
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Changer le mot de passe</h3>
+      <form id="profilePwForm" onsubmit="saveProfilePassword(event)">
+        <div class="form-group">
+          <label>Mot de passe actuel</label>
+          <input type="password" id="profileCurrentPw" required autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label>Nouveau mot de passe (8 caractères min)</label>
+          <input type="password" id="profileNewPw" required minlength="8" autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn-primary" style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:0.9rem;font-weight:700;cursor:pointer;width:100%">Mettre à jour</button>
+      </form>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:22px 0">
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--danger);margin-bottom:10px">Zone dangereuse</h3>
+      <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px">
+        Supprimer votre compte effacera <strong>définitivement</strong> tous vos articles, catégories, impressions et historique.
+      </p>
+      <button type="button" onclick="deleteAccountFlow()" style="background:transparent;color:var(--danger);border:1px solid var(--danger);border-radius:10px;padding:10px 14px;font-size:0.85rem;font-weight:600;cursor:pointer;width:100%">
+        Supprimer mon compte
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN MODAL -->
+<div class="modal-overlay" id="adminModal">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-header">
+      <div class="modal-title">Administration</div>
+      <button class="close-btn" onclick="closeAdminModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="adminStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:18px"></div>
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Utilisateurs</h3>
+      <div id="adminUsers" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
 <script>
   // ── AUTH ──────────────────────────────────────────────────────────────────
-  // Vérifier l'auth au démarrage
+  // Note : si on est ici, le serveur a déjà validé la session (sinon il aurait
+  // renvoyé un 302 vers /). On affiche donc l'app immédiatement et on récupère
+  // les infos utilisateur en arrière-plan, pour éviter tout flash visuel.
   (async () => {
-    const r = await fetch('/api/auth/me').then(r=>r.json()).catch(()=>({user:null}));
-    if (!r.user) { window.location.href = '/'; return; }
+    let r;
+    try {
+      r = await fetch('/api/auth/me', { credentials: 'same-origin' }).then(r => r.json());
+    } catch { return; }
+    if (!r || !r.user) {
+      // Cas rare : la session vient d'expirer entre le rendu HTML et ce fetch.
+      window.location.replace('/');
+      return;
+    }
     window.currentUser = r.user;
-    // Afficher le nom de l'utilisateur
     const userEl = document.getElementById('userDisplay');
     if (userEl) userEl.textContent = r.user.name || r.user.email;
+    if (r.user.is_admin) {
+      const btn = document.getElementById('adminBtn');
+      if (btn) btn.style.display = '';
+    }
   })();
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.href = '/';
+  }
+
+  // ── PROFILE MODAL ─────────────────────────────────────────────────────────
+  function showProfMsg(elId, msg) {
+    const el = document.getElementById(elId);
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+  function clearProfMsgs() {
+    showProfMsg('profileError', '');
+    showProfMsg('profileSuccess', '');
+  }
+  async function openProfileModal() {
+    clearProfMsgs();
+    document.getElementById('profileModal').classList.add('open');
+    try {
+      const r = await fetch('/api/profile').then(r => r.json());
+      if (r.user) {
+        document.getElementById('profileName').value  = r.user.name || '';
+        document.getElementById('profileEmail').value = r.user.email || '';
+        document.getElementById('profStatItems').textContent  = r.stats?.items ?? 0;
+        document.getElementById('profStatPrints').textContent = r.stats?.prints ?? 0;
+        document.getElementById('profStatPlan').textContent   = r.user.plan || 'beta';
+        document.getElementById('profileCreatedAt').textContent =
+          r.user.created_at ? new Date(r.user.created_at).toLocaleDateString('fr-FR') : '—';
+        document.getElementById('profileLastLogin').textContent =
+          r.user.last_login ? new Date(r.user.last_login).toLocaleString('fr-FR') : 'jamais';
+      }
+    } catch { showProfMsg('profileError', 'Impossible de charger le profil.'); }
+  }
+  function closeProfileModal() {
+    document.getElementById('profileModal').classList.remove('open');
+  }
+  async function saveProfileInfo(e) {
+    e.preventDefault();
+    clearProfMsgs();
+    const name  = document.getElementById('profileName').value.trim();
+    const email = document.getElementById('profileEmail').value.trim();
+    try {
+      const r = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+      const data = await r.json();
+      if (!r.ok) { showProfMsg('profileError', data.error || 'Erreur'); return; }
+      showProfMsg('profileSuccess', 'Informations mises à jour.');
+      // Met à jour le nom dans la navbar
+      const userEl = document.getElementById('userDisplay');
+      if (userEl) userEl.textContent = name || email;
+    } catch { showProfMsg('profileError', 'Erreur réseau.'); }
+  }
+  async function saveProfilePassword(e) {
+    e.preventDefault();
+    clearProfMsgs();
+    const currentPassword = document.getElementById('profileCurrentPw').value;
+    const newPassword     = document.getElementById('profileNewPw').value;
+    if (newPassword.length < 8) { showProfMsg('profileError', 'Mot de passe trop court (8 min).'); return; }
+    try {
+      const r = await fetch('/api/profile/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await r.json();
+      if (!r.ok) { showProfMsg('profileError', data.error || 'Erreur'); return; }
+      showProfMsg('profileSuccess', 'Mot de passe modifié. Les autres sessions ont été déconnectées.');
+      document.getElementById('profilePwForm').reset();
+    } catch { showProfMsg('profileError', 'Erreur réseau.'); }
+  }
+  async function deleteAccountFlow() {
+    const ok = confirm('Êtes-vous sûr ? Cette action est IRRÉVERSIBLE.');
+    if (!ok) return;
+    const pw = prompt('Confirmez avec votre mot de passe actuel :');
+    if (!pw) return;
+    try {
+      const r = await fetch('/api/profile', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await r.json();
+      if (!r.ok) { showProfMsg('profileError', data.error || 'Erreur'); return; }
+      window.location.href = '/';
+    } catch { showProfMsg('profileError', 'Erreur réseau.'); }
+  }
+
+  // ── ADMIN PANEL ───────────────────────────────────────────────────────────
+  async function openAdminModal() {
+    document.getElementById('adminModal').classList.add('open');
+    await refreshAdminPanel();
+  }
+  function closeAdminModal() {
+    document.getElementById('adminModal').classList.remove('open');
+  }
+  function escAttr(s) { return String(s ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+  async function refreshAdminPanel() {
+    try {
+      const [stats, users] = await Promise.all([
+        fetch('/api/admin/stats').then(r => r.json()),
+        fetch('/api/admin/users').then(r => r.json()),
+      ]);
+      const statsEl = document.getElementById('adminStats');
+      const cards = [
+        ['Utilisateurs', stats.users],
+        ['Inscrits 7j',  stats.users_7d],
+        ['Inscrits 30j', stats.users_30d],
+        ['Actifs 24h',   stats.active_24h],
+        ['Actifs 7j',    stats.active_7d],
+        ['Articles',     stats.items_total],
+        ['Impressions',  stats.prints_total],
+        ['Bambu live',   stats.bambu_connected],
+      ];
+      statsEl.innerHTML = cards.map(([label, val]) => `
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;color:var(--primary)">${val ?? 0}</div>
+          <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">${label}</div>
+        </div>
+      `).join('');
+
+      const usersEl = document.getElementById('adminUsers');
+      if (!Array.isArray(users) || !users.length) {
+        usersEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px">Aucun utilisateur</div>';
+        return;
+      }
+      usersEl.innerHTML = users.map(u => {
+        const created = u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '—';
+        const lastLog = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR') : 'jamais';
+        return `
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+          <div style="flex:1;min-width:180px">
+            <div style="font-weight:700;font-size:0.92rem;display:flex;align-items:center;gap:6px">
+              ${escHtml(u.name || u.email)}
+              ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px;letter-spacing:0.04em">ADMIN</span>' : ''}
+              ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.6rem;padding:2px 6px;border-radius:4px">BAMBU</span>' : ''}
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted)">${escHtml(u.email)}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px">
+              ${u.items_count} articles · ${u.prints_count} impressions · inscrit ${created} · vu ${lastLog}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <select onchange="adminSetPlan('${escAttr(u.id)}', this.value)" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 6px;font-size:0.75rem">
+              <option value="beta"${u.plan==='beta'?' selected':''}>beta</option>
+              <option value="free"${u.plan==='free'?' selected':''}>free</option>
+              <option value="pro"${u.plan==='pro'?' selected':''}>pro</option>
+              <option value="studio"${u.plan==='studio'?' selected':''}>studio</option>
+            </select>
+            <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin})" title="${u.is_admin?'Retirer admin':'Promouvoir admin'}" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:0.72rem;cursor:pointer">
+              ${u.is_admin ? '↓ user' : '↑ admin'}
+            </button>
+            <button onclick="adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" title="Supprimer" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:4px 8px;font-size:0.72rem;cursor:pointer">✕</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      document.getElementById('adminUsers').innerHTML =
+        '<div style="color:var(--danger);padding:12px">Erreur de chargement : ' + (e.message || e) + '</div>';
+    }
+  }
+  async function adminSetPlan(uid, plan) {
+    await fetch('/api/admin/users/' + encodeURIComponent(uid), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    });
+    await refreshAdminPanel();
+  }
+  async function adminToggleAdmin(uid, makeAdmin) {
+    const r = await fetch('/api/admin/users/' + encodeURIComponent(uid), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_admin: makeAdmin }),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      alert(data.error || 'Erreur');
+    }
+    await refreshAdminPanel();
+  }
+  async function adminDeleteUser(uid, email) {
+    if (!confirm('Supprimer définitivement ' + email + ' ? Toutes ses données seront effacées.')) return;
+    const r = await fetch('/api/admin/users/' + encodeURIComponent(uid), { method: 'DELETE' });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      alert(data.error || 'Erreur');
+    }
+    await refreshAdminPanel();
   }
 
   // ── API ───────────────────────────────────────────────────────────────────
