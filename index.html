@@ -120,12 +120,17 @@
       max-width: 1200px;
       margin: 0 auto;
       padding: 24px 16px;
-      /* Hauteur minimale stable entre les deux onglets : évite que la barre
-         d'URL mobile se replie/déplie quand la page passe d'une vue longue
-         (Stock) à une vue courte (Validate), ce qui génère un flash visuel. */
-      min-height: calc(100vh - 60px - 44px);
+      /* Hauteur stable entre les onglets : on utilise 100dvh (dynamic viewport
+         height) pour que la min-height suive la barre d'URL mobile (qui
+         s'affiche/se replie selon le scroll). 100vh laissait du blanc en bas
+         quand la barre d'URL apparaissait après un swap d'onglet. */
+      min-height: calc(100vh - 60px - 44px); /* fallback navigateurs anciens */
+      min-height: calc(100dvh - 60px - 44px);
     }
     #stockView, #validateView { min-height: inherit; }
+    /* Empêche Chrome Android de déclencher pull-to-refresh ou des effets
+       d'élasticité qui font apparaître la page comme "blanche". */
+    html, body { overscroll-behavior-y: contain; }
 
     /* FILTERS */
     .filters {
@@ -4781,6 +4786,12 @@
 
   function switchTab(tab) {
     currentTab = tab;
+    // IMPORTANT : on remet le scroll en haut AVANT de swapper les vues.
+    // Si l'utilisateur était scrollé en bas du Stock (page haute), basculer
+    // sur Validate (page courte) laissait scrollTop > maxScroll pendant
+    // plusieurs frames sur Chrome Android = la page devient blanche le temps
+    // que le navigateur clamp la position. Forcer 0 supprime le glitch.
+    window.scrollTo(0, 0);
     // IMPORTANT : on rend le contenu de la vue cible AVANT de la rendre
     // visible, sinon le navigateur peint d'abord une vue vide (= flash noir)
     // puis applique le innerHTML une frame plus tard.
