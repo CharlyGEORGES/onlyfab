@@ -4015,10 +4015,26 @@
     // override par un cache obsolète ou une autre règle.
     grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;width:100%';
 
-    // RENDU SIMPLE en sync : on rend TOUTES les cards d'un coup. La
-    // virtualisation est désactivée pour garantir l'affichage. On
-    // pourra la réactiver une fois fiable.
+    // RENDU SIMPLE en sync : on rend TOUTES les cards d'un coup.
     grid.innerHTML = filtered.map(buildCard).join('');
+
+    // Debug : log dans la console + petit indicateur visuel des dimensions
+    // mesurées pour diagnostiquer pourquoi le grid s'affiche en monobloc.
+    requestAnimationFrame(() => {
+      const main = document.querySelector('main');
+      const mainInner = document.querySelector('.main-inner');
+      const cs = getComputedStyle(grid);
+      const info = `viewport=${window.innerWidth}px main=${main?.clientWidth||'?'}px main-inner=${mainInner?.clientWidth||'?'}px grid=${grid.clientWidth}px display=${cs.display} cols=${cs.gridTemplateColumns}`;
+      console.log('[GRID DEBUG]', info);
+      let badge = document.getElementById('_gridDebug');
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.id = '_gridDebug';
+        badge.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f00;color:#fff;font:11px monospace;padding:4px 8px;z-index:9999;text-align:center';
+        document.body.appendChild(badge);
+      }
+      badge.textContent = info;
+    });
   }
 
   // ── VIRTUALISATION : état + helpers ────────────────────────────────────
