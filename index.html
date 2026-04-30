@@ -3091,12 +3091,19 @@
 
   // Frame drops via rAF : capture les flashes/freezes invisibles aux
   // autres events. Si on saute > 100ms entre 2 frames, c'est un drop.
+  // Note : Chrome Android THROTTLE le rAF quand la page est "partially
+  // visible" (économie batterie). On marque (hidden|throttled) pour
+  // distinguer un vrai flash d'un simple throttle d'idle.
   let _lastFrame = performance.now();
+  let _rafCount = 0;
   function _rafCheck() {
     const now = performance.now();
     const delta = now - _lastFrame;
+    _rafCount++;
     if (delta > 100) {
-      log(`FRAME DROP ${delta.toFixed(0)}ms`, '#f0f');
+      const tag = document.hidden ? ' [hidden→throttle]' :
+                  delta > 500     ? ' [BIG]' : '';
+      log(`FRAME DROP ${delta.toFixed(0)}ms${tag}`, '#f0f');
     }
     _lastFrame = now;
     requestAnimationFrame(_rafCheck);
