@@ -120,17 +120,33 @@
       max-width: 1200px;
       margin: 0 auto;
       padding: 24px 16px;
-      /* Hauteur stable entre les onglets : on utilise 100dvh (dynamic viewport
-         height) pour que la min-height suive la barre d'URL mobile (qui
-         s'affiche/se replie selon le scroll). 100vh laissait du blanc en bas
-         quand la barre d'URL apparaissait après un swap d'onglet. */
-      min-height: calc(100vh - 60px - 44px); /* fallback navigateurs anciens */
-      min-height: calc(100dvh - 60px - 44px);
+      /* Hauteur stable peu importe l'état de la barre d'URL Chrome Android
+         (svh = small viewport height = fixe à la plus petite valeur). Évite
+         que le document change de taille pendant un switch d'onglet, ce qui
+         causait des moments où scrollTop > maxScroll = écran blanc. */
+      min-height: calc(100vh - 60px - 44px); /* fallback */
+      min-height: calc(100svh - 60px - 44px);
+      position: relative;
     }
-    #stockView, #validateView { min-height: inherit; }
+    /* Les 2 onglets sont toujours montés ; on bascule via .tab-active
+       sans jamais utiliser display:none → plus de glitch de paint
+       au moment du swap. */
+    #stockView, #validateView {
+      min-height: inherit;
+    }
+    #stockView:not(.tab-active),
+    #validateView:not(.tab-active) {
+      /* Hors flux pour ne pas occuper de place ni créer de scroll inutile,
+         mais sans display:none qui causait un glitch de re-layout. */
+      position: absolute;
+      inset: 0;
+      visibility: hidden;
+      pointer-events: none;
+      contain: strict;
+    }
     /* Empêche Chrome Android de déclencher pull-to-refresh ou des effets
        d'élasticité qui font apparaître la page comme "blanche". */
-    html, body { overscroll-behavior-y: contain; }
+    html, body { overscroll-behavior-y: none; }
 
     /* FILTERS */
     .filters {
@@ -2163,7 +2179,7 @@
 <!-- MAIN -->
 <main>
   <!-- VUE STOCK -->
-  <div id="stockView">
+  <div id="stockView" class="tab-active">
     <div class="filters" id="filtersBar">
       <div class="filter-field">
         <div class="filter-field-icon">
@@ -2188,7 +2204,7 @@
   </div>
 
   <!-- VUE À VALIDER -->
-  <div id="validateView" style="display:none">
+  <div id="validateView">
     <div id="bambuStatusPill"></div>
     <div id="printJobsList"></div>
   </div>
@@ -4994,24 +5010,32 @@
 
   function switchTab(tab) {
     currentTab = tab;
-    // IMPORTANT : on remet le scroll en haut AVANT de swapper les vues.
-    // Si l'utilisateur était scrollé en bas du Stock (page haute), basculer
-    // sur Validate (page courte) laissait scrollTop > maxScroll pendant
-    // plusieurs frames sur Chrome Android = la page devient blanche le temps
-    // que le navigateur clamp la position. Forcer 0 supprime le glitch.
-    window.scrollTo(0, 0);
-    // IMPORTANT : on rend le contenu de la vue cible AVANT de la rendre
-    // visible, sinon le navigateur peint d'abord une vue vide (= flash noir)
-    // puis applique le innerHTML une frame plus tard.
+    // Pré-remplir le contenu de la vue cible avant le swap visuel.
     if (tab === 'validate') renderPrintJobs();
+
+    // Stratégie sans display:none : on bascule la classe .tab-active.
+    // L'onglet inactif passe en position:absolute + visibility:hidden
+    // (côté CSS) → toujours dans le DOM mais sans gêner le layout. Ça
+    // élimine le re-layout massif qui causait des écrans noirs sur
+    // Chrome Android quand on remplaçait display:none↔block sur des
+    // vues de hauteurs très différentes (Stock long ↔ Validate court).
+    const stockView    = document.getElementById('stockView');
+    const validateView = document.getElementById('validateView');
+    stockView.classList.toggle('tab-active',    tab === 'stock');
+    validateView.classList.toggle('tab-active', tab === 'validate');
+
     document.getElementById('tab-stock').classList.toggle('active', tab === 'stock');
     document.getElementById('tab-validate').classList.toggle('active', tab === 'validate');
-    document.getElementById('stockView').style.display    = tab === 'stock'    ? '' : 'none';
-    document.getElementById('validateView').style.display = tab === 'validate' ? '' : 'none';
-    document.getElementById('fabBtn').style.display       = tab === 'stock'    ? '' : 'none';
-    // Mode inventaire disponible seulement sur l'onglet stock
+    document.getElementById('fabBtn').style.display = tab === 'stock' ? '' : 'none';
     if (tab !== 'stock' && inventoryMode) toggleInventoryMode();
     document.getElementById('inventoryModeBtn').style.display = tab === 'stock' ? '' : 'none';
+
+    // Force la position de scroll au top APRÈS le swap (sur la frame
+    // suivante pour laisser le layout se stabiliser).
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+    });
   }
 
   // ── BAMBU ─────────────────────────────────────────────────────────────────
