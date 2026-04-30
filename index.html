@@ -224,6 +224,29 @@
       gap: 16px;
     }
 
+    /* SKELETON LOADER (visible avant que /api/items ne réponde) */
+    .skeleton-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      height: 280px;
+      position: relative;
+      overflow: hidden;
+    }
+    .skeleton-card::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(108,71,255,0.05) 50%,
+        transparent 100%);
+      animation: skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes skeleton-shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
     /* CARD */
     .card {
       background: var(--surface);
@@ -2060,7 +2083,14 @@
         <input id="searchInput" type="text" placeholder="Rechercher un objet...">
       </div>
     </div>
-    <div class="grid" id="grid"></div>
+    <div class="grid" id="grid">
+      <!-- Skeleton loader affiché tant que /api/items n'a pas répondu : évite
+           que la grille soit vide (= grand espace noir perçu comme un flash). -->
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
   </div>
 
   <!-- VUE À VALIDER -->
@@ -2920,19 +2950,25 @@
 
   // ── DATA ──────────────────────────────────────────────────────────────────
   async function loadData() {
-    if (USE_SERVER) {
-      [items, categories] = await Promise.all([
-        api('GET', '/api/items'),
-        api('GET', '/api/categories'),
-      ]);
-    } else {
-      const stored = await idbGet('items');
-      if (Array.isArray(stored)) items = stored;
-      const cats = await idbGet('categories');
-      if (Array.isArray(cats)) categories = cats;
+    try {
+      if (USE_SERVER) {
+        [items, categories] = await Promise.all([
+          api('GET', '/api/items'),
+          api('GET', '/api/categories'),
+        ]);
+      } else {
+        const stored = await idbGet('items');
+        if (Array.isArray(stored)) items = stored;
+        const cats = await idbGet('categories');
+        if (Array.isArray(cats)) categories = cats;
+      }
+    } catch (e) {
+      console.error('[loadData]', e);
+      items = items || [];
+      categories = categories || [];
     }
     refreshCategorySelects();
-    render();
+    render(); // remplace le skeleton, même si fetch a échoué
   }
 
   async function opCreate(item) {
