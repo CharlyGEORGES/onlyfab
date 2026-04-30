@@ -4009,8 +4009,11 @@
       return;
     }
 
-    if (inventoryMode) { grid.className = ''; renderInventory(filtered, grid); return; }
+    if (inventoryMode) { grid.className = ''; grid.style.cssText = ''; renderInventory(filtered, grid); return; }
     grid.className = 'grid';
+    // Inline style pour garantir le grid layout même si la CSS class était
+    // override par un cache obsolète ou une autre règle.
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;width:100%';
 
     // RENDU SIMPLE en sync : on rend TOUTES les cards d'un coup. La
     // virtualisation est désactivée pour garantir l'affichage. On
