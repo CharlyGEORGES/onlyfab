@@ -1,6 +1,6 @@
 {
   "name": "onlyfab",
-  "version": "1.0.44",
+  "version": "1.0.45",
   "main": "server.js",
   "engines": {
     "node": ">=18.0.0"
