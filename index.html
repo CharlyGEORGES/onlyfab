@@ -2912,6 +2912,37 @@
     }
   }, true);
 
+  // Track tous les éléments qui s'affichent/disparaissent (popups, toasts, modales)
+  setTimeout(() => {
+    const candidates = [
+      'printPopup', 'toast', 'historyPanel', 'historyOverlay',
+      'formModal', 'detailModal', 'categoriesModal', 'bambuSetupModal',
+      'bambuHistoryModal', 'profileModal', 'adminModal',
+      'bambuStatusPill', 'tabBadge'
+    ];
+    candidates.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const obs = new MutationObserver(muts => {
+        for (const m of muts) {
+          if (m.attributeName === 'class' || m.attributeName === 'style') {
+            const visible = el.offsetParent !== null && el.offsetWidth > 0 && el.offsetHeight > 0;
+            log(`#${id} → ${visible ? 'VISIBLE' : 'hidden'} (${m.attributeName})`, visible ? '#f0f' : '#666');
+          }
+        }
+      });
+      obs.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+    });
+  }, 200);
+
+  // Track les changements de body.class (au cas où)
+  const bodyMo = new MutationObserver(muts => {
+    for (const m of muts) {
+      if (m.attributeName === 'class') log(`body class: ${document.body.className}`, '#fa0');
+    }
+  });
+  bodyMo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
   log('debug overlay ON', '#0f0');
 })();
 </script>
