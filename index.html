@@ -29,12 +29,19 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body { background: var(--bg); }
+    html, body { background: var(--bg); height: 100%; }
 
+    /* Architecture "viewport fixe" : body = flex column figé à 100% de
+       hauteur, main = seul container scrollable. Comme ça la barre
+       d'URL Chrome mobile ne bouge JAMAIS (elle ne bouge qu'en réponse
+       au scroll body), donc plus aucun layout shift / flash quand on
+       scrolle. C'est le même pattern que Twitter / Instagram / Notion. */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       color: var(--text);
-      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       -webkit-tap-highlight-color: transparent;
     }
 
@@ -43,8 +50,7 @@
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       padding: 0 20px;
-      position: sticky;
-      top: 0;
+      flex-shrink: 0;
       z-index: 100;
       display: flex;
       align-items: center;
@@ -115,37 +121,28 @@
       #searchInput { width: 130px; }
     }
 
-    /* MAIN */
+    /* MAIN — le SEUL container scrollable de l'app (pas le body).
+       Permet à la barre d'URL Chrome de rester fixe peu importe le scroll. */
     main {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      position: relative;
+    }
+    .main-inner {
       max-width: 1200px;
       margin: 0 auto;
       padding: 24px 16px;
-      /* Hauteur stable peu importe l'état de la barre d'URL Chrome Android
-         (svh = small viewport height = fixe à la plus petite valeur). Évite
-         que le document change de taille pendant un switch d'onglet, ce qui
-         causait des moments où scrollTop > maxScroll = écran blanc. */
-      min-height: calc(100vh - 60px - 44px); /* fallback */
-      min-height: calc(100svh - 60px - 44px);
-      position: relative;
     }
     /* Les 2 onglets sont toujours montés ; on bascule via .tab-active
        sans jamais utiliser display:none → plus de glitch de paint
        au moment du swap. */
-    #stockView, #validateView {
-      min-height: inherit;
-    }
     #stockView:not(.tab-active),
     #validateView:not(.tab-active) {
-      /* Hors flux pour ne pas occuper de place ni créer de scroll inutile,
-         mais sans display:none qui causait un glitch de re-layout. */
-      position: absolute;
-      inset: 0;
-      visibility: hidden;
-      pointer-events: none;
+      display: none;
     }
-    /* Empêche Chrome Android de déclencher pull-to-refresh ou des effets
-       d'élasticité qui font apparaître la page comme "blanche". */
-    html, body { overscroll-behavior-y: none; }
 
     /* FILTERS */
     .filters {
@@ -1653,8 +1650,7 @@
       align-items: center;
       padding: 0 20px;
       gap: 4px;
-      position: sticky;
-      top: 60px;
+      flex-shrink: 0;
       z-index: 90;
     }
 
@@ -1929,7 +1925,7 @@
       .btn-icon-header svg { width: 16px; height: 16px; }
       #userDisplay { display: none; }
       #appVersion { display: none !important; }
-      main { padding: 16px 12px; }
+      .main-inner { padding: 16px 12px; }
       .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
       .filters { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
       .filter-divider { display: none; }
@@ -1942,7 +1938,7 @@
     @media (max-width: 480px) {
       .form-row { grid-template-columns: 1fr; }
       .detail-meta { grid-template-columns: 1fr; }
-      main { padding: 14px 10px; }
+      .main-inner { padding: 14px 10px; }
 
       /* Modale en quasi plein écran sur mobile pour gagner de la place
          et éviter les compressions d'éléments. */
@@ -2184,35 +2180,37 @@
 
 <!-- MAIN -->
 <main>
-  <!-- VUE STOCK -->
-  <div id="stockView" class="tab-active">
-    <div class="filters" id="filtersBar">
-      <div class="filter-field">
-        <div class="filter-field-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 6h16M7 12h10M10 18h4"/>
-          </svg>
+  <div class="main-inner">
+    <!-- VUE STOCK -->
+    <div id="stockView" class="tab-active">
+      <div class="filters" id="filtersBar">
+        <div class="filter-field">
+          <div class="filter-field-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M7 12h10M10 18h4"/>
+            </svg>
+          </div>
+          <span class="filter-label">Catégorie</span>
+          <select class="filter-select" id="categoryFilter">
+            <option value="">Toutes</option>
+          </select>
         </div>
-        <span class="filter-label">Catégorie</span>
-        <select class="filter-select" id="categoryFilter">
-          <option value="">Toutes</option>
-        </select>
+        <div class="filter-divider"></div>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input id="searchInput" type="text" placeholder="Rechercher un objet...">
+        </div>
       </div>
-      <div class="filter-divider"></div>
-      <div class="search-wrap">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-        <input id="searchInput" type="text" placeholder="Rechercher un objet...">
-      </div>
+      <div class="grid" id="grid"></div>
     </div>
-    <div class="grid" id="grid"></div>
-  </div>
 
-  <!-- VUE À VALIDER -->
-  <div id="validateView">
-    <div id="bambuStatusPill"></div>
-    <div id="printJobsList"></div>
+    <!-- VUE À VALIDER -->
+    <div id="validateView">
+      <div id="bambuStatusPill"></div>
+      <div id="printJobsList"></div>
+    </div>
   </div>
 </main>
 
@@ -5036,12 +5034,9 @@
     if (tab !== 'stock' && inventoryMode) toggleInventoryMode();
     document.getElementById('inventoryModeBtn').style.display = tab === 'stock' ? '' : 'none';
 
-    // Force la position de scroll au top APRÈS le swap (sur la frame
-    // suivante pour laisser le layout se stabiliser).
-    requestAnimationFrame(() => {
-      window.scrollTo(0, 0);
-      document.documentElement.scrollTop = 0;
-    });
+    // Reset scroll dans le container scrollable (main, plus le window).
+    const m = document.querySelector('main');
+    if (m) m.scrollTop = 0;
   }
 
   // ── BAMBU ─────────────────────────────────────────────────────────────────
