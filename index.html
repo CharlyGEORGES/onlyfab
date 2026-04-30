@@ -5154,7 +5154,16 @@
   // ── ONGLETS ───────────────────────────────────────────────────────────────
   let currentTab = 'stock';
 
+  // Mémorise la position de scroll de chaque onglet pour éviter le saut
+  // visuel violent qu'on avait quand on forçait scrollTop=0 au switch.
+  const _tabScroll = { stock: 0, validate: 0 };
+
   function switchTab(tab) {
+    const main = document.querySelector('main');
+    // Sauvegarde le scroll de l'onglet courant AVANT de switcher.
+    if (main && currentTab && currentTab !== tab) {
+      _tabScroll[currentTab] = main.scrollTop;
+    }
     currentTab = tab;
     // Pré-remplir le contenu de la vue cible avant le swap visuel.
     if (tab === 'validate') renderPrintJobs();
@@ -5176,9 +5185,8 @@
     if (tab !== 'stock' && inventoryMode) toggleInventoryMode();
     document.getElementById('inventoryModeBtn').style.display = tab === 'stock' ? '' : 'none';
 
-    // Reset scroll dans le container scrollable (main, plus le window).
-    const m = document.querySelector('main');
-    if (m) m.scrollTop = 0;
+    // Restaure la position de scroll de l'onglet cible (pas de saut violent).
+    if (main) main.scrollTop = _tabScroll[tab] || 0;
   }
 
   // ── BAMBU ─────────────────────────────────────────────────────────────────
