@@ -4057,9 +4057,16 @@
   function _virtCols() {
     const grid = document.getElementById('grid');
     if (!grid) return 1;
-    const cs = getComputedStyle(grid);
-    const tpl = cs.gridTemplateColumns;
-    return tpl ? tpl.split(' ').filter(s => s && s !== 'none').length : 1;
+    // Méthode robuste : on calcule depuis la largeur réelle du grid + le
+    // minmax CSS, plutôt que parser gridTemplateColumns qui peut renvoyer
+    // 'none' si grid n'a pas encore display:grid effectif.
+    // Mobile @480px : repeat(2, 1fr). Sinon : minmax(260px, 1fr).
+    const w = grid.clientWidth || window.innerWidth;
+    if (window.innerWidth <= 360) return 1;
+    if (window.innerWidth <= 480) return 2;
+    // Desktop : auto-fill avec min 260px
+    const cols = Math.max(1, Math.floor((w + 16) / (260 + 16))); // +16 = gap
+    return cols;
   }
 
   function _virtRender() {
@@ -4074,7 +4081,18 @@
 
     const cardH = _virtCardHeight();
     const cols  = _virtCols();
+    // Sécurité : si quelque chose foire (cols=0/NaN, cardH=0), on bypass
+    // la virtualisation et on rend tout en sync. Mieux vaut un peu de jank
+    // qu'une page vide.
+    if (!cols || !cardH || !isFinite(cols) || !isFinite(cardH)) {
+      grid.innerHTML = items.map(buildCard).join('');
+      return;
+    }
     const totalRows = Math.ceil(items.length / cols);
+    if (!isFinite(totalRows)) {
+      grid.innerHTML = items.map(buildCard).join('');
+      return;
+    }
     const scrollTop = main.scrollTop;
     const vpH = main.clientHeight;
     const BUF = 3; // rangées de buffer pour scroll fluide
