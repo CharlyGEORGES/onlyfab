@@ -2869,6 +2869,49 @@
     return es;
   };
 
+  // Long frames (jank > 50ms = saut perceptible)
+  if ('PerformanceObserver' in window) {
+    try {
+      const po = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.duration > 50) {
+            log(`LONG TASK ${entry.duration.toFixed(0)}ms`, '#f0f');
+          }
+        }
+      });
+      po.observe({ entryTypes: ['longtask'] });
+    } catch {}
+  }
+
+  // ResizeObserver sur main pour voir les reflows du container
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        log(`main resized ${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`, '#fa0');
+      }
+    });
+    setTimeout(() => {
+      const m = document.querySelector('main');
+      if (m) ro.observe(m);
+    }, 100);
+  }
+
+  // Image loads — les images qui apparaissent peuvent causer des shifts visuels
+  document.addEventListener('load', (e) => {
+    if (e.target?.tagName === 'IMG') {
+      const src = (e.target.src || '').slice(-30);
+      log(`img loaded ${src}`, '#08f');
+    }
+  }, true);
+
+  // Animation/transition end — pour voir si une animation cause le saut
+  document.addEventListener('transitionend', (e) => {
+    if (e.target?.id || e.target?.className) {
+      const id = e.target.id ? '#'+e.target.id : '.'+(e.target.className?.toString?.() || '').slice(0,20);
+      log(`transition ${e.propertyName} on ${id}`, '#888');
+    }
+  }, true);
+
   log('debug overlay ON', '#0f0');
 })();
 </script>
