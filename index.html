@@ -3078,7 +3078,33 @@
       });
       po.observe({ entryTypes: ['longtask'] });
     } catch {}
+    // Layout shifts (CLS) : capture les sauts visuels causés par des
+    // éléments qui changent de position de manière imprévue.
+    try {
+      const lsObs = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.value > 0.02) {
+            log(`LAYOUT SHIFT ${entry.value.toFixed(3)}`, '#f0f');
+          }
+        }
+      });
+      lsObs.observe({ entryTypes: ['layout-shift'] });
+    } catch {}
   }
+
+  // Frame drops via rAF : capture les flashes/freezes invisibles aux
+  // autres events. Si on saute > 100ms entre 2 frames, c'est un drop.
+  let _lastFrame = performance.now();
+  function _rafCheck() {
+    const now = performance.now();
+    const delta = now - _lastFrame;
+    if (delta > 100) {
+      log(`FRAME DROP ${delta.toFixed(0)}ms`, '#f0f');
+    }
+    _lastFrame = now;
+    requestAnimationFrame(_rafCheck);
+  }
+  requestAnimationFrame(_rafCheck);
 
   // ResizeObserver sur main pour voir les reflows du container
   if ('ResizeObserver' in window) {
@@ -3094,12 +3120,26 @@
   }
 
   // Image loads — les images qui apparaissent peuvent causer des shifts visuels
+  // On track aussi les "start" via MutationObserver sur les attributs src
   document.addEventListener('load', (e) => {
     if (e.target?.tagName === 'IMG') {
       const src = (e.target.src || '').slice(-30);
       log(`img loaded ${src}`, '#08f');
     }
   }, true);
+  // Image start (src assigné) : permet de voir le moment où une image
+  // démarre son décodage, qui peut causer un flash visuel.
+  setTimeout(() => {
+    const imgObs = new MutationObserver(muts => {
+      for (const m of muts) {
+        if (m.attributeName === 'src' && m.target.tagName === 'IMG') {
+          const src = (m.target.src || '').slice(-30);
+          if (src) log(`img START ${src}`, '#06a');
+        }
+      }
+    });
+    imgObs.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['src'] });
+  }, 100);
 
   // Animation/transition end — pour voir si une animation cause le saut
   document.addEventListener('transitionend', (e) => {
@@ -3973,8 +4013,10 @@
     // Tout en un coup faisait des LONG TASKs de 250+ ms sur listes longues
     // (observées dans le debug overlay) — par batches de 4 chaque pas
     // reste sous 50 ms = imperceptible.
-    const FIRST_BATCH = 6;
-    const BATCH_SIZE  = 4;
+    // 1er batch ultra-réduit (3 cards) pour rendre TRÈS rapide la 1ʳᵉ peinture.
+    // Reste rendu en batches de 3 via rIC pour ne JAMAIS bloquer > 50ms.
+    const FIRST_BATCH = 3;
+    const BATCH_SIZE  = 3;
     grid.innerHTML = filtered.slice(0, FIRST_BATCH).map(buildCard).join('');
     _hookLazyImages(grid);
 
