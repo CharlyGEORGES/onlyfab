@@ -285,17 +285,26 @@
       overflow: hidden;
       cursor: pointer;
       position: relative;
-      /* contain: layout style — léger, isole les recalculs sans créer
-         de GPU layer par card. Avoir 'paint' faisait 30+ layers GPU
-         sur listes longues = compositor saturé sur Android moyen-bas
-         de gamme = FRAME DROPs visibles. */
-      contain: layout style;
+      /* content-visibility: auto fait skipper Chrome le rendu des cards
+         hors viewport pendant le scroll (énorme gain perf). Le navigateur
+         ne peint que les ~6 cards visibles à la fois au lieu des 30+
+         dans le DOM. Plus de flash au scroll sur Android lent.
+         contain-intrinsic-size réserve la place exacte pour les cards
+         non-rendues — scroll smooth, pas de saut. */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 320px;
+      contain: layout style paint;
     }
 
-    .card:hover {
-      transform: translateY(-3px);
-      box-shadow: var(--shadow);
-      border-color: var(--primary);
+    /* :hover seulement sur devices avec un vrai pointeur (souris).
+       Sur mobile tactile, le hover se 'colle' après un tap et déclenche
+       transform + box-shadow = layout shift = jank visible. */
+    @media (hover: hover) {
+      .card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow);
+        border-color: var(--primary);
+      }
     }
 
     .card-img {
