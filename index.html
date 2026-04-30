@@ -2774,6 +2774,105 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- DEBUG OVERLAY (activable via ?debug=1) — log temps réel des événements
+     pour diagnostiquer les sauts/flashes mobile. -->
+<div id="debugOverlay" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;max-height:35vh;overflow-y:auto;background:rgba(0,0,0,.85);color:#0f0;font:10px/1.3 monospace;padding:6px 8px;border:1px solid #0f0;border-radius:6px;z-index:99999;pointer-events:auto"></div>
+<script>
+(function() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('debug')) return;
+  const overlay = document.getElementById('debugOverlay');
+  overlay.style.display = 'block';
+  const lines = [];
+  const log = (label, color = '#0f0') => {
+    const t = new Date();
+    const ts = String(t.getMinutes()).padStart(2,'0') + ':' +
+               String(t.getSeconds()).padStart(2,'0') + '.' +
+               String(t.getMilliseconds()).padStart(3,'0');
+    lines.push(`<span style="color:#888">${ts}</span> <span style="color:${color}">${label}</span>`);
+    if (lines.length > 40) lines.shift();
+    overlay.innerHTML = lines.join('<br>');
+    overlay.scrollTop = overlay.scrollHeight;
+  };
+  window._dlog = log;
+
+  // Visibilité de la page
+  document.addEventListener('visibilitychange', () =>
+    log(`visibility: ${document.visibilityState}`, '#fc0'));
+  window.addEventListener('pageshow', (e) =>
+    log(`pageshow persisted=${e.persisted}`, '#0ff'));
+  window.addEventListener('pagehide', (e) =>
+    log(`pagehide persisted=${e.persisted}`, '#0ff'));
+  window.addEventListener('focus', () => log('window focus', '#0af'));
+  window.addEventListener('blur', () => log('window blur', '#666'));
+
+  // Resize/orientation
+  window.addEventListener('resize', () =>
+    log(`resize ${window.innerWidth}x${window.innerHeight}`, '#fa0'));
+  window.addEventListener('orientationchange', () =>
+    log('orientationchange', '#fa0'));
+
+  // Layout thrash
+  let lastScrollTop = 0;
+  const main = document.querySelector('main');
+  if (main) {
+    main.addEventListener('scroll', () => {
+      const dy = main.scrollTop - lastScrollTop;
+      if (Math.abs(dy) > 100) log(`scroll JUMP ${dy.toFixed(0)}px`, '#f00');
+      lastScrollTop = main.scrollTop;
+    }, { passive: true });
+  }
+
+  // Mutation observer sur grid + main pour voir qui mute le DOM
+  const mo = new MutationObserver(muts => {
+    let added = 0, removed = 0;
+    for (const m of muts) {
+      added += m.addedNodes.length;
+      removed += m.removedNodes.length;
+    }
+    if (added + removed > 0) {
+      const target = muts[0]?.target?.id || muts[0]?.target?.className?.toString?.()?.slice(0,30) || 'doc';
+      log(`DOM mut +${added}/-${removed} on #${target}`, '#fc0');
+    }
+  });
+  setTimeout(() => {
+    const grid = document.getElementById('grid');
+    if (grid) mo.observe(grid, { childList: true });
+    const printList = document.getElementById('printJobsList');
+    if (printList) mo.observe(printList, { childList: true });
+    const stockView = document.getElementById('stockView');
+    if (stockView) mo.observe(stockView, { attributes: true, attributeFilter: ['class', 'style'] });
+    const validateView = document.getElementById('validateView');
+    if (validateView) mo.observe(validateView, { attributes: true, attributeFilter: ['class', 'style'] });
+  }, 500);
+
+  // Hook fetch pour voir les requêtes
+  const origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    const u = typeof url === 'string' ? url : url?.url || '?';
+    log(`fetch ${(opts?.method||'GET')} ${u.replace(location.origin,'')}`, '#0aa');
+    return origFetch.apply(this, arguments);
+  };
+
+  // Hook EventSource pour voir les événements SSE
+  const origES = window.EventSource;
+  window.EventSource = function(url) {
+    const es = new origES(url);
+    es.addEventListener('error', () => log('SSE error', '#f00'));
+    const origAdd = es.addEventListener;
+    es.addEventListener = function(ev, cb) {
+      return origAdd.call(this, ev, function(e) {
+        log(`SSE ${ev}`, '#0ff');
+        return cb.apply(this, arguments);
+      });
+    };
+    return es;
+  };
+
+  log('debug overlay ON', '#0f0');
+})();
+</script>
+
 <!-- Données utilisateur + items + catégories injectées par le serveur pour
      éviter tout flash : au premier paint le contenu est déjà disponible,
      pas besoin d'attendre /api/items. -->
