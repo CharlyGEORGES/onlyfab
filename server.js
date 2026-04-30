@@ -194,7 +194,6 @@ addColumnIfMissing('history',    'user_id', 'TEXT');
 addColumnIfMissing('users', 'is_admin', 'INTEGER DEFAULT 0');
 addColumnIfMissing('users', 'last_login', 'TEXT');
 
-// Premier utilisateur créé = admin par défaut (uniquement si aucun admin n'existe)
 db.exec(`
   CREATE TABLE IF NOT EXISTS password_resets (
     token      TEXT PRIMARY KEY,
@@ -204,6 +203,24 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   );
 `);
+
+// Migration : si aucun admin n'existe, promouvoir le compte le plus ancien.
+// Couvre les utilisateurs inscrits avant la mise en place du flag is_admin.
+(function ensureFirstAdmin() {
+  const adminCount = db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_admin=1').get().c;
+  if (adminCount > 0) return;
+  const oldest = db.prepare('SELECT id, email FROM users ORDER BY created_at ASC LIMIT 1').get();
+  if (oldest) {
+    db.prepare('UPDATE users SET is_admin=1 WHERE id=?').run(oldest.id);
+    console.log(`  [Migration] Premier admin assigné : ${oldest.email}`);
+  }
+})();
+// Promotion forcée par variable d'environnement ADMIN_EMAIL (utile pour
+// reprendre la main si tu perds l'accès admin).
+if (process.env.ADMIN_EMAIL) {
+  const r = db.prepare('UPDATE users SET is_admin=1 WHERE email=?').run(process.env.ADMIN_EMAIL.toLowerCase());
+  if (r.changes) console.log(`  [Migration] ADMIN_EMAIL : ${process.env.ADMIN_EMAIL} promu admin`);
+}
 
 // ── DOSSIER UPLOADS ───────────────────────────────────────────────────────
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
