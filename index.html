@@ -3715,20 +3715,40 @@
     return result;
   }
 
-  // IntersectionObserver pour charger les images une par une à l'entrée
-  // dans le viewport. Évite que 8 images se décodent simultanément au
-  // démarrage (cause de LONG TASK 785ms identifié via debug overlay).
+  // ── LAZY LOAD IMAGES SÉQUENTIEL ─────────────────────────────────────────
+  // L'IntersectionObserver détecte les images qui entrent dans le viewport,
+  // mais on les charge UNE PAR UNE pour ne jamais saturer le décodeur image
+  // mobile (= LONG TASK observée à 160ms quand 4 images se décodaient en
+  // parallèle). La suivante démarre seulement quand la précédente a fini.
+  const _imgQueue = [];
+  let _imgLoading = 0;
+  const MAX_PARALLEL_IMG = 1; // 1 = vraiment séquentiel = zéro jank
+
+  function _processImgQueue() {
+    while (_imgLoading < MAX_PARALLEL_IMG && _imgQueue.length) {
+      const img = _imgQueue.shift();
+      if (!img.dataset.src || img.src) continue;
+      const src = img.dataset.src;
+      img.removeAttribute('data-src');
+      _imgLoading++;
+      const done = () => { _imgLoading--; _processImgQueue(); };
+      img.addEventListener('load',  done, { once: true });
+      img.addEventListener('error', done, { once: true });
+      img.src = src;
+    }
+  }
+
   const _imgIO = ('IntersectionObserver' in window) ? new IntersectionObserver(entries => {
+    let queued = 0;
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
       const img = entry.target;
-      const src = img.dataset.src;
-      if (src && !img.src) {
-        img.src = src;
-        img.removeAttribute('data-src');
-      }
+      if (!img.dataset.src) { _imgIO.unobserve(img); continue; }
+      _imgQueue.push(img);
       _imgIO.unobserve(img);
+      queued++;
     }
+    if (queued) _processImgQueue();
   }, { rootMargin: '200px' }) : null;
 
   function _hookLazyImages(container) {
