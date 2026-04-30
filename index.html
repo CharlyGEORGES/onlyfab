@@ -142,7 +142,6 @@
       inset: 0;
       visibility: hidden;
       pointer-events: none;
-      contain: strict;
     }
     /* Empêche Chrome Android de déclencher pull-to-refresh ou des effets
        d'élasticité qui font apparaître la page comme "blanche". */
@@ -259,6 +258,13 @@
       transition: transform 0.2s, box-shadow 0.2s;
       cursor: pointer;
       position: relative;
+      /* content-visibility: auto saute le rendu des cards hors viewport
+         (Chrome 85+, Safari 18+). Énorme gain de performance scroll
+         quand il y a beaucoup d'items, supprime le jank/flash sur mobile.
+         contain-intrinsic-size réserve la place pour les cards non rendues
+         (estimation height pour qu'on puisse scroller sans saut). */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 360px;
     }
 
     .card:hover {
