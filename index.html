@@ -276,9 +276,7 @@
       gap: 16px;
     }
 
-    /* CARD — hauteur FIXE pour permettre la virtualisation (calcul rangée
-       précis depuis scrollTop). Les contenus longs (descriptions, listes
-       de variantes) sont tronqués proprement. */
+    /* CARD */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -287,13 +285,6 @@
       cursor: pointer;
       position: relative;
       contain: layout;
-      height: 360px;
-      display: flex;
-      flex-direction: column;
-    }
-    .virt-spacer { /* spacer top/bottom pour virtualisation */
-      pointer-events: none;
-      visibility: hidden;
     }
 
     /* :hover seulement sur devices avec un vrai pointeur (souris).
@@ -335,14 +326,7 @@
 
     .card-img-placeholder svg { width: 48px; height: 48px; opacity: 0.3; }
 
-    .card-body {
-      padding: 14px;
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
+    .card-body { padding: 14px; }
 
     .card-name {
       font-weight: 600;
@@ -2175,7 +2159,6 @@
 
       /* Grille articles. */
       .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-      .card { height: 320px; } /* mobile : un peu plus court */
       .card-body { padding: 10px; }
       .card-name { font-size: 0.95rem; }
       .card-desc { font-size: 0.75rem; }
@@ -4027,17 +4010,10 @@
     if (inventoryMode) { grid.className = ''; renderInventory(filtered, grid); return; }
     grid.className = 'grid';
 
-    // ── VIRTUALISATION ───────────────────────────────────────────────────
-    // On ne rend dans le DOM que les cards visibles dans le viewport
-    // (+ buffer de 3 rangées). Quand l'utilisateur scrolle, on recalcule
-    // et on re-render uniquement la fenêtre visible.
-    // Permet un scroll smooth même sur Android budget avec 100+ items
-    // (avant : 600+ DOM nodes peints à chaque frame de scroll = jank).
-    _virtState.filtered = filtered;
-    _virtState.lastStart = -1; // force re-render (les items ont peut-être changé)
-    _virtState.lastEnd = -1;
-    _virtRender();
-    _virtSetupScroll();
+    // RENDU SIMPLE en sync : on rend TOUTES les cards d'un coup. La
+    // virtualisation est désactivée pour garantir l'affichage. On
+    // pourra la réactiver une fois fiable.
+    grid.innerHTML = filtered.map(buildCard).join('');
   }
 
   // ── VIRTUALISATION : état + helpers ────────────────────────────────────
