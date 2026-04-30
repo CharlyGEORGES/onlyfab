@@ -27,9 +27,28 @@
       --shadow: 0 4px 24px rgba(0,0,0,0.4);
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      /* Supprime le rectangle bleu/gris flash que Chrome Android affiche
+         au tap sur n'importe quel élément cliquable. */
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Sur les éléments cliquables, supprime aussi le délai 300ms tap +
+       le double-tap-zoom qui causait des micro-flashes pendant la
+       reconnaissance du geste. */
+    button, a, .card, [onclick] { touch-action: manipulation; }
 
-    html, body { background: var(--bg); height: 100%; }
+    html, body {
+      background: var(--bg);
+      height: 100%;
+      /* Bloque TOTALEMENT le pull-to-refresh Chrome Android et l'élasticité
+         de scroll, qui causent des flashes blancs/noirs spécifiques à
+         Android (iOS Safari ne fait pas ça). */
+      overscroll-behavior: none;
+      -webkit-overscroll-behavior: none;
+    }
 
     /* Architecture "viewport fixe" : body = flex column figé à 100% de
        hauteur, main = seul container scrollable. Comme ça la barre
@@ -128,8 +147,9 @@
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
+      overscroll-behavior: none;
       position: relative;
+      background: var(--bg);
       /* Désactive le 'scroll anchoring' Chrome qui repositionne
          automatiquement le scroll quand un élément au-dessus change de
          taille (ex: image qui finit de charger, card lazy-rendue qui
@@ -1079,12 +1099,15 @@
       background: var(--bg);
       display: flex;
       flex-direction: column;
-      transform: translateX(100%);
+      transform: translate3d(100%, 0, 0); /* translate3d force GPU layer Android */
       transition: transform 0.22s cubic-bezier(.32,.72,0,1);
       pointer-events: none;
+      will-change: transform;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
     }
     .detail-view-screen.open {
-      transform: translateX(0);
+      transform: translate3d(0, 0, 0);
       pointer-events: auto;
     }
     .detail-topbar {
