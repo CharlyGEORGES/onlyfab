@@ -1751,7 +1751,12 @@
       font-size: 0.78rem; font-weight: 600; cursor: pointer;
       transition: opacity .15s;
     }
-    .history-task-import:disabled { opacity: .45; cursor: default; }
+    .history-task-import:disabled {
+      background: var(--surface2);
+      color: var(--text-muted);
+      cursor: default;
+      opacity: 1;
+    }
     .history-task-import.done { background: #22c55e; }
     .history-status {
       flex-shrink: 0; border-radius: 7px; padding: 5px 10px;
@@ -5082,7 +5087,7 @@
                  <button class="history-task-import history-task-reimport">Importer</button>`
             : isSuccess
               ? `<button class="history-task-import">Importer</button>`
-              : `<span class="history-status dismissed" title="Impression non terminée">—</span>`
+              : `<button class="history-task-import" disabled title="Impression encore en cours sur l'imprimante">⏵ En cours</button>`
           }`;
 
         // Attacher le listener sur tous les boutons Importer de la ligne
