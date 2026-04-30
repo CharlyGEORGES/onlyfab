@@ -427,7 +427,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v6';
+const CACHE_VERSION = 'bs-v7';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -463,9 +463,7 @@ self.addEventListener('fetch', e => {
   if (url.pathname === '/sse') return;
   if (url.pathname === '/' || url.pathname === '/reset-password') return;
 
-  // /uploads/* : cache-first (les fichiers ont un nom unique, ils ne
-  // changent jamais). Évite que les photos des cards se rechargent à
-  // chaque ouverture de la page = élimine les layout shifts visibles.
+  // /uploads/* : cache-first immutable (les fichiers ont un nom unique).
   if (url.pathname.startsWith('/uploads/')) {
     e.respondWith(
       caches.open(CACHE_VERSION).then(cache =>
@@ -481,18 +479,25 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // /app et autres : stale-while-revalidate.
-  e.respondWith(
-    caches.open(CACHE_VERSION).then(cache =>
-      cache.match(req).then(cached => {
-        const networkPromise = fetch(req).then(resp => {
+  // /app et /sw.js : NETWORK-FIRST avec timeout 1.5s.
+  // Garantit que l'utilisateur a TOUJOURS la dernière version du HTML
+  // (avec les derniers fixes), tout en restant offline-friendly :
+  // si le réseau ne répond pas en 1.5s, on sert le cache.
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE_VERSION);
+    const cached = await cache.match(req);
+    try {
+      const networkResp = await Promise.race([
+        fetch(req).then(resp => {
           if (resp && resp.ok) cache.put(req, resp.clone());
           return resp;
-        }).catch(() => cached);
-        return cached || networkPromise;
-      })
-    )
-  );
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500)),
+      ]);
+      if (networkResp) return networkResp;
+    } catch {}
+    return cached || fetch(req);
+  })());
 });
 `;
 

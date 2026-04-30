@@ -3967,27 +3967,41 @@
         </div>`;
     };
 
-    // Virtualisation : on rend les 8 premières cards SYNCHRONEMENT (= visible
-    // immédiatement), et on différe le reste via requestIdleCallback. Évite
-    // que le main thread soit bloqué 500+ ms sur des grosses listes
-    // (la LONG TASK qu'on identifiait via le debug overlay).
-    const FIRST_BATCH = 8;
+    // Virtualisation : on rend les 6 premières cards SYNCHRONEMENT (=
+    // visibles immédiatement au-dessus du fold), puis on étale le reste
+    // par batches de 4 dans des requestIdleCallback successifs.
+    // Tout en un coup faisait des LONG TASKs de 250+ ms sur listes longues
+    // (observées dans le debug overlay) — par batches de 4 chaque pas
+    // reste sous 50 ms = imperceptible.
+    const FIRST_BATCH = 6;
+    const BATCH_SIZE  = 4;
     grid.innerHTML = filtered.slice(0, FIRST_BATCH).map(buildCard).join('');
     _hookLazyImages(grid);
 
     if (filtered.length > FIRST_BATCH) {
       const remaining = filtered.slice(FIRST_BATCH);
-      const renderRemaining = () => {
+      let cursor = 0;
+      const renderBatch = () => {
+        if (cursor >= remaining.length) return;
+        const batch = remaining.slice(cursor, cursor + BATCH_SIZE);
+        cursor += BATCH_SIZE;
         const frag = document.createElement('div');
-        frag.innerHTML = remaining.map(buildCard).join('');
-        // Append en une fois (un seul reflow, pas un par card)
+        frag.innerHTML = batch.map(buildCard).join('');
         while (frag.firstChild) grid.appendChild(frag.firstChild);
         _hookLazyImages(grid);
+        // Programme le batch suivant uniquement si reste à rendre.
+        if (cursor < remaining.length) {
+          if (window.requestIdleCallback) {
+            requestIdleCallback(renderBatch, { timeout: 500 });
+          } else {
+            setTimeout(renderBatch, 16);
+          }
+        }
       };
       if (window.requestIdleCallback) {
-        requestIdleCallback(renderRemaining, { timeout: 1000 });
+        requestIdleCallback(renderBatch, { timeout: 500 });
       } else {
-        setTimeout(renderRemaining, 0);
+        setTimeout(renderBatch, 16);
       }
     }
   }
