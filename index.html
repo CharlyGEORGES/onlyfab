@@ -1913,18 +1913,114 @@
       .form-row { grid-template-columns: 1fr; }
       .detail-meta { grid-template-columns: 1fr; }
       main { padding: 14px 10px; }
-      .modal-overlay { padding: 8px; }
-      .modal { max-height: 94vh; border-radius: 14px; }
-      .modal-body { padding: 14px; }
-      .modal-header { padding: 14px; }
+
+      /* Modale en quasi plein écran sur mobile pour gagner de la place
+         et éviter les compressions d'éléments. */
+      .modal-overlay { padding: 0; align-items: stretch; }
+      .modal {
+        max-width: 100vw;
+        max-height: 100dvh;
+        height: 100dvh;
+        border-radius: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .modal-body { padding: 14px; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+      .modal-header { padding: 14px; flex-shrink: 0; }
       .modal-title { font-size: 1rem; }
       .history-panel { width: 100vw; }
-      .variant-row { grid-template-columns: 32px 1fr 28px 56px 28px 26px; gap: 3px; }
+
+      /* Inputs >= 16px = pas de zoom auto iOS au focus. */
+      input[type="text"], input[type="number"], input[type="email"],
+      input[type="password"], textarea, select { font-size: 16px; }
+
+      /* Variantes couleurs : structure plus large pour ne pas écraser
+         les boutons +/- et le nom. */
+      .variant-row {
+        grid-template-columns: 36px minmax(0,1fr) 30px 50px 30px 30px;
+        gap: 4px;
+        padding: 6px 8px;
+      }
+      .variant-row input[type="text"],
+      .variant-row input[type="number"] { font-size: 14px; padding: 5px 6px; }
+      .variant-qty-btn { width: 30px; height: 30px; }
+      .remove-variant-btn { width: 30px; height: 30px; }
+
+      /* Bloc d'une pièce (multi-pièces) : header en 2 lignes pour éviter
+         que filament/total/quantité écrasent le nom.
+         Ligne 1 : photo + nom — Ligne 2 : filament + qté + total + supprimer. */
+      .part-block { padding: 10px; }
+      .part-block-header {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .part-block-header::after {
+        content: '';
+        flex-basis: 100%;
+        height: 0;
+        order: 1;
+      }
+      .part-photo-wrap { order: 0; }
+      .part-name-input { flex: 1; min-width: 0; order: 0; }
+      .part-filament-select {
+        max-width: none;
+        flex: 1 1 auto;
+        order: 2;
+        min-width: 0;
+      }
+      .part-count-wrap { order: 3; flex-shrink: 0; }
+      .part-block-total { order: 4; margin-left: auto; flex-shrink: 0; }
+      .part-block-header > .remove-variant-btn { order: 5; flex-shrink: 0; }
+
+      /* Variantes à l'intérieur d'une pièce : passer les noms longs
+         à la ligne plutôt que de tronquer/superposer. */
+      .part-variant-row { flex-wrap: wrap; gap: 6px; }
+      .part-variant-name { flex: 1 1 100%; min-width: 0; }
+      .part-photo-wrap { width: 32px; height: 32px; }
+
+      /* Détail d'un item : zone d'édition d'une pièce dans la modale détail.
+         Même structure 2 lignes que .part-block-header. */
+      .detail-part-header { flex-wrap: wrap; gap: 6px; }
+      .detail-part-header::after {
+        content: '';
+        flex-basis: 100%;
+        height: 0;
+        order: 1;
+      }
+      .detail-part-header > .part-photo-wrap { order: 0; }
+      .detail-part-name-input { flex: 1; min-width: 0; order: 0; }
+      .detail-part-filament { order: 2; max-width: none; flex: 1 1 auto; min-width: 0; }
+      .detail-part-header > .part-count-wrap { order: 3; flex-shrink: 0; }
+      .detail-part-total { order: 4; margin-left: auto; flex-shrink: 0; }
+      .detail-part-header > .qty-quick-btn { order: 5; flex-shrink: 0; }
+      .detail-part-variant-row { flex-wrap: wrap; gap: 6px; }
+      .detail-part-variant-name { flex: 1; min-width: 0; }
+      .detail-part-qty-wrap { margin-left: auto; }
+
+      /* Picker d'assemblage : les chips ne doivent jamais déborder. */
+      .asm-variant-options { gap: 5px; }
+      .asm-variant-opt { font-size: 0.78rem; padding: 4px 9px 4px 6px; }
+
+      /* Toggle row : le label peut wrapper si long. */
+      .toggle-row { gap: 10px; padding: 10px 12px; }
+      .toggle-row > div:first-child { min-width: 0; flex: 1; }
+      .toggle-label { word-wrap: break-word; }
+
+      /* Section objets assemblés : le header peut s'enrouler. */
+      .assembled-item-row { flex-wrap: wrap; row-gap: 4px; }
+      .assembled-item-desc { white-space: normal; min-width: 0; flex: 1; }
+
+      /* Photo upload : taille raisonnable. */
+      .photo-upload { padding: 16px; }
+      .photo-preview { max-height: 180px; }
+
+      /* Grille articles. */
       .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .card-body { padding: 10px; }
       .card-name { font-size: 0.95rem; }
       .card-desc { font-size: 0.75rem; }
       .card-img, .card-img-placeholder { aspect-ratio: 1 / 1; }
+
       .fab { bottom: 16px; right: 16px; width: 52px; height: 52px; }
       .print-job-card { padding: 10px; }
       .print-job-name { font-size: 0.9rem; }
@@ -1936,6 +2032,11 @@
       .grid { grid-template-columns: 1fr; }
       .btn-icon-header { width: 32px; height: 32px; }
       .btn-icon-header svg { width: 15px; height: 15px; }
+      .modal-body { padding: 12px; }
+      .modal-header { padding: 12px; }
+      .variant-row { grid-template-columns: 32px minmax(0,1fr) 28px 44px 28px 28px; gap: 3px; padding: 5px 6px; }
+      .part-block { padding: 8px; }
+      label { font-size: 0.72rem; letter-spacing: 0.04em; margin-bottom: 4px; }
     }
 
     /* iOS safe-area for notch / home indicator */
