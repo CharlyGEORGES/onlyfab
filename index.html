@@ -285,11 +285,11 @@
       overflow: hidden;
       cursor: pointer;
       position: relative;
-      /* contain: layout paint — optimise le layout/paint sans recalculer
-         les cards hors viewport au resize (= pas de LONG TASK 785ms qu'on
-         avait avec content-visibility:auto qui était trop agressif).
-         Pas de transitions sur la card pour éviter style recalc au touch. */
-      contain: layout paint;
+      /* contain: layout style — léger, isole les recalculs sans créer
+         de GPU layer par card. Avoir 'paint' faisait 30+ layers GPU
+         sur listes longues = compositor saturé sur Android moyen-bas
+         de gamme = FRAME DROPs visibles. */
+      contain: layout style;
     }
 
     .card:hover {
@@ -1100,15 +1100,12 @@
       background: var(--bg);
       display: flex;
       flex-direction: column;
-      transform: translate3d(100%, 0, 0); /* translate3d force GPU layer Android */
-      transition: transform 0.22s cubic-bezier(.32,.72,0,1);
+      transform: translateX(100%);
+      transition: transform 0.2s ease-out;
       pointer-events: none;
-      will-change: transform;
-      backface-visibility: hidden;
-      -webkit-backface-visibility: hidden;
     }
     .detail-view-screen.open {
-      transform: translate3d(0, 0, 0);
+      transform: translateX(0);
       pointer-events: auto;
     }
     .detail-topbar {
@@ -4013,38 +4010,32 @@
     // Tout en un coup faisait des LONG TASKs de 250+ ms sur listes longues
     // (observées dans le debug overlay) — par batches de 4 chaque pas
     // reste sous 50 ms = imperceptible.
-    // 1er batch ultra-réduit (3 cards) pour rendre TRÈS rapide la 1ʳᵉ peinture.
-    // Reste rendu en batches de 3 via rIC pour ne JAMAIS bloquer > 50ms.
+    // Stratégie ultra-douce pour Android lent : on rend les 3 premières
+    // cards SYNC (au-dessus du fold), puis UNE card par requestAnimationFrame
+    // pour le reste. Chaque rAF = ~16ms disponible, le browser peut peindre
+    // entre chaque ajout. Pas de batch lourd, pas de FRAME DROP.
     const FIRST_BATCH = 3;
-    const BATCH_SIZE  = 3;
     grid.innerHTML = filtered.slice(0, FIRST_BATCH).map(buildCard).join('');
     _hookLazyImages(grid);
 
     if (filtered.length > FIRST_BATCH) {
       const remaining = filtered.slice(FIRST_BATCH);
       let cursor = 0;
-      const renderBatch = () => {
+      const renderOne = () => {
         if (cursor >= remaining.length) return;
-        const batch = remaining.slice(cursor, cursor + BATCH_SIZE);
-        cursor += BATCH_SIZE;
-        const frag = document.createElement('div');
-        frag.innerHTML = batch.map(buildCard).join('');
-        while (frag.firstChild) grid.appendChild(frag.firstChild);
-        _hookLazyImages(grid);
-        // Programme le batch suivant uniquement si reste à rendre.
-        if (cursor < remaining.length) {
-          if (window.requestIdleCallback) {
-            requestIdleCallback(renderBatch, { timeout: 500 });
-          } else {
-            setTimeout(renderBatch, 16);
-          }
+        const item = remaining[cursor++];
+        const div = document.createElement('div');
+        div.innerHTML = buildCard(item);
+        const card = div.firstElementChild;
+        if (card) {
+          grid.appendChild(card);
+          // Hook uniquement la NOUVELLE image (pas re-querySelector tout le grid).
+          const img = card.querySelector('img[data-src]');
+          if (img && _imgIO) _imgIO.observe(img);
         }
+        requestAnimationFrame(renderOne);
       };
-      if (window.requestIdleCallback) {
-        requestIdleCallback(renderBatch, { timeout: 500 });
-      } else {
-        setTimeout(renderBatch, 16);
-      }
+      requestAnimationFrame(renderOne);
     }
   }
 
