@@ -420,12 +420,14 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 
 // ── SERVICE WORKER ────────────────────────────────────────────────────────
 // Stratégie : stale-while-revalidate pour /app et les assets statiques.
-// Permet un rendu INSTANTANÉ depuis le cache même après un tab discard
-// Chrome Android / iOS Safari (cause principale des "sauts" sur mobile),
-// puis revalidation silencieuse en arrière-plan. Le cache est purgé à la
+// Cache-first immutable pour /uploads/* (les images d'objets ne changent
+// jamais une fois uploadées — elles ont un nom de fichier unique). Permet
+// un rendu INSTANTANÉ depuis le cache même après un tab discard Chrome
+// Android / iOS Safari (cause principale des "sauts" sur mobile), puis
+// revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v3';
+const CACHE_VERSION = 'bs-v4';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -456,13 +458,30 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  // On ne cache PAS les API, le SSE, les uploads, ni la landing.
+  // On ne cache PAS les API, le SSE, ni la landing.
   if (url.pathname.startsWith('/api/')) return;
   if (url.pathname === '/sse') return;
-  if (url.pathname.startsWith('/uploads/')) return;
   if (url.pathname === '/' || url.pathname === '/reset-password') return;
 
-  // Stale-while-revalidate : cache d'abord, fetch en arrière-plan.
+  // /uploads/* : cache-first (les fichiers ont un nom unique, ils ne
+  // changent jamais). Évite que les photos des cards se rechargent à
+  // chaque ouverture de la page = élimine les layout shifts visibles.
+  if (url.pathname.startsWith('/uploads/')) {
+    e.respondWith(
+      caches.open(CACHE_VERSION).then(cache =>
+        cache.match(req).then(cached => {
+          if (cached) return cached;
+          return fetch(req).then(resp => {
+            if (resp && resp.ok) cache.put(req, resp.clone());
+            return resp;
+          });
+        })
+      )
+    );
+    return;
+  }
+
+  // /app et autres : stale-while-revalidate.
   e.respondWith(
     caches.open(CACHE_VERSION).then(cache =>
       cache.match(req).then(cached => {
@@ -470,8 +489,6 @@ self.addEventListener('fetch', e => {
           if (resp && resp.ok) cache.put(req, resp.clone());
           return resp;
         }).catch(() => cached);
-        // Si on a une copie en cache, on la retourne tout de suite.
-        // La requête réseau continue en arrière-plan pour mettre à jour le cache.
         return cached || networkPromise;
       })
     )
