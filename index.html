@@ -2784,15 +2784,15 @@
 
 <!-- DEBUG OVERLAY (activable via ?debug=1) — log temps réel des événements
      pour diagnostiquer les sauts/flashes mobile. -->
-<div id="debugOverlay" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;max-height:35vh;background:rgba(0,0,0,.88);color:#0f0;font:10px/1.3 monospace;padding:0;border:1px solid #0f0;border-radius:6px;z-index:99999;pointer-events:auto;display:none">
-  <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid rgba(0,255,0,0.2);gap:4px">
-    <span id="debugTitle" style="color:#0f0;font-weight:700;font-size:10px">DEBUG</span>
-    <span id="debugCount" style="color:#888;font-size:9px">0 events</span>
-    <button id="debugCopy" style="background:#0f0;color:#000;border:none;padding:3px 8px;border-radius:3px;font:bold 10px monospace;cursor:pointer">📋 COPY</button>
-    <button id="debugClear" style="background:transparent;border:1px solid #888;color:#888;padding:2px 6px;border-radius:3px;font:10px monospace;cursor:pointer">CLEAR</button>
-    <button id="debugHide" style="background:transparent;border:1px solid #888;color:#888;padding:2px 6px;border-radius:3px;font:10px monospace;cursor:pointer">−</button>
+<div id="debugOverlay" style="display:none;position:fixed;bottom:8px;left:8px;right:8px;max-height:40vh;background:rgba(0,0,0,.92);color:#0f0;font:11px/1.3 monospace;padding:0;border:1px solid #0f0;border-radius:6px;z-index:99999;pointer-events:auto">
+  <div style="display:flex;flex-wrap:wrap;align-items:center;padding:6px;border-bottom:1px solid rgba(0,255,0,0.3);gap:6px">
+    <span id="debugTitle" style="color:#0f0;font-weight:700;font-size:11px;flex:1">DEBUG</span>
+    <span id="debugCount" style="color:#888;font-size:10px">0 events</span>
+    <button id="debugCopy" type="button" style="background:#0f0;color:#000;border:none;padding:6px 12px;border-radius:4px;font:bold 11px monospace;cursor:pointer;-webkit-tap-highlight-color:rgba(0,255,0,0.3);min-height:32px">📋 COPY</button>
+    <button id="debugClear" type="button" style="background:transparent;border:1px solid #888;color:#aaa;padding:6px 10px;border-radius:4px;font:11px monospace;cursor:pointer;min-height:32px">CLEAR</button>
+    <button id="debugHide" type="button" style="background:transparent;border:1px solid #888;color:#aaa;padding:6px 10px;border-radius:4px;font:14px monospace;cursor:pointer;min-height:32px;min-width:32px;line-height:1">−</button>
   </div>
-  <div id="debugBody" style="max-height:calc(35vh - 28px);overflow-y:auto;padding:4px 8px"></div>
+  <div id="debugBody" style="max-height:calc(40vh - 50px);overflow-y:auto;padding:6px 8px;-webkit-overflow-scrolling:touch"></div>
 </div>
 <script>
 (function() {
