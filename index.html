@@ -130,6 +130,16 @@
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
       position: relative;
+      /* Désactive le 'scroll anchoring' Chrome qui repositionne
+         automatiquement le scroll quand un élément au-dessus change de
+         taille (ex: image qui finit de charger, card lazy-rendue qui
+         s'ajoute). C'était la cause des 'scroll JUMP -230/-878px'
+         observés via debug overlay. */
+      overflow-anchor: none;
+    }
+    /* Idem sur les enfants pour être sûr. */
+    .grid, #stockView, #validateView, .main-inner {
+      overflow-anchor: none;
     }
     .main-inner {
       max-width: 1200px;
@@ -5597,10 +5607,16 @@
     }
   }
 
+  let _lastBadgeCount = -1;
   function updateBambuBadge() {
     const badge = document.getElementById('tabBadge');
-    const prev  = parseInt(badge.textContent) || 0;
     const count = printJobs.filter(j => j.status === 'pending').length;
+    // Skip si le count n'a pas changé : évite les mutations DOM + redraw du
+    // favicon canvas inutiles aux reconnexions SSE (event 'init' à chaque
+    // retry réseau). Élimine une source potentielle de jank.
+    if (count === _lastBadgeCount) return;
+    const prev = _lastBadgeCount === -1 ? (parseInt(badge.textContent) || 0) : _lastBadgeCount;
+    _lastBadgeCount = count;
     badge.textContent = count;
     badge.classList.toggle('show', count > 0);
     if (count > prev) {
