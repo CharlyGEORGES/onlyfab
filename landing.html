@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" style="background:#0f0f13">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f0f13">
   <title>BambuStock — Gestion de stock pour makers Bambu Lab</title>
   <meta name="description" content="BambuStock est le logiciel de gestion de stock pensé pour les makers Bambu Lab. Inventaire filaments, suivi des impressions en temps réel, alertes stock bas.">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -43,11 +44,6 @@
       line-height: 1.6;
       -webkit-tap-highlight-color: transparent;
     }
-    /* Masquage anti-flash : si le check d'auth redirige vers /app, on n'affiche
-       pas la landing en attendant. Si l'utilisateur n'est pas connecté, le script
-       ajoute la classe `auth-checked` immédiatement. */
-    body.auth-pending { visibility: hidden; }
-    body.auth-checked { visibility: visible; }
 
     /* ── SCROLLBAR ── */
     ::-webkit-scrollbar { width: 6px; }
@@ -1054,32 +1050,10 @@
     }
   </style>
 </head>
-<body class="auth-pending">
+<body>
 
-<script>
-  // Masque la landing si une session active redirige vers /app (anti-flash mobile).
-  // Sans réponse rapide, on révèle la page après 250ms pour ne pas bloquer.
-  (function () {
-    var revealed = false;
-    function reveal() {
-      if (revealed) return;
-      revealed = true;
-      document.body.classList.remove('auth-pending');
-      document.body.classList.add('auth-checked');
-    }
-    setTimeout(reveal, 250);
-    fetch('/api/auth/me', { credentials: 'same-origin' })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data && data.user) {
-          window.location.replace('/app');
-        } else {
-          reveal();
-        }
-      })
-      .catch(reveal);
-  })();
-</script>
+<!-- Note : la redirection vers /app pour les utilisateurs déjà connectés est
+     faite côté serveur (302) afin d'éviter tout flash visuel mobile. -->
 
 <!-- ── NAV ── -->
 <nav>

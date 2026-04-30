@@ -644,6 +644,10 @@ http.createServer(async (req, res) => {
 
     // ── STATIC ──────────────────────────────────────────────────────────
     if (req.method === 'GET' && url === '/') {
+      // Si déjà connecté, redirige côté serveur vers /app pour éviter tout
+      // flash visuel mobile entre la landing et l'app.
+      const user = getSessionUser(req);
+      if (user) { res.writeHead(302, { Location: '/app' }); res.end(); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(landingCache);
       return;
