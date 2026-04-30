@@ -4024,16 +4024,22 @@
       const main = document.querySelector('main');
       const mainInner = document.querySelector('.main-inner');
       const cs = getComputedStyle(grid);
-      const info = `viewport=${window.innerWidth}px main=${main?.clientWidth||'?'}px main-inner=${mainInner?.clientWidth||'?'}px grid=${grid.clientWidth}px display=${cs.display} cols=${cs.gridTemplateColumns}`;
-      console.log('[GRID DEBUG]', info);
+      const firstCard = grid.firstElementChild;
+      const fcRect = firstCard?.getBoundingClientRect();
+      const fcCS = firstCard ? getComputedStyle(firstCard) : null;
+      const info = `vp=${window.innerWidth} main=${main?.clientWidth} inner=${mainInner?.clientWidth} grid=${grid.clientWidth} cols=${cs.gridTemplateColumns}`;
+      const cardInfo = firstCard
+        ? ` | card1: w=${fcRect?.width.toFixed(0)} gridCol=${fcCS.gridColumn} display=${fcCS.display} children=${grid.children.length}`
+        : '';
+      console.log('[GRID DEBUG]', info + cardInfo);
       let badge = document.getElementById('_gridDebug');
       if (!badge) {
         badge = document.createElement('div');
         badge.id = '_gridDebug';
-        badge.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f00;color:#fff;font:11px monospace;padding:4px 8px;z-index:9999;text-align:center';
+        badge.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f00;color:#fff;font:10px monospace;padding:4px 8px;z-index:9999;text-align:center;line-height:1.4';
         document.body.appendChild(badge);
       }
-      badge.textContent = info;
+      badge.textContent = info + cardInfo;
     });
   }
 
