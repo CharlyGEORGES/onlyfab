@@ -151,12 +151,13 @@
       overscroll-behavior: none;
       position: relative;
       background: var(--bg);
-      /* Désactive le 'scroll anchoring' Chrome qui repositionne
-         automatiquement le scroll quand un élément au-dessus change de
-         taille (ex: image qui finit de charger, card lazy-rendue qui
-         s'ajoute). C'était la cause des 'scroll JUMP -230/-878px'
-         observés via debug overlay. */
       overflow-anchor: none;
+      /* Force main en GPU compositing layer : le scroll est offload au GPU
+         au lieu de bloquer le main thread CPU. Sur Android lent, c'est la
+         différence entre scroll fluide et FRAME DROPs. */
+      transform: translateZ(0);
+      -webkit-transform: translateZ(0);
+      will-change: scroll-position;
     }
     /* Idem sur les enfants pour être sûr. */
     .grid, #stockView, #validateView, .main-inner {
@@ -285,15 +286,7 @@
       overflow: hidden;
       cursor: pointer;
       position: relative;
-      /* content-visibility: auto fait skipper Chrome le rendu des cards
-         hors viewport pendant le scroll (énorme gain perf). Le navigateur
-         ne peint que les ~6 cards visibles à la fois au lieu des 30+
-         dans le DOM. Plus de flash au scroll sur Android lent.
-         contain-intrinsic-size réserve la place exacte pour les cards
-         non-rendues — scroll smooth, pas de saut. */
-      content-visibility: auto;
-      contain-intrinsic-size: auto 320px;
-      contain: layout style paint;
+      contain: layout;
     }
 
     /* :hover seulement sur devices avec un vrai pointeur (souris).
