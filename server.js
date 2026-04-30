@@ -418,6 +418,67 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
   });
 </script></body></html>`;
 
+// ── SERVICE WORKER ────────────────────────────────────────────────────────
+// Stratégie : stale-while-revalidate pour /app et les assets statiques.
+// Permet un rendu INSTANTANÉ depuis le cache même après un tab discard
+// Chrome Android / iOS Safari (cause principale des "sauts" sur mobile),
+// puis revalidation silencieuse en arrière-plan. Le cache est purgé à la
+// déconnexion via postMessage('clear-cache').
+const SERVICE_WORKER = `
+const CACHE_VERSION = 'bs-v3';
+const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE_VERSION).then(c => c.addAll(STATIC_ASSETS))
+      .catch(() => {})
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.filter(k => k !== CACHE_VERSION).map(k => caches.delete(k))
+    ))
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('message', e => {
+  if (e.data === 'clear-cache') {
+    caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+  }
+});
+
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  // On ne cache PAS les API, le SSE, les uploads, ni la landing.
+  if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname === '/sse') return;
+  if (url.pathname.startsWith('/uploads/')) return;
+  if (url.pathname === '/' || url.pathname === '/reset-password') return;
+
+  // Stale-while-revalidate : cache d'abord, fetch en arrière-plan.
+  e.respondWith(
+    caches.open(CACHE_VERSION).then(cache =>
+      cache.match(req).then(cached => {
+        const networkPromise = fetch(req).then(resp => {
+          if (resp && resp.ok) cache.put(req, resp.clone());
+          return resp;
+        }).catch(() => cached);
+        // Si on a une copie en cache, on la retourne tout de suite.
+        // La requête réseau continue en arrière-plan pour mettre à jour le cache.
+        return cached || networkPromise;
+      })
+    )
+  );
+});
+`;
+
 // ── MANIFEST PWA ──────────────────────────────────────────────────────────
 const MANIFEST = JSON.stringify({
   name: 'BambuStock | Gestion du stock',
@@ -706,6 +767,15 @@ http.createServer(async (req, res) => {
     if (req.method === 'GET' && url === '/icon.svg') {
       res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
       res.end(ICON_SVG);
+      return;
+    }
+    if (req.method === 'GET' && url === '/sw.js') {
+      res.writeHead(200, {
+        'Content-Type': 'application/javascript; charset=utf-8',
+        'Cache-Control': 'no-cache', // toujours revalider le SW lui-même
+        'Service-Worker-Allowed': '/',
+      });
+      res.end(SERVICE_WORKER);
       return;
     }
 

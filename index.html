@@ -2752,6 +2752,28 @@
 <!-- INITIAL_DATA -->
 
 <script>
+  // ── SERVICE WORKER ────────────────────────────────────────────────────────
+  // Cache la page et les assets : la prochaine ouverture (même après tab
+  // discard mobile) est INSTANTANÉE, plus de flash blanc/noir le temps que
+  // le serveur réponde. Stale-while-revalidate côté SW : on affiche le cache
+  // tout de suite, on met à jour en arrière-plan.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    });
+  }
+
+  // ── BFCache : restauration depuis le back-forward cache ─────────────────
+  // Quand la page est restaurée depuis le bfcache (utilisateur revient
+  // après être allé sur une autre app/onglet), on déclenche un refresh
+  // léger des données pour ne pas montrer un état périmé.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && typeof loadData === 'function') {
+      // Restauré depuis bfcache : silently re-fetch in background
+      try { loadData(); } catch {}
+    }
+  });
+
   // ── AUTH ──────────────────────────────────────────────────────────────────
   // Le serveur injecte les infos utilisateur dans window.__INITIAL_DATA__,
   // ce qui évite tout fetch au démarrage. Un check /api/auth/me en arrière-plan
@@ -2771,13 +2793,28 @@
   (async () => {
     try {
       const r = await fetch('/api/auth/me', { credentials: 'same-origin' }).then(r => r.json());
-      if (!r || !r.user) window.location.replace('/');
-      else window.currentUser = r.user;
+      if (!r || !r.user) {
+        // Session expirée : on nettoie le cache SW + localStorage avant redirect
+        clearAllCaches();
+        window.location.replace('/');
+      } else {
+        window.currentUser = r.user;
+      }
     } catch { /* silent — le serveur a déjà validé la session pour servir cette page */ }
   })();
 
+  function clearAllCaches() {
+    try { localStorage.removeItem('bs_data'); } catch {}
+    if (navigator.serviceWorker?.controller) {
+      try { navigator.serviceWorker.controller.postMessage('clear-cache'); } catch {}
+    }
+  }
+
   async function logout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    // Nettoie tous les caches pour qu'un autre utilisateur du même
+    // appareil ne voie pas mes données.
+    clearAllCaches();
     window.location.href = '/';
   }
 
@@ -2862,6 +2899,7 @@
       });
       const data = await r.json();
       if (!r.ok) { showProfMsg('profileError', data.error || 'Erreur'); return; }
+      clearAllCaches();
       window.location.href = '/';
     } catch { showProfMsg('profileError', 'Erreur réseau.'); }
   }
@@ -3135,40 +3173,82 @@
   }
 
   // ── DATA ──────────────────────────────────────────────────────────────────
+  function _saveLocalBackup() {
+    try { localStorage.setItem('bs_data', JSON.stringify({ items, categories, ts: Date.now() })); } catch {}
+  }
+  function _readLocalBackup() {
+    try {
+      const raw = localStorage.getItem('bs_data');
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      if (!d || !Array.isArray(d.items)) return null;
+      return d;
+    } catch { return null; }
+  }
+
   async function loadData() {
-    // Si le serveur a déjà injecté les données dans window.__INITIAL_DATA__,
-    // on rend immédiatement (zéro fetch, zéro flash). Le fetch ne sert plus
-    // qu'aux refreshes manuels (après création/modification d'items).
+    // Stratégie en 3 niveaux pour ne JAMAIS afficher d'écran vide :
+    //  1. window.__INITIAL_DATA__ (SSR) : présent au 1er chargement réseau
+    //  2. localStorage  : présent si la page a déjà été ouverte au moins une
+    //     fois, utile quand le SW a servi un HTML cached sans __INITIAL_DATA__
+    //  3. fetch /api/* : revalidation finale, déclenche un nouveau render
+    //     uniquement si les données ont vraiment changé
     const initial = window.__INITIAL_DATA__;
     if (initial && Array.isArray(initial.items) && Array.isArray(initial.categories)) {
       items = initial.items;
       categories = initial.categories;
-      // On consomme les données pour que les rafraîchissements ultérieurs
-      // refassent un fetch normal (sinon on resterait coincé sur l'état initial).
       window.__INITIAL_DATA__ = null;
       refreshCategorySelects();
       render();
+      _saveLocalBackup();
+      // Pas besoin de revalider tout de suite : la page vient d'arriver du serveur.
       return;
     }
+
+    // Pas de SSR data : on essaie le backup local pour rendre IMMÉDIATEMENT.
+    const backup = _readLocalBackup();
+    if (backup) {
+      items = backup.items;
+      categories = backup.categories || [];
+      refreshCategorySelects();
+      render();
+    }
+
+    // Revalidation : on fetch et on remplace seulement si différent (évite
+    // un re-render visuel inutile = source de saute potentielle).
     try {
       if (USE_SERVER) {
-        [items, categories] = await Promise.all([
+        const [newItems, newCategories] = await Promise.all([
           api('GET', '/api/items'),
           api('GET', '/api/categories'),
         ]);
+        const itemsChanged = JSON.stringify(newItems) !== JSON.stringify(items);
+        const catsChanged  = JSON.stringify(newCategories) !== JSON.stringify(categories);
+        items = newItems;
+        categories = newCategories;
+        if (itemsChanged || catsChanged) {
+          refreshCategorySelects();
+          render();
+        }
+        _saveLocalBackup();
       } else {
         const stored = await idbGet('items');
         if (Array.isArray(stored)) items = stored;
         const cats = await idbGet('categories');
         if (Array.isArray(cats)) categories = cats;
+        refreshCategorySelects();
+        render();
       }
     } catch (e) {
       console.error('[loadData]', e);
-      items = items || [];
-      categories = categories || [];
+      // Si on n'avait pas de backup, on a au moins items=[] pour ne pas planter.
+      if (!backup) {
+        items = items || [];
+        categories = categories || [];
+        refreshCategorySelects();
+        render();
+      }
     }
-    refreshCategorySelects();
-    render();
   }
 
   async function opCreate(item) {
@@ -3355,6 +3435,14 @@
   }
 
   function render() {
+    // Sauvegarde locale (debouncée par requestIdleCallback) à chaque render :
+    // garantit qu'au prochain chargement on a toujours les dernières données
+    // disponibles instantanément, même si le serveur est lent ou injoignable.
+    if (window.requestIdleCallback) {
+      requestIdleCallback(_saveLocalBackup, { timeout: 1500 });
+    } else {
+      setTimeout(_saveLocalBackup, 100);
+    }
     const filtered = getFiltered();
     const grid = document.getElementById('grid');
 
