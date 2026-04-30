@@ -1071,7 +1071,92 @@
 
     .btn-primary:hover { background: var(--primary-dark); }
 
-    /* DETAIL MODAL */
+    /* ── DETAIL VIEW (écran plein, plus une popup) ───────────────────────── */
+    .detail-view-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 250;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.22s cubic-bezier(.32,.72,0,1);
+      pointer-events: none;
+    }
+    .detail-view-screen.open {
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+    .detail-topbar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      min-height: 56px;
+    }
+    .detail-back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font: 600 0.88rem inherit;
+      cursor: pointer;
+      transition: border-color .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .detail-back-btn:hover, .detail-back-btn:active { border-color: var(--primary); color: var(--primary); }
+    .detail-topbar-title {
+      flex: 1;
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .detail-topbar-action {
+      flex-shrink: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 8px;
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .detail-topbar-action:hover, .detail-topbar-action:active { border-color: var(--danger); color: var(--danger); }
+    .detail-view-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      overflow-anchor: none;
+      padding: 16px 16px 32px;
+      max-width: 760px;
+      margin: 0 auto;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    @media (max-width: 480px) {
+      .detail-topbar { padding: 8px 12px; min-height: 52px; }
+      .detail-back-btn { padding: 7px 10px; font-size: 0.82rem; }
+      .detail-view-body { padding: 14px 12px 28px; }
+    }
+
+    /* ── DETAIL CONTENT (anciennement dans la modale) ────────────────────── */
     .detail-photo-wrap {
       position: relative;
       margin-bottom: 16px;
@@ -2374,17 +2459,29 @@
 </div>
 
 <!-- DETAIL MODAL -->
-<div class="modal-overlay" id="detailModal">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">Détail</div>
-      <button class="close-btn" onclick="closeDetailModal()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M18 6 6 18M6 6l12 12"/>
-        </svg>
-      </button>
-    </div>
-    <div class="modal-body">
+<!-- DETAIL VIEW (écran à part entière, plus une popup) — affiché à la place
+     du Stock/Validate quand on clique une card. Le bouton ← retour fait
+     history.back() pour que le bouton physique mobile fonctionne aussi. -->
+<div id="detailView" class="detail-view-screen">
+  <div class="detail-topbar">
+    <button class="detail-back-btn" onclick="closeDetailModal()" aria-label="Retour">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="18" height="18">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+      Retour
+    </button>
+    <div class="detail-topbar-title" id="detailTopbarTitle">Détail</div>
+    <button class="detail-topbar-action" onclick="deleteCurrentDetail()" title="Supprimer l'article" aria-label="Supprimer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6l-1 14H6L5 6"/>
+        <path d="M10 11v6M14 11v6"/>
+        <path d="M9 6V4h6v2"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="detail-view-body">
 
       <!-- Photo cliquable -->
       <input type="file" id="detailPhotoInput" accept="image/*" style="display:none" onchange="handleDetailPhotoChange(event)">
@@ -2533,13 +2630,6 @@
         </label>
       </div>
 
-      <div class="detail-actions">
-        <button onclick="deleteCurrentDetail()" style="background:none;border:none;color:var(--text-muted);font-size:0.78rem;cursor:pointer;padding:6px 10px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;transition:color .15s" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-muted)'">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-          Supprimer
-        </button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -5117,7 +5207,21 @@
       }
     }
 
-    document.getElementById('detailModal').classList.add('open');
+    // Active l'écran détail (qui n'est plus une modale).
+    const view = document.getElementById('detailView');
+    view.classList.add('open');
+    document.body.classList.add('detail-screen-active');
+    // Met à jour le titre de la topbar avec le nom de l'item.
+    const titleEl = document.getElementById('detailTopbarTitle');
+    if (titleEl) titleEl.textContent = item.name || 'Détail';
+    // Pousse un état dans l'historique pour que le bouton physique
+    // 'retour' du téléphone ferme le détail au lieu de quitter l'app.
+    if (history.state?.detailId !== id) {
+      history.pushState({ detailId: id }, '', '#item/' + encodeURIComponent(id));
+    }
+    // Reset le scroll de la vue détail au top.
+    const body = document.querySelector('#detailView .detail-view-body');
+    if (body) body.scrollTop = 0;
 
     // Listeners auto-save
     ['detailNameInput','detailDescInput','detailFilamentInput','detailCategoryInput','detailThresholdInput'].forEach(elId => {
@@ -5132,7 +5236,15 @@
       _detailSaveTimer = null;
       await detailAutoSave();
     }
-    document.getElementById('detailModal').classList.remove('open');
+    document.getElementById('detailView').classList.remove('open');
+    document.body.classList.remove('detail-screen-active');
+    detailId = null;
+    // Si on a poussé un état #item/... on revient dans l'historique pour
+    // que l'URL redevienne propre. Mais seulement si on est encore sur cet
+    // état (sinon popstate s'occupe déjà du nettoyage).
+    if (history.state?.detailId) {
+      history.back();
+    }
   }
 
   async function quickVariantQty(variantIndex, delta) {
@@ -5255,8 +5367,27 @@
 
   // ── CLOSE ON BACKDROP / ESC ───────────────────────────────────────────────
   document.getElementById('formModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeFormModal(); });
-  document.getElementById('detailModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDetailModal(); });
+  // Note : detailView n'est plus une modale, son seul moyen de fermeture est
+  // le bouton "Retour" en haut, ou le bouton physique back du téléphone (géré
+  // via popstate).
   document.getElementById('categoriesModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCategoriesModal(); });
+
+  // Bouton physique "back" / swipe back : si l'écran détail est ouvert, le
+  // popstate retire la classe .open au lieu de quitter l'app.
+  window.addEventListener('popstate', () => {
+    const view = document.getElementById('detailView');
+    if (view?.classList.contains('open')) {
+      // On ferme la vue sans repush l'historique (sinon on entre dans une boucle).
+      if (_detailSaveTimer) {
+        clearTimeout(_detailSaveTimer);
+        _detailSaveTimer = null;
+        detailAutoSave().catch(()=>{});
+      }
+      view.classList.remove('open');
+      document.body.classList.remove('detail-screen-active');
+      detailId = null;
+    }
+  });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { closeFormModal(); closeDetailModal(); closeHistory(); closeCategoriesModal(); closeBambuSetup(); closeBambuHistory(); }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
