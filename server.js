@@ -995,18 +995,20 @@ http.createServer(async (req, res) => {
           const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', {
             account: b.email, password: b.password,
           });
+          // Bambu envoie automatiquement le code par email quand le compte a la
+          // 2FA activée (changement d'API ~2025). On NE déclenche PLUS de
+          // sendemail/code explicite : ça envoyait un 2ᵉ email qui invalidait
+          // le 1er → l'utilisateur ne savait pas lequel utiliser.
           if (d.loginType === 'verifyCode') {
-            try {
-              await curlPost('https://api.bambulab.com/v1/user-service/user/sendemail/code', {
-                email: b.email,
-                type:  'codeLogin',
-              });
-              console.log(`  [Bambu] Code 2FA envoyé à ${b.email}`);
-            } catch(sendErr) {
-              console.warn('  [Bambu] Avertissement envoi code :', sendErr.message);
-            }
+            console.log(`  [Bambu] 2FA requis pour ${b.email} — code envoyé par Bambu`);
             const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2);
-            pendingTfa.set(sessionId, { email: b.email, password: b.password, expires: Date.now() + 10 * 60_000, userId });
+            pendingTfa.set(sessionId, {
+              email: b.email,
+              password: b.password,
+              tfaKey: d.tfaKey || d.data?.tfaKey || null,
+              expires: Date.now() + 10 * 60_000,
+              userId,
+            });
             json(res, { needsCode: true, sessionId });
             return;
           }
@@ -1019,6 +1021,7 @@ http.createServer(async (req, res) => {
           onStateChange(userId, 'connected');
           json(res, { ok: true });
         } catch(e) {
+          console.warn('  [Bambu] /api/bambu/auth erreur :', e.message);
           json(res, { error: e.message }, 401);
         }
         return;
@@ -1035,12 +1038,23 @@ http.createServer(async (req, res) => {
           json(res, { error: 'Session expirée — recommence la connexion' }, 400);
           return;
         }
+        const cleanCode = String(code).trim().replace(/\s+/g, '');
         try {
-          const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', {
-            account: tfa.email, password: tfa.password, code: code.trim(),
-          });
+          // Bambu accepte le code soit via { account, password, code }, soit via
+          // { tfaKey, code } selon la version. On essaie d'abord avec tous les
+          // champs pour maximiser la compatibilité.
+          const payload = {
+            account: tfa.email,
+            password: tfa.password,
+            code: cleanCode,
+          };
+          if (tfa.tfaKey) payload.tfaKey = tfa.tfaKey;
+          const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', payload);
           const token = d.accessToken || d.token || d.data?.accessToken;
-          if (!token) throw new Error(d.message || d.error || 'Code invalide ou expiré');
+          if (!token) {
+            console.warn('  [Bambu] /api/bambu/verify : pas de token. Réponse :', JSON.stringify(d).slice(0, 500));
+            throw new Error(d.message || d.error || `Code invalide ou expiré (réponse Bambu : ${JSON.stringify(d).slice(0,120)})`);
+          }
           const email = tfa.email;
           const tfaUserId = tfa.userId || userId;
           pendingTfa.delete(sessionId);
@@ -1049,9 +1063,38 @@ http.createServer(async (req, res) => {
           saveBambuToken(tfaUserId, token, printers, email);
           connectBambu(tfaUserId, token, printers, email);
           onStateChange(tfaUserId, 'connected');
+          console.log(`  [Bambu] 2FA validé pour ${email}`);
           json(res, { ok: true });
         } catch(e) {
+          console.warn('  [Bambu] /api/bambu/verify erreur :', e.message);
           json(res, { error: e.message }, 401);
+        }
+        return;
+      }
+
+      // POST /api/bambu/resend-code → renvoie un nouveau code 2FA si l'utilisateur
+      // n'a rien reçu ou a perdu le mail. Garde une trace en mémoire pour invalider
+      // l'ancien proprement côté UI.
+      if (req.method === 'POST' && url === '/api/bambu/resend-code') {
+        const b = await parseBody(req).catch(() => ({}));
+        const { sessionId } = b;
+        if (!sessionId) { json(res, { error: 'Session requise' }, 400); return; }
+        const tfa = pendingTfa.get(sessionId);
+        if (!tfa || Date.now() > tfa.expires) {
+          pendingTfa.delete(sessionId);
+          json(res, { error: 'Session expirée — recommence la connexion' }, 400);
+          return;
+        }
+        try {
+          await curlPost('https://api.bambulab.com/v1/user-service/user/sendemail/code', {
+            email: tfa.email,
+            type:  'codeLogin',
+          });
+          console.log(`  [Bambu] Code 2FA renvoyé à ${tfa.email}`);
+          json(res, { ok: true });
+        } catch(e) {
+          console.warn('  [Bambu] resend-code erreur :', e.message);
+          json(res, { error: e.message }, 500);
         }
         return;
       }

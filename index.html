@@ -2475,7 +2475,7 @@
         <div style="display:flex;align-items:center;gap:10px;padding:12px;background:rgba(108,71,255,0.08);border-radius:10px">
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" style="width:20px;flex-shrink:0"><path d="M4 4h16v16H4z" rx="2"/><path d="M8 10h8M8 14h5"/></svg>
           <div style="font-size:0.8rem;color:var(--text-muted);line-height:1.5">
-            Bambu Lab a envoyé un code de vérification à ton adresse email. Saisis-le ci-dessous.
+            Bambu Lab a envoyé un code de vérification à ton adresse email. Saisis-le ci-dessous. <strong>Si tu as reçu plusieurs codes, utilise le plus récent.</strong>
           </div>
         </div>
         <div class="form-group">
@@ -2485,12 +2485,18 @@
             style="letter-spacing:0.2em;font-size:1.2rem;text-align:center" required>
         </div>
         <div id="bambuCodeError" style="display:none;font-size:0.8rem;color:var(--danger);padding:8px 12px;background:rgba(255,71,87,0.08);border-radius:8px"></div>
+        <div id="bambuCodeOk" style="display:none;font-size:0.8rem;color:var(--accent);padding:8px 12px;background:rgba(0,212,170,0.08);border-radius:8px"></div>
         <button type="submit" class="btn-primary" id="bambuCodeBtn" style="width:100%">
           Valider le code
         </button>
-        <button type="button" style="background:none;border:none;color:var(--text-muted);font-size:0.8rem;cursor:pointer;padding:0" onclick="bambuBackToLogin()">
-          ← Recommencer avec un autre compte
-        </button>
+        <div style="display:flex;justify-content:space-between;gap:12px;font-size:0.78rem">
+          <button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0" onclick="bambuBackToLogin()">
+            ← Recommencer
+          </button>
+          <button type="button" id="bambuResendBtn" style="background:none;border:none;color:var(--primary);cursor:pointer;padding:0" onclick="bambuResendCode()">
+            Renvoyer un code
+          </button>
+        </div>
       </form>
     </div>
   </div>
@@ -4918,12 +4924,14 @@
     if (e) e.preventDefault();
     const code  = document.getElementById('bambuCode').value.trim();
     const errEl = document.getElementById('bambuCodeError');
+    const okEl  = document.getElementById('bambuCodeOk');
     const btn   = document.getElementById('bambuCodeBtn');
     if (!code) { errEl.textContent = 'Saisis le code reçu par email.'; errEl.style.display = 'block'; return; }
 
     btn.disabled = true;
     btn.textContent = 'Vérification…';
     errEl.style.display = 'none';
+    if (okEl) okEl.style.display = 'none';
 
     try {
       const r = await fetch('/api/bambu/verify', {
@@ -4942,6 +4950,43 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Valider le code';
+    }
+  }
+
+  async function bambuResendCode() {
+    const errEl = document.getElementById('bambuCodeError');
+    const okEl  = document.getElementById('bambuCodeOk');
+    const btn   = document.getElementById('bambuResendBtn');
+    if (!_bambuSessionId) {
+      errEl.textContent = 'Session expirée — recommence avec ton email/mot de passe.';
+      errEl.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Envoi…';
+    errEl.style.display = 'none';
+    if (okEl) okEl.style.display = 'none';
+    try {
+      const r = await fetch('/api/bambu/resend-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: _bambuSessionId }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Erreur');
+      if (okEl) {
+        okEl.textContent = 'Nouveau code envoyé. Utilise celui que tu viens de recevoir, l\'ancien n\'est plus valable.';
+        okEl.style.display = 'block';
+      }
+      // Vide le champ pour éviter que l'utilisateur valide l'ancien code
+      const input = document.getElementById('bambuCode');
+      if (input) { input.value = ''; input.focus(); }
+    } catch(e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Renvoyer un code';
     }
   }
 
