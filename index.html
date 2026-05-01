@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="auto">
+<html lang="fr" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -28,8 +28,7 @@
       --focus-ring: 0 0 0 3px rgba(108,71,255,0.55);
     }
 
-    /* Light theme — activé via [data-theme="light"] sur <html> ou via
-       prefers-color-scheme:light si data-theme="auto" (ou non défini). */
+    /* Light theme — activé via [data-theme="light"] sur <html>. */
     html[data-theme="light"] {
       --primary: #5535d4;
       --primary-dark: #3d20a8;
@@ -43,22 +42,6 @@
       --text-muted: #5e6080;
       --shadow: 0 4px 24px rgba(20,20,40,0.08);
       --focus-ring: 0 0 0 3px rgba(85,53,212,0.35);
-    }
-    @media (prefers-color-scheme: light) {
-      html[data-theme="auto"] {
-        --primary: #5535d4;
-        --primary-dark: #3d20a8;
-        --accent: #00a37e;
-        --danger: #e0394a;
-        --bg: #f6f6fb;
-        --surface: #ffffff;
-        --surface2: #eef0f7;
-        --border: #d6d8e3;
-        --text: #14141f;
-        --text-muted: #5e6080;
-        --shadow: 0 4px 24px rgba(20,20,40,0.08);
-        --focus-ring: 0 0 0 3px rgba(85,53,212,0.35);
-      }
     }
 
     /* Couleur de fond brut HTML synchronisée pour éviter le flash blanc/noir
@@ -2398,12 +2381,7 @@
       </svg>
     </button>
     <button class="btn-icon-header" id="themeToggleBtn" onclick="cycleTheme()" title="Changer de thème" data-i18n-attr="title:header.theme,aria-label:header.theme" aria-label="Changer de thème">
-      <svg id="themeIconAuto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M12 3v18"/>
-        <path d="M12 12 a 9 9 0 0 1 0 -9 v18 a 9 9 0 0 1 0 -9 z" fill="currentColor"/>
-      </svg>
-      <svg id="themeIconDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none">
+      <svg id="themeIconDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
       </svg>
       <svg id="themeIconLight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none">
@@ -3010,7 +2988,6 @@
       <div class="form-group">
         <label for="profileTheme" data-i18n="profile.theme">Thème</label>
         <select id="profileTheme" onchange="setTheme(this.value)">
-          <option value="auto" data-i18n="profile.themeAuto">Automatique (système)</option>
           <option value="dark" data-i18n="profile.themeDark">Sombre</option>
           <option value="light" data-i18n="profile.themeLight">Clair</option>
         </select>
@@ -3381,29 +3358,25 @@
 
 <script>
   // ─────────────────────────────────────────────────────────────────────────
-  // THEME MANAGER (dark / light / auto)
+  // THEME MANAGER (dark / light)
   // ─────────────────────────────────────────────────────────────────────────
   // Appliqué AVANT tout render pour éviter un flash de la mauvaise palette.
   (function initTheme() {
     let saved;
     try { saved = localStorage.getItem('onlyfab.theme'); } catch {}
-    const theme = (saved === 'light' || saved === 'dark' || saved === 'auto') ? saved : 'auto';
+    const theme = saved === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);
     updateThemeMeta(theme);
   })();
 
   function updateThemeMeta(theme) {
-    let resolved = theme;
-    if (theme === 'auto') {
-      resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    }
-    const color = resolved === 'light' ? '#f6f6fb' : '#0f0f13';
-    let meta = document.querySelector('meta[name="theme-color"]');
+    const color = theme === 'light' ? '#f6f6fb' : '#0f0f13';
+    const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', color);
   }
 
   function setTheme(theme) {
-    if (!['auto','dark','light'].includes(theme)) theme = 'auto';
+    if (theme !== 'light' && theme !== 'dark') theme = 'dark';
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem('onlyfab.theme', theme); } catch {}
     updateThemeMeta(theme);
@@ -3412,28 +3385,21 @@
     if (sel) sel.value = theme;
   }
 
+  // Toggle simple : sombre ↔ clair.
   function cycleTheme() {
-    const cur = document.documentElement.getAttribute('data-theme') || 'auto';
-    const next = cur === 'auto' ? 'dark' : (cur === 'dark' ? 'light' : 'auto');
-    setTheme(next);
+    const cur = document.documentElement.getAttribute('data-theme');
+    setTheme(cur === 'light' ? 'dark' : 'light');
   }
 
   function updateThemeToggleIcon() {
-    const t = document.documentElement.getAttribute('data-theme') || 'auto';
-    const a = document.getElementById('themeIconAuto');
+    const t = document.documentElement.getAttribute('data-theme');
     const d = document.getElementById('themeIconDark');
     const l = document.getElementById('themeIconLight');
-    if (!a || !d || !l) return;
-    a.style.display = t === 'auto' ? '' : 'none';
-    d.style.display = t === 'dark' ? '' : 'none';
-    l.style.display = t === 'light' ? '' : 'none';
-  }
-
-  if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => {
-      const t = document.documentElement.getAttribute('data-theme');
-      if (t === 'auto') updateThemeMeta('auto');
-    });
+    if (!d || !l) return;
+    // L'icône affichée représente le thème vers lequel on bascule au clic
+    // (convention iOS / macOS) : en dark on montre le soleil, en light la lune.
+    d.style.display = t === 'light' ? '' : 'none';
+    l.style.display = t === 'light' ? 'none' : '';
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3516,7 +3482,6 @@
       'profile.preferences': 'Préférences',
       'profile.language': 'Langue',
       'profile.theme': 'Thème',
-      'profile.themeAuto': 'Automatique (système)',
       'profile.themeDark': 'Sombre',
       'profile.themeLight': 'Clair',
       'profile.stats.items': 'Articles',
@@ -3637,7 +3602,6 @@
       'profile.preferences': 'Preferences',
       'profile.language': 'Language',
       'profile.theme': 'Theme',
-      'profile.themeAuto': 'Automatic (system)',
       'profile.themeDark': 'Dark',
       'profile.themeLight': 'Light',
       'profile.stats.items': 'Items',
@@ -3758,7 +3722,6 @@
       'profile.preferences': 'Preferencias',
       'profile.language': 'Idioma',
       'profile.theme': 'Tema',
-      'profile.themeAuto': 'Automático (sistema)',
       'profile.themeDark': 'Oscuro',
       'profile.themeLight': 'Claro',
       'profile.stats.items': 'Artículos',
@@ -3879,7 +3842,6 @@
       'profile.preferences': 'Einstellungen',
       'profile.language': 'Sprache',
       'profile.theme': 'Theme',
-      'profile.themeAuto': 'Automatisch (System)',
       'profile.themeDark': 'Dunkel',
       'profile.themeLight': 'Hell',
       'profile.stats.items': 'Artikel',
@@ -4000,7 +3962,6 @@
       'profile.preferences': 'Preferenze',
       'profile.language': 'Lingua',
       'profile.theme': 'Tema',
-      'profile.themeAuto': 'Automatico (sistema)',
       'profile.themeDark': 'Scuro',
       'profile.themeLight': 'Chiaro',
       'profile.stats.items': 'Articoli',
@@ -4121,7 +4082,6 @@
       'profile.preferences': 'Preferências',
       'profile.language': 'Idioma',
       'profile.theme': 'Tema',
-      'profile.themeAuto': 'Automático (sistema)',
       'profile.themeDark': 'Escuro',
       'profile.themeLight': 'Claro',
       'profile.stats.items': 'Artigos',
@@ -4234,7 +4194,7 @@
       const sel = document.getElementById('profileLang');
       if (sel) sel.value = currentLang;
       const themeSel = document.getElementById('profileTheme');
-      if (themeSel) themeSel.value = document.documentElement.getAttribute('data-theme') || 'auto';
+      if (themeSel) themeSel.value = document.documentElement.getAttribute('data-theme') || 'dark';
       updateThemeToggleIcon();
     });
   } else {
