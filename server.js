@@ -191,6 +191,13 @@ addColumnIfMissing('history',    'user_id', 'TEXT');
 addColumnIfMissing('users', 'is_admin', 'INTEGER DEFAULT 0');
 addColumnIfMissing('users', 'last_login', 'TEXT');
 
+// Tags multiples sur items (JSON array) — complète category (single).
+addColumnIfMissing('items', 'tags', 'TEXT');
+
+// Snapshot avant action pour pouvoir undo : on stocke la version sérialisée
+// de l'item juste avant l'update/delete pour pouvoir le restaurer.
+addColumnIfMissing('history', 'before_state', 'TEXT');
+
 // Indexes pour requêtes fréquentes (créés après TOUTES les migrations
 // pour garantir que colonnes et tables existent) :
 // - history.item_id   : timeline d'un item (déjà existant)
@@ -552,9 +559,21 @@ function json(res, data, status = 200) {
   res.end(JSON.stringify(data));
 }
 
-function logHistory(itemId, itemName, action, detail = null) {
-  db.prepare('INSERT INTO history (item_id, item_name, action, detail) VALUES (:itemId,:itemName,:action,:detail)')
-    .run({ itemId, itemName, action, detail: detail ? JSON.stringify(detail) : null });
+function logHistory(itemId, itemName, action, detail = null, beforeState = null, userId = null) {
+  db.prepare(`INSERT INTO history (item_id, item_name, action, detail, before_state, user_id)
+              VALUES (:itemId, :itemName, :action, :detail, :before_state, :uid)`)
+    .run({
+      itemId, itemName, action,
+      detail: detail ? JSON.stringify(detail) : null,
+      before_state: beforeState ? JSON.stringify(beforeState) : null,
+      uid: userId || null,
+    });
+}
+
+// Snapshot d'un item avant modification (pour undo).
+function snapshotItem(id) {
+  const row = db.prepare('SELECT * FROM items WHERE id=?').get(id);
+  return row || null;
 }
 
 // Parse robuste JSON (gère simple et double encodage héritage)
@@ -743,6 +762,39 @@ setInterval(() => {
     if (now > tfa.expires) pendingTfa.delete(sid);
   }
 }, 2 * 60_000);
+
+// ── BACKUPS AUTOMATIQUES ──────────────────────────────────────────────────
+// Snapshot SQLite vers /data/backups/ toutes les BACKUP_INTERVAL_HOURS.
+// Garde les BACKUP_RETENTION derniers, rotation FIFO sur le mtime.
+// On utilise db.backup() (API native better-sqlite3) qui copie de manière
+// cohérente même pendant des écritures (vs cp brut qui peut donner un fichier
+// corrompu en cas de transaction en cours).
+const BACKUP_DIR             = process.env.BACKUP_DIR || path.join(DATA_DIR, 'backups');
+const BACKUP_INTERVAL_HOURS  = parseInt(process.env.BACKUP_INTERVAL_HOURS || '4', 10);
+const BACKUP_RETENTION       = parseInt(process.env.BACKUP_RETENTION || '14', 10);
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+async function runBackup() {
+  try {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest = path.join(BACKUP_DIR, `onlyfab-${ts}.db`);
+    await db.backup(dest);
+    // Rotation : ne garde que les BACKUP_RETENTION plus récents.
+    const files = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('onlyfab-') && f.endsWith('.db'))
+      .map(f => ({ f, t: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (const old of files.slice(BACKUP_RETENTION)) {
+      try { fs.unlinkSync(path.join(BACKUP_DIR, old.f)); } catch {}
+    }
+    console.log(`[backup] ${dest} (kept ${Math.min(files.length + 1, BACKUP_RETENTION)})`);
+  } catch (e) {
+    console.error('[backup] ERREUR :', e.message);
+  }
+}
+// 1er backup 30s après le boot, puis tous les BACKUP_INTERVAL_HOURS.
+setTimeout(runBackup, 30_000);
+setInterval(runBackup, BACKUP_INTERVAL_HOURS * 60 * 60 * 1000);
 
 // ── SERVEUR ───────────────────────────────────────────────────────────────
 http.createServer(async (req, res) => {
@@ -1400,52 +1452,143 @@ http.createServer(async (req, res) => {
         return;
       }
 
-      // Import en masse — remplace tout le stock en une seule transaction atomique
-      if (req.method === 'POST' && url === '/api/import') {
-        const data = await parseBody(req);
-        if (!Array.isArray(data)) { json(res, { error: 'Tableau JSON attendu' }, 400); return; }
-        const normArr = v => {
-          if (Array.isArray(v)) return v;
-          if (typeof v === 'string') { try { return JSON.parse(v); } catch { return []; } }
-          return [];
+      // ── EXPORT CSV ─────────────────────────────────────────────────────
+      // Format : 1 ligne par article, variantes encodées en string
+      // (color1|colorName1|qty1;color2|colorName2|qty2). Tags séparés par ;
+      // BOM UTF-8 en tête pour qu'Excel affiche les accents correctement.
+      if (req.method === 'GET' && url === '/api/export') {
+        const rows = db.prepare('SELECT * FROM items WHERE user_id=? ORDER BY createdAt DESC').all(userId);
+        const HEADERS = ['id','name','desc','filament','category','tags','threshold','trackStock','photo','variants','parts','assembledQty','createdAt','updatedAt'];
+        const csvCell = v => {
+          if (v === null || v === undefined) return '';
+          const s = String(v);
+          // Échappe : guillemet doublé si la valeur contient , " \n ou \r
+          if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+          return s;
         };
-        const partSum = p => Math.floor((normArr(p.variants)).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
+        const encodeVariants = raw => {
+          const arr = safeParseJson(raw, []);
+          return arr.map(v => `${v.color||''}|${v.colorName||''}|${v.qty||0}`).join(';');
+        };
+        const encodeParts = raw => {
+          const arr = safeParseJson(raw, []);
+          return arr.map(p => {
+            const vs = (p.variants||[]).map(v => `${v.color||''}|${v.colorName||''}|${v.qty||0}`).join('+');
+            return `${p.name||''}::${p.filament||''}::${p.count||1}::${vs}`;
+          }).join(';');
+        };
+        const encodeTags = raw => safeParseJson(raw, []).join(';');
+        const lines = [HEADERS.join(',')];
+        for (const r of rows) {
+          lines.push([
+            r.id, r.name, r.desc, r.filament, r.category,
+            encodeTags(r.tags), r.threshold, r.trackStock, r.photo,
+            encodeVariants(r.variants), encodeParts(r.parts),
+            r.assembledQty, r.createdAt, r.updatedAt,
+          ].map(csvCell).join(','));
+        }
+        const body = '﻿' + lines.join('\r\n');
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="onlyfab-${new Date().toISOString().slice(0,10)}.csv"`,
+        });
+        res.end(body);
+        return;
+      }
+
+      // ── IMPORT CSV ─────────────────────────────────────────────────────
+      // Accepte le même format que l'export. Remplace tout le stock du user
+      // en une transaction atomique.
+      if (req.method === 'POST' && url === '/api/import') {
+        const raw = await new Promise((resolve, reject) => {
+          let buf = '';
+          req.on('data', c => { buf += c; if (buf.length > 50 * 1024 * 1024) { req.destroy(); reject(new Error('Too big')); } });
+          req.on('end', () => resolve(buf));
+          req.on('error', reject);
+        });
+        // Parse CSV simple : gère les guillemets et le BOM.
+        const text = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n');
+        const parseCsv = (str) => {
+          const rows = [];
+          let row = [], cell = '', inQuote = false;
+          for (let i = 0; i < str.length; i++) {
+            const c = str[i];
+            if (inQuote) {
+              if (c === '"' && str[i+1] === '"') { cell += '"'; i++; }
+              else if (c === '"') { inQuote = false; }
+              else { cell += c; }
+            } else {
+              if (c === '"') { inQuote = true; }
+              else if (c === ',') { row.push(cell); cell = ''; }
+              else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+              else { cell += c; }
+            }
+          }
+          if (cell.length || row.length) { row.push(cell); rows.push(row); }
+          return rows;
+        };
+        const rows = parseCsv(text).filter(r => r.some(c => c.trim() !== ''));
+        if (!rows.length) { json(res, { error: 'CSV vide' }, 400); return; }
+        const headers = rows.shift().map(h => h.trim());
+        const idx = name => headers.indexOf(name);
+        if (idx('name') === -1) { json(res, { error: 'Colonne "name" requise' }, 400); return; }
+        const decodeVariants = (s) => (s || '').split(';').filter(Boolean).map(part => {
+          const [color = '', colorName = '', qty = 0] = part.split('|');
+          return { color, colorName, qty: parseInt(qty, 10) || 0 };
+        });
+        const decodeParts = (s) => (s || '').split(';').filter(Boolean).map(part => {
+          const [name = '', filament = '', count = 1, vsRaw = ''] = part.split('::');
+          const variants = vsRaw.split('+').filter(Boolean).map(v => {
+            const [color = '', colorName = '', qty = 0] = v.split('|');
+            return { color, colorName, qty: parseInt(qty, 10) || 0 };
+          });
+          return { name, filament, count: parseInt(count, 10) || 1, variants };
+        });
+        const decodeTags = (s) => (s || '').split(';').map(t => t.trim()).filter(Boolean);
+        const items = rows.map(row => {
+          const get = name => idx(name) !== -1 ? row[idx(name)] : '';
+          return {
+            id: get('id') || (Math.random().toString(36).slice(2, 9) + Date.now().toString(36)),
+            name: get('name') || 'Sans nom',
+            desc: get('desc') || null,
+            filament: get('filament') || null,
+            category: get('category') || null,
+            tags: decodeTags(get('tags')),
+            threshold: parseInt(get('threshold'), 10) || 3,
+            trackStock: get('trackStock') === '0' || get('trackStock') === 'false' ? 0 : 1,
+            photo: get('photo') || null,
+            variants: decodeVariants(get('variants')),
+            parts: decodeParts(get('parts')),
+            assembledQty: parseInt(get('assembledQty'), 10) || 0,
+            createdAt: get('createdAt') || new Date().toISOString(),
+            updatedAt: get('updatedAt') || new Date().toISOString(),
+          };
+        });
+        const partSumImp = p => Math.floor((p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
         const importAll = db.transaction(items => {
           db.prepare('DELETE FROM items WHERE user_id=?').run(userId);
           const stmt = db.prepare(`INSERT INTO items
-            (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
-            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`);
+            (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`);
           for (const b of items) {
-            const vArr = normArr(b.variants);
-            const vJson = JSON.stringify(vArr);
-            const pArr  = normArr(b.parts);
-            const pJson = JSON.stringify(pArr);
-            const qty   = pArr.length > 0 ? Math.min(...pArr.map(partSum)) : totalQty(vJson);
-            const aItems = typeof b.assembledItems === 'string'
-              ? b.assembledItems
-              : JSON.stringify(b.assembledItems || []);
+            const vJson = JSON.stringify(b.variants);
+            const pJson = JSON.stringify(b.parts);
+            const qty = b.parts.length ? Math.min(...b.parts.map(partSumImp)) : totalQty(vJson);
             stmt.run({
-              id: b.id, name: b.name, desc: b.desc || null,
-              filament: b.filament || null, color: '', colorName: '',
-              qty, threshold: b.threshold ?? 3, photo: b.photo || null,
-              category: b.category || null,
-              trackStock: (b.trackStock === false || b.trackStock === 0) ? 0 : 1,
+              id: b.id, name: b.name, desc: b.desc, filament: b.filament,
+              color: '', colorName: '',
+              qty, threshold: b.threshold, photo: b.photo,
+              category: b.category, tags: JSON.stringify(b.tags),
+              trackStock: b.trackStock,
               variants: vJson, parts: pJson,
-              assembledQty: b.assembledQty || 0, assembledItems: aItems,
-              createdAt: b.createdAt || new Date().toISOString(),
-              updatedAt: b.updatedAt || new Date().toISOString(),
+              assembledQty: b.assembledQty, assembledItems: '[]',
+              createdAt: b.createdAt, updatedAt: b.updatedAt,
               uid: userId,
             });
           }
         });
-        importAll(data);
-        json(res, { ok: true, count: data.length });
-        return;
-      }
-
-      // Export
-      if (req.method === 'GET' && url === '/api/export') {
-        json(res, db.prepare('SELECT * FROM items WHERE user_id=? ORDER BY createdAt DESC').all(userId));
+        importAll(items);
+        json(res, { ok: true, count: items.length });
         return;
       }
 
@@ -1459,14 +1602,15 @@ http.createServer(async (req, res) => {
         const partsArr  = Array.isArray(b.parts) ? b.parts
                         : (b.parts ? (() => { try { return JSON.parse(b.parts); } catch { return []; } })() : []);
         const partsJson = JSON.stringify(partsArr);
+        const tagsArr   = Array.isArray(b.tags) ? b.tags : (typeof b.tags === 'string' ? safeParseJson(b.tags, []) : []);
         const partSum   = p => Math.floor(
           (p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1)
         );
         const effectiveQty = partsArr.length > 0
           ? Math.min(...partsArr.map(partSum))
           : totalQty(variantsJson);
-        db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
-          VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
+        db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+          VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
           .run({
             id: b.id,
             name: b.name,
@@ -1478,6 +1622,7 @@ http.createServer(async (req, res) => {
             threshold: b.threshold ?? 3,
             photo: b.photo || null,
             category: b.category || null,
+            tags: JSON.stringify(tagsArr),
             trackStock: b.trackStock !== false ? 1 : 0,
             variants: variantsJson,
             parts: partsJson,
@@ -1487,29 +1632,31 @@ http.createServer(async (req, res) => {
             updatedAt: now,
             uid: userId,
           });
-        logHistory(b.id, b.name, 'add', { totalQty: totalQty(variantsJson), filament: b.filament });
+        logHistory(b.id, b.name, 'add', { totalQty: totalQty(variantsJson), filament: b.filament }, null, userId);
         json(res, { ok: true });
         return;
       }
 
       if (req.method === 'PUT' && id && !sub) {
         const b = await parseBody(req);
+        // Capture l'état AVANT modif pour permettre l'undo.
+        const before = snapshotItem(id);
+        if (!before || before.user_id !== userId) { json(res, { error: 'Introuvable' }, 404); return; }
         const variantsJson = typeof b.variants === 'string' ? b.variants : JSON.stringify(b.variants || []);
         const tQty = totalQty(variantsJson);
         const partsArrUpd  = typeof b.parts === 'string' ? JSON.parse(b.parts || '[]') : (b.parts || []);
         const partsJsonUpd = typeof b.parts === 'string' ? b.parts : JSON.stringify(b.parts || []);
+        const tagsArrUpd   = Array.isArray(b.tags) ? b.tags : (typeof b.tags === 'string' ? safeParseJson(b.tags, []) : []);
         const partSumUpd   = p => Math.floor((p.variants || []).reduce((s, v) => s + (v.qty || 0), 0) / (p.count || 1));
         const effectiveQtyUpd = partsArrUpd.length > 0
           ? Math.min(...partsArrUpd.map(partSumUpd))
           : tQty;
-        const existingRow = db.prepare('SELECT assembledItems, name FROM items WHERE id=:id AND user_id=:uid').get({ id, uid: userId });
-        if (!existingRow) { json(res, { error: 'Introuvable' }, 404); return; }
         const assembledItemsUpd = b.assembledItems !== undefined
           ? (typeof b.assembledItems === 'string' ? b.assembledItems : JSON.stringify(b.assembledItems || []))
-          : (existingRow?.assembledItems || null);
+          : (before.assembledItems || null);
         db.prepare(`UPDATE items SET name=:name,"desc"=:desc,filament=:filament,color=:color,
           colorName=:colorName,qty=:qty,threshold=:threshold,photo=:photo,
-          category=:category,trackStock=:trackStock,variants=:variants,parts=:parts,
+          category=:category,tags=:tags,trackStock=:trackStock,variants=:variants,parts=:parts,
           assembledQty=:assembledQty,assembledItems=:assembledItems,updatedAt=:updatedAt
           WHERE id=:id AND user_id=:uid`)
           .run({
@@ -1524,6 +1671,7 @@ http.createServer(async (req, res) => {
             threshold: b.threshold ?? 3,
             photo: b.photo || null,
             category: b.category || null,
+            tags: JSON.stringify(tagsArrUpd),
             trackStock: b.trackStock !== false ? 1 : 0,
             variants: variantsJson,
             parts: partsJsonUpd,
@@ -1531,7 +1679,7 @@ http.createServer(async (req, res) => {
             assembledItems: assembledItemsUpd,
             updatedAt: new Date().toISOString(),
           });
-        logHistory(id, b.name || existingRow?.name || id, 'update', { totalQty: tQty });
+        logHistory(id, b.name || before.name || id, 'update', { totalQty: tQty }, before, userId);
         json(res, { ok: true });
         return;
       }
@@ -1647,9 +1795,11 @@ http.createServer(async (req, res) => {
       }
 
       if (req.method === 'DELETE' && id && !sub) {
-        const item = db.prepare('SELECT name FROM items WHERE id = :id AND user_id = :uid').get({ id, uid: userId });
+        // Snapshot complet avant suppression pour pouvoir undo le delete.
+        const beforeDel = snapshotItem(id);
+        if (!beforeDel || beforeDel.user_id !== userId) { json(res, { error: 'Introuvable' }, 404); return; }
         db.prepare('DELETE FROM items WHERE id = :id AND user_id = :uid').run({ id, uid: userId });
-        if (item) logHistory(id, item.name, 'delete', null);
+        logHistory(id, beforeDel.name, 'delete', null, beforeDel, userId);
         json(res, { ok: true });
         return;
       }
@@ -1893,8 +2043,51 @@ http.createServer(async (req, res) => {
         json(res, db.prepare('SELECT h.* FROM history h WHERE h.user_id=? ORDER BY h.ts DESC LIMIT 300').all(userId));
         return;
       }
-      if (req.method === 'GET' && parts[1] === 'history' && id) {
+      if (req.method === 'GET' && parts[1] === 'history' && id && !sub) {
         json(res, db.prepare('SELECT * FROM history WHERE item_id = :id AND user_id = :uid ORDER BY ts DESC').all({ id, uid: userId }));
+        return;
+      }
+
+      // POST /api/history/:histId/undo → restaure le before_state d'une entrée.
+      // Couvre update et delete. Pour add, l'undo équivaut à une suppression.
+      if (req.method === 'POST' && parts[1] === 'history' && id && sub === 'undo') {
+        const histRow = db.prepare('SELECT * FROM history WHERE id = :id AND user_id = :uid').get({ id, uid: userId });
+        if (!histRow) { json(res, { error: 'Entrée historique introuvable' }, 404); return; }
+        const before = histRow.before_state ? safeParseJson(histRow.before_state, null) : null;
+
+        if (histRow.action === 'add') {
+          // Undo d'un add = on supprime l'item s'il existe encore.
+          db.prepare('DELETE FROM items WHERE id = :id AND user_id = :uid').run({ id: histRow.item_id, uid: userId });
+          logHistory(histRow.item_id, histRow.item_name, 'undo-add', { undoneHistoryId: histRow.id }, null, userId);
+          json(res, { ok: true, action: 'deleted' });
+          return;
+        }
+
+        if (!before) { json(res, { error: 'Pas de snapshot disponible pour cet historique' }, 400); return; }
+
+        if (histRow.action === 'delete') {
+          // Undo d'un delete = on ré-insère l'item depuis le snapshot.
+          const exists = db.prepare('SELECT id FROM items WHERE id=?').get(before.id);
+          if (exists) { json(res, { error: 'Article restauré déjà présent' }, 409); return; }
+          db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
+            .run({ ...before, uid: userId });
+          logHistory(before.id, before.name, 'undo-delete', { undoneHistoryId: histRow.id }, null, userId);
+          json(res, { ok: true, action: 'restored' });
+          return;
+        }
+
+        // Update : on restore l'état d'avant.
+        const cur = snapshotItem(histRow.item_id);
+        if (!cur || cur.user_id !== userId) { json(res, { error: 'Article introuvable' }, 404); return; }
+        db.prepare(`UPDATE items SET name=:name,"desc"=:desc,filament=:filament,color=:color,
+          colorName=:colorName,qty=:qty,threshold=:threshold,photo=:photo,
+          category=:category,tags=:tags,trackStock=:trackStock,variants=:variants,parts=:parts,
+          assembledQty=:assembledQty,assembledItems=:assembledItems,updatedAt=:updatedAt
+          WHERE id=:id AND user_id=:uid`)
+          .run({ ...before, uid: userId, updatedAt: new Date().toISOString() });
+        logHistory(histRow.item_id, before.name, 'undo-update', { undoneHistoryId: histRow.id }, cur, userId);
+        json(res, { ok: true, action: 'reverted' });
         return;
       }
 
