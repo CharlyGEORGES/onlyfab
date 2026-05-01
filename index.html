@@ -1539,9 +1539,18 @@
 
     .detail-photo {
       width: 100%;
-      max-height: 260px;
-      object-fit: cover;
+      /* Mobile : reste raisonnable pour ne pas manger l'écran. Desktop :
+         on peut se permettre une photo bien plus grande dans le 760px de
+         max-width du body. object-fit: contain pour garder l'image
+         entière visible (bars discrètes en surface2 si ratio incompatible)
+         — important pour identifier l'objet en un coup d'œil. */
+      max-height: 480px;
+      object-fit: contain;
+      background: var(--surface2);
       display: block;
+    }
+    @media (max-width: 600px) {
+      .detail-photo { max-height: 260px; }
     }
 
     .detail-photo-overlay {
@@ -1563,7 +1572,7 @@
 
     .detail-no-photo {
       text-align: center;
-      padding: 24px;
+      padding: 60px 24px;
       color: var(--text-muted);
       background: var(--surface2);
       border-radius: var(--radius);
@@ -1571,6 +1580,14 @@
       cursor: pointer;
       border: 2px dashed var(--border);
       transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+    }
+    @media (max-width: 600px) {
+      .detail-no-photo { padding: 24px; min-height: 0; }
     }
 
     .detail-no-photo:hover { border-color: var(--primary); color: var(--primary); }
