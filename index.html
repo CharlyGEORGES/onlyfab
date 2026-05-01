@@ -4480,8 +4480,26 @@
   // le serveur réponde. Stale-while-revalidate côté SW : on affiche le cache
   // tout de suite, on met à jour en arrière-plan.
   if ('serviceWorker' in navigator) {
+    // Si pas de contrôleur SW au moment du boot, c'est une 1re install :
+    // pas de reload nécessaire après activate. Sinon (= update d'un SW
+    // déjà existant), on recharge AUTOMATIQUEMENT la page dès que le
+    // nouveau SW prend le contrôle, pour que l'utilisateur ait tout de
+    // suite la dernière version du HTML — sans avoir à hard-reload manuel.
+    const _hadSWController = !!navigator.serviceWorker.controller;
+    let _swReloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!_hadSWController || _swReloaded) return;
+      _swReloaded = true;
+      window.location.reload();
+    });
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(reg => {
+          // Force la vérification d'update à chaque chargement, ne pas
+          // attendre que le navigateur le fasse spontanément.
+          if (reg && reg.update) reg.update().catch(() => {});
+        })
+        .catch(() => {});
     });
   }
 
