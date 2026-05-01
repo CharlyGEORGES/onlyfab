@@ -130,6 +130,114 @@
     .btn-icon-header svg { width: 17px; height: 17px; }
     .btn-icon-header.success:hover { border-color: var(--accent); color: var(--accent); }
 
+    /* ── MENU UTILISATEUR ─────────────────────────────────────────── */
+    .user-menu-wrap { position: relative; }
+
+    .user-menu-trigger {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 6px 10px 6px 8px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .user-menu-trigger:hover { border-color: var(--primary); color: var(--primary); }
+    .user-menu-trigger svg { width: 16px; height: 16px; }
+    .user-menu-trigger .user-menu-name {
+      font-size: 0.78rem;
+      font-weight: 600;
+      max-width: 110px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .user-menu-trigger .chev { width: 12px; height: 12px; opacity: 0.6; transition: transform 0.15s; }
+    .user-menu-trigger[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+    @media (max-width: 600px) {
+      .user-menu-trigger .user-menu-name { display: none; }
+      .user-menu-trigger .chev { display: none; }
+      .user-menu-trigger { padding: 7px 8px; }
+    }
+
+    .user-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 250px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 6px;
+      z-index: 250;
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+      pointer-events: none;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .user-menu.open {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .user-menu-header {
+      padding: 8px 10px 10px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+    .user-menu-header-name {
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .user-menu-header-email {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      background: transparent;
+      border: 0;
+      padding: 9px 11px;
+      font-size: 0.83rem;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      border-radius: 8px;
+      font-family: inherit;
+      transition: background 0.1s;
+    }
+    .user-menu-item:hover,
+    .user-menu-item:focus-visible { background: var(--surface2); outline: none; }
+    .user-menu-item svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--text-muted); }
+    .user-menu-item:hover svg { color: var(--text); }
+    .user-menu-item.danger { color: var(--danger); }
+    .user-menu-item.danger svg { color: var(--danger); }
+
+    .user-menu-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 5px 6px;
+    }
+
     .search-wrap {
       position: relative;
       display: flex;
@@ -1181,6 +1289,32 @@
       -webkit-tap-highlight-color: transparent;
     }
     .detail-topbar-action:hover, .detail-topbar-action:active { border-color: var(--danger); color: var(--danger); }
+
+    /* Bouton supprimer plein-largeur en bas du détail. Pas un bouton primary
+       — il doit rester sobre pour ne pas être plus en évidence que les actions
+       d'édition courantes. */
+    .detail-delete-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      margin-top: 24px;
+      padding: 12px 16px;
+      background: transparent;
+      border: 1px solid var(--danger);
+      border-radius: 10px;
+      color: var(--danger);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .detail-delete-btn:hover,
+    .detail-delete-btn:focus-visible {
+      background: rgba(255,71,87,0.08);
+    }
     .detail-view-body {
       flex: 1;
       overflow-y: auto;
@@ -2062,7 +2196,7 @@
       .header-actions { gap: 4px; flex-wrap: nowrap; }
       .btn-icon-header { width: 34px; height: 34px; }
       .btn-icon-header svg { width: 16px; height: 16px; }
-      #userDisplay { display: none; }
+      /* Le label du menu user est masqué sur mobile (icône seule) via .user-menu-trigger above */
       /* Version reste visible sur mobile pour faciliter le debug à distance. */
       #appVersion { font-size: 0.55rem !important; padding: 0 6px !important; opacity: 0.6 !important; }
       .main-inner { padding: 16px 12px; }
@@ -2346,69 +2480,112 @@
   </div>
   <div class="header-actions">
     <div class="save-dot" id="saveDot" title="Sauvegardé" data-i18n-attr="title:header.saved" aria-label="Sauvegardé" role="status"></div>
-    <button class="btn-icon-header" onclick="openCategoriesModal()" title="Gérer les catégories" data-i18n-attr="title:header.categories,aria-label:header.categories" aria-label="Gérer les catégories">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M4 6h16M4 12h16M4 18h7"/>
-        <circle cx="17" cy="18" r="3"/>
-        <path d="M17 15v3l2 1"/>
-      </svg>
-    </button>
-    <button class="btn-icon-header" onclick="openHistory()" title="Historique" data-i18n-attr="title:header.history,aria-label:header.history" aria-label="Historique">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="12" cy="12" r="10"/>
-        <polyline points="12 6 12 12 16 14"/>
-      </svg>
-    </button>
-    <button class="btn-icon-header success" onclick="exportData()" title="Exporter une sauvegarde JSON" data-i18n-attr="title:header.export,aria-label:header.export" aria-label="Exporter une sauvegarde JSON">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/>
-        <line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-    </button>
-    <button class="btn-icon-header" onclick="document.getElementById('importInput').click()" title="Importer une sauvegarde JSON" data-i18n-attr="title:header.import,aria-label:header.import" aria-label="Importer une sauvegarde JSON">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-    </button>
-    <input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)" aria-label="Importer une sauvegarde JSON">
+
     <button class="btn-icon-header" id="inventoryModeBtn" onclick="toggleInventoryMode()" title="Mode inventaire rapide" data-i18n-attr="title:header.inventoryMode,aria-label:header.inventoryMode" aria-label="Mode inventaire rapide">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
         <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
       </svg>
     </button>
-    <button class="btn-icon-header" id="themeToggleBtn" onclick="cycleTheme()" title="Changer de thème" data-i18n-attr="title:header.theme,aria-label:header.theme" aria-label="Changer de thème">
-      <svg id="themeIconDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-      </svg>
-      <svg id="themeIconLight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none">
-        <circle cx="12" cy="12" r="4"/>
-        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-      </svg>
-    </button>
-    <span id="userDisplay" style="font-size:0.75rem;color:var(--text-muted);margin:0 8px;align-self:center;"></span>
-    <button class="btn-icon-header" id="adminBtn" onclick="openAdminModal()" title="Panel administrateur" data-i18n-attr="title:header.admin,aria-label:header.admin" aria-label="Panel administrateur" style="display:none">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3z"/>
-        <path d="M9 12l2 2 4-4"/>
-      </svg>
-    </button>
-    <button class="btn-icon-header" onclick="openProfileModal()" title="Mon compte" data-i18n-attr="title:header.account,aria-label:header.account" aria-label="Mon compte">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="12" cy="8" r="4"/>
-        <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
-      </svg>
-    </button>
-    <button class="btn-icon-header" onclick="logout()" title="Se déconnecter" data-i18n-attr="title:header.logout,aria-label:header.logout" aria-label="Se déconnecter">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-        <polyline points="16 17 21 12 16 7"/>
-        <line x1="21" y1="12" x2="9" y2="12"/>
-      </svg>
-    </button>
+
+    <input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)" aria-label="Importer une sauvegarde JSON">
+
+    <!-- MENU UTILISATEUR : tout le reste tient ici -->
+    <div class="user-menu-wrap">
+      <button class="user-menu-trigger" id="userMenuBtn" onclick="toggleUserMenu(event)"
+              aria-haspopup="true" aria-expanded="false" aria-controls="userMenu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="8" r="4"/>
+          <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
+        </svg>
+        <span class="user-menu-name" id="userMenuTriggerName"></span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+
+      <div class="user-menu" id="userMenu" role="menu" aria-labelledby="userMenuBtn">
+        <div class="user-menu-header">
+          <div class="user-menu-header-name" id="userMenuName">—</div>
+          <div class="user-menu-header-email" id="userMenuEmail"></div>
+        </div>
+
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();openProfileModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
+          </svg>
+          <span data-i18n="header.account">Mon compte</span>
+        </button>
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();openCategoriesModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h7"/>
+            <circle cx="17" cy="18" r="3"/>
+            <path d="M17 15v3l2 1"/>
+          </svg>
+          <span data-i18n="header.categories">Gérer les catégories</span>
+        </button>
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();openHistory()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span data-i18n="header.history">Historique</span>
+        </button>
+
+        <div class="user-menu-divider" role="separator"></div>
+
+        <button class="user-menu-item" role="menuitem" id="userMenuTheme" onclick="cycleTheme()">
+          <svg id="themeIconDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <svg id="themeIconLight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+          <span id="userMenuThemeLabel" data-i18n="header.theme">Changer de thème</span>
+        </button>
+
+        <div class="user-menu-divider" role="separator"></div>
+
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();exportData()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span data-i18n="header.export">Exporter une sauvegarde JSON</span>
+        </button>
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();document.getElementById('importInput').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span data-i18n="header.import">Importer une sauvegarde JSON</span>
+        </button>
+
+        <div class="user-menu-divider" id="adminMenuDivider" role="separator" style="display:none"></div>
+        <button class="user-menu-item" role="menuitem" id="adminBtn" onclick="closeUserMenu();openAdminModal()" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3z"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+          <span data-i18n="header.admin">Administration</span>
+        </button>
+
+        <div class="user-menu-divider" role="separator"></div>
+
+        <button class="user-menu-item danger" role="menuitem" onclick="closeUserMenu();logout()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span data-i18n="header.logout">Se déconnecter</span>
+        </button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -2636,14 +2813,7 @@
       <span data-i18n="detail.back">Retour</span>
     </button>
     <div class="detail-topbar-title" id="detailTopbarTitle" data-i18n="detail.title">Détail</div>
-    <button class="detail-topbar-action" onclick="deleteCurrentDetail()" title="Supprimer l'article" aria-label="Supprimer" data-i18n-attr="title:detail.deleteItem,aria-label:detail.deleteItem">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17" aria-hidden="true">
-        <polyline points="3 6 5 6 21 6"/>
-        <path d="M19 6l-1 14H6L5 6"/>
-        <path d="M10 11v6M14 11v6"/>
-        <path d="M9 6V4h6v2"/>
-      </svg>
-    </button>
+    <div style="width:36px"></div>
   </div>
 
   <div class="detail-view-body">
@@ -2794,6 +2964,11 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
+
+      <!-- Bouton supprimer en bas, bien visible (au lieu de l'icône dans la topbar) -->
+      <button type="button" class="detail-delete-btn" onclick="deleteCurrentDetail()" data-i18n="detail.deleteItem">
+        Supprimer l'article
+      </button>
 
   </div>
 </div>
@@ -4202,10 +4377,53 @@
     updateThemeToggleIcon();
   }
 
+  // ─── MENU UTILISATEUR ───────────────────────────────────────────────
+  function toggleUserMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('userMenu');
+    const btn  = document.getElementById('userMenuBtn');
+    if (!menu || !btn) return;
+    const open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      // Focus 1er menuitem pour navigation clavier.
+      const first = menu.querySelector('[role="menuitem"]:not([style*="display:none"])');
+      if (first) setTimeout(() => first.focus(), 30);
+    }
+  }
+  function closeUserMenu() {
+    const menu = document.getElementById('userMenu');
+    const btn  = document.getElementById('userMenuBtn');
+    if (menu) menu.classList.remove('open');
+    if (btn)  btn.setAttribute('aria-expanded', 'false');
+  }
+  // Click hors du menu → fermeture.
+  document.addEventListener('click', e => {
+    const menu = document.getElementById('userMenu');
+    const btn  = document.getElementById('userMenuBtn');
+    if (!menu || !menu.classList.contains('open')) return;
+    if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+    closeUserMenu();
+  });
+  // ESC ferme le menu (en plus des modales déjà gérées plus bas).
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const menu = document.getElementById('userMenu');
+      if (menu && menu.classList.contains('open')) {
+        closeUserMenu();
+        const btn = document.getElementById('userMenuBtn');
+        if (btn) btn.focus();
+      }
+    }
+  });
+
   // Expose pour usage HTML inline.
   window.setLang = setLang;
   window.setTheme = setTheme;
   window.cycleTheme = cycleTheme;
+  window.toggleUserMenu = toggleUserMenu;
+  window.closeUserMenu = closeUserMenu;
   window.t = t;
 
   // ── SERVICE WORKER ────────────────────────────────────────────────────────
@@ -4238,13 +4456,24 @@
     const u = (window.__INITIAL_DATA__ || {}).user || null;
     if (!u) return;
     window.currentUser = u;
-    const userEl = document.getElementById('userDisplay');
-    if (userEl) userEl.textContent = u.name || u.email;
+    applyUserToHeader(u);
+  })();
+
+  function applyUserToHeader(u) {
+    if (!u) return;
+    const trigger = document.getElementById('userMenuTriggerName');
+    if (trigger) trigger.textContent = u.name || (u.email || '').split('@')[0];
+    const name = document.getElementById('userMenuName');
+    if (name) name.textContent = u.name || u.email || '—';
+    const email = document.getElementById('userMenuEmail');
+    if (email) email.textContent = u.name && u.email ? u.email : '';
     if (u.is_admin) {
       const btn = document.getElementById('adminBtn');
       if (btn) btn.style.display = '';
+      const div = document.getElementById('adminMenuDivider');
+      if (div) div.style.display = '';
     }
-  })();
+  }
   // Vérification de session en arrière-plan (sans bloquer ni masquer l'UI)
   (async () => {
     try {
@@ -4319,9 +4548,9 @@
       const data = await r.json();
       if (!r.ok) { showProfMsg('profileError', data.error || 'Erreur'); return; }
       showProfMsg('profileSuccess', 'Informations mises à jour.');
-      // Met à jour le nom dans la navbar
-      const userEl = document.getElementById('userDisplay');
-      if (userEl) userEl.textContent = name || email;
+      // Reflète le nouveau nom/email dans le menu utilisateur
+      applyUserToHeader({ ...window.currentUser, name, email });
+      window.currentUser = { ...window.currentUser, name, email };
     } catch { showProfMsg('profileError', 'Erreur réseau.'); }
   }
   async function saveProfilePassword(e) {
@@ -5008,14 +5237,6 @@
               <div class="qty-display">${parts.length ? (item.assembledQty || 0) : tQty}</div>
               <div class="qty-label">${parts.length ? t('card.assembled') : t('card.inStock')}</div>
               ${parts.length ? `<div style="font-size:0.65rem;color:var(--text-muted);margin-top:1px">${possibleAssemblies(parts)} ${t('card.possible')}</div>` : ''}
-            </div>
-            <div class="card-actions" onclick="event.stopPropagation()">
-              <button class="icon-btn" onclick="openEdit('${item.id}')" title="${t('card.edit')}" aria-label="${t('card.edit')}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
-              <button class="icon-btn danger" onclick="deleteItem('${item.id}')" title="${t('card.delete')}" aria-label="${t('card.delete')}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-              </button>
             </div>
           </div>
         </div>
