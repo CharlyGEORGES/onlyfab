@@ -1020,7 +1020,9 @@
       position: fixed;
       inset: 0;
       background: rgba(0,0,0,0.7);
-      backdrop-filter: blur(4px);
+      /* backdrop-filter retiré : sur Android Chrome, le blur déclenche des
+         layer drops fréquents (écran qui blanchit ou se fige le temps que
+         le compositor recompose) — gain visuel marginal, coût perf élevé. */
       z-index: 200;
       display: flex;
       align-items: center;
@@ -4699,25 +4701,16 @@
   // le serveur réponde. Stale-while-revalidate côté SW : on affiche le cache
   // tout de suite, on met à jour en arrière-plan.
   if ('serviceWorker' in navigator) {
-    // Si pas de contrôleur SW au moment du boot, c'est une 1re install :
-    // pas de reload nécessaire après activate. Sinon (= update d'un SW
-    // déjà existant), on recharge AUTOMATIQUEMENT la page dès que le
-    // nouveau SW prend le contrôle, pour que l'utilisateur ait tout de
-    // suite la dernière version du HTML — sans avoir à hard-reload manuel.
-    const _hadSWController = !!navigator.serviceWorker.controller;
-    let _swReloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!_hadSWController || _swReloaded) return;
-      _swReloaded = true;
-      window.location.reload();
-    });
+    // Update silencieux à chaque chargement : le navigateur installera le
+    // nouveau SW si la version a changé. Le SW utilise skipWaiting() +
+    // clients.claim() donc il prend la main immédiatement.
+    // PAS d'auto-reload sur controllerchange : provoquait des rechargements
+    // imprévus côté Android Chrome (page qui flashait sans raison apparente
+    // au boot après un déploiement). L'utilisateur recharge manuellement
+    // s'il rate la fraîcheur, ce qui arrive très rarement vu network-first.
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })
-        .then(reg => {
-          // Force la vérification d'update à chaque chargement, ne pas
-          // attendre que le navigateur le fasse spontanément.
-          if (reg && reg.update) reg.update().catch(() => {});
-        })
+        .then(reg => { if (reg && reg.update) reg.update().catch(() => {}); })
         .catch(() => {});
     });
   }
@@ -4728,8 +4721,10 @@
   // léger des données pour ne pas montrer un état périmé.
   window.addEventListener('pageshow', (e) => {
     if (e.persisted && typeof loadData === 'function') {
-      // Restauré depuis bfcache : silently re-fetch in background
-      try { loadData(); } catch {}
+      // Restauré depuis bfcache : le DOM est intact, on fait juste un fetch
+      // silencieux pour revalider sans re-rendre la grille (évite un flash
+      // visible sur Android Chrome au retour d'onglet).
+      try { loadData({ silent: true }); } catch {}
     }
   });
 
@@ -5175,39 +5170,44 @@
     } catch { return null; }
   }
 
-  async function loadData() {
+  async function loadData({ silent = false } = {}) {
     // Stratégie en 3 niveaux pour ne JAMAIS afficher d'écran vide :
     //  1. window.__INITIAL_DATA__ (SSR) : présent au 1er chargement réseau
     //  2. localStorage  : présent si la page a déjà été ouverte au moins une
     //     fois, utile quand le SW a servi un HTML cached sans __INITIAL_DATA__
     //  3. fetch /api/* : revalidation finale, déclenche un nouveau render
     //     uniquement si les données ont vraiment changé
+    // silent=true : appelé depuis pageshow BFCache, le DOM est déjà rendu
+    // par le navigateur — on saute les rendus 1 et 2 pour éviter un flash
+    // inutile, on fait uniquement le fetch + diff.
     const initial = window.__INITIAL_DATA__;
     if (initial && Array.isArray(initial.items) && Array.isArray(initial.categories)) {
       items = initial.items;
       categories = initial.categories;
       window.__INITIAL_DATA__ = null;
       refreshCategorySelects();
-      render();
+      if (!silent) render();
       _saveLocalBackup();
       // Pas besoin de revalider tout de suite : la page vient d'arriver du serveur.
       return;
     }
 
-    // Pas de SSR data : on essaie le backup local pour rendre IMMÉDIATEMENT.
-    const backup = _readLocalBackup();
-    if (backup) {
-      items = backup.items;
-      categories = backup.categories || [];
-      refreshCategorySelects();
-      render();
-    } else {
-      // Aucune donnée locale : skeletons pendant le fetch pour éviter
-      // l'écran vide (perçu comme un bug par l'utilisateur).
-      const grid = document.getElementById('grid');
-      if (grid) {
-        grid.className = 'grid';
-        grid.innerHTML = Array.from({length: 8}, () => '<div class="skeleton-card" aria-hidden="true"></div>').join('');
+    if (!silent) {
+      // Pas de SSR data : on essaie le backup local pour rendre IMMÉDIATEMENT.
+      const backup = _readLocalBackup();
+      if (backup) {
+        items = backup.items;
+        categories = backup.categories || [];
+        refreshCategorySelects();
+        render();
+      } else {
+        // Aucune donnée locale : skeletons pendant le fetch pour éviter
+        // l'écran vide (perçu comme un bug par l'utilisateur).
+        const grid = document.getElementById('grid');
+        if (grid) {
+          grid.className = 'grid';
+          grid.innerHTML = Array.from({length: 8}, () => '<div class="skeleton-card" aria-hidden="true"></div>').join('');
+        }
       }
     }
 
