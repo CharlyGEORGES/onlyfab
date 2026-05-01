@@ -376,6 +376,7 @@
       color: var(--text);
       padding: 0 20px 0 0;
       font-size: 0.875rem;
+      line-height: 1.4;
       cursor: pointer;
       outline: none;
       appearance: none;
@@ -385,6 +386,18 @@
       background-position: right 2px center;
       width: 100%;
       font-family: inherit;
+      /* Aligne le baseline avec le label .filter-label à côté (sinon
+         "Toutes" se retrouve quelques pixels plus haut que CATÉGORIE). */
+      vertical-align: middle;
+    }
+    /* Neutralise le fond clair que Chrome applique aux select via
+       autofill heuristic (Toutes apparaissait dans un encadré blanc). */
+    .filter-select:-webkit-autofill,
+    .filter-select:-webkit-autofill:hover,
+    .filter-select:-webkit-autofill:focus {
+      -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+      -webkit-text-fill-color: var(--text);
+      transition: background-color 5000s ease-in-out 0s;
     }
 
     .filter-select option { background: var(--surface2); }
@@ -2867,7 +2880,7 @@
             </svg>
           </div>
           <label for="categoryFilter" class="filter-label" data-i18n="filters.category">Catégorie</label>
-          <select class="filter-select" id="categoryFilter">
+          <select class="filter-select" id="categoryFilter" autocomplete="off">
             <option value="" data-i18n="filters.allCategories">Toutes</option>
           </select>
         </div>
