@@ -1206,6 +1206,15 @@
 
     .add-variant-btn:hover { border-color: var(--primary); color: var(--primary); }
 
+    /* Variante du bouton dans la page détail : un peu plus d'air et taille
+       cohérente avec les detail-variant-row au-dessus. */
+    .detail-add-variant-btn { margin-top: 10px; padding: 10px; font-size: 0.83rem; }
+
+    /* Bouton supprimer une variante (la croix). Hover en rouge pour signaler
+       l'action destructive. */
+    .detail-variant-remove { border-color: rgba(255,71,87,0.35); color: var(--danger); margin-left: 6px; }
+    .detail-variant-remove:hover { border-color: var(--danger); background: rgba(255,71,87,0.08); }
+
     /* QTY CONTROL */
     .qty-control {
       display: flex;
@@ -2350,8 +2359,11 @@
       .card-meta .badge { font-size: 0.66rem; padding: 2px 6px; }
       .card-variants { gap: 4px; margin-bottom: 6px; }
       .variant-chip, .part-chip { font-size: 0.66rem; padding: 2px 6px; }
-      .card-img, .card-img-placeholder { aspect-ratio: 16 / 10; }
-      .card-img-placeholder svg { width: 32px; height: 32px; }
+      /* Hauteur fixe (au lieu d'aspect-ratio) pour limiter strictement la
+         place que prend l'image, indépendamment de la largeur de la card.
+         Permet aux infos texte d'occuper plus de place visuelle. */
+      .card-img, .card-img-placeholder { aspect-ratio: auto; height: 110px; }
+      .card-img-placeholder svg { width: 28px; height: 28px; }
       .card-footer { padding-top: 6px; }
       .qty-display { font-size: 1.4rem; }
       .qty-label { font-size: 0.65rem; }
@@ -2474,7 +2486,8 @@
       100% { background-position: -200% 0; }
     }
     @media (max-width: 600px) {
-      .skeleton-card { height: 230px; }
+      .skeleton-card { height: 215px; }
+      .skeleton-card::before { aspect-ratio: auto; height: 110px; }
     }
 
     /* Apparition douce des cards au render. Désactivé via reduced-motion. */
@@ -5334,8 +5347,8 @@
 
   function _virtCardHeight() {
     // Doit matcher la hauteur CSS d'une .card (incluant gap entre rangées).
-    // Mobile (<=600px) : image 16/10 + body compact ≈ 230px ; desktop : 360px.
-    if (window.innerWidth <= 600) return 230 + 8;
+    // Mobile (<=600px) : image 110px + body compact ≈ 215px ; desktop : 360px.
+    if (window.innerWidth <= 600) return 215 + 8;
     return 360 + 16;
   }
 
@@ -6666,36 +6679,10 @@
       document.getElementById('detailAssembledSection').style.display  = 'none';
       document.getElementById('detailAssembledItemsList').style.display = 'none';
       document.getElementById('detailFilamentField').style.display  = '';
-      if (!variants.length) {
-        variantsDiv.style.display = 'none';
-      } else {
-        variantsDiv.style.display = 'block';
-        variantsDiv.innerHTML = `<div class="detail-variants-title">Déclinaisons</div>` +
-          variants.map((v, i) => `
-            <div class="detail-variant-row">
-              <div class="detail-variant-left">
-                <label title="Changer la couleur" style="cursor:pointer;position:relative;display:inline-flex;align-items:center">
-                  <input type="color" value="${v.color||'#888888'}" id="detailVarColor_${i}"
-                    style="opacity:0;width:0;height:0;position:absolute;pointer-events:none"
-                    onchange="detailVariantColorChange(${i},this.value)">
-                  <span id="detailVarDot_${i}" onclick="document.getElementById('detailVarColor_${i}').click()"
-                    style="width:18px;height:18px;border-radius:50%;background:${v.color||'#888'};border:2px solid rgba(255,255,255,.25);display:inline-block;flex-shrink:0;cursor:pointer"
-                    title="Cliquer pour changer la couleur"></span>
-                </label>
-                <input type="text" class="detail-variant-name-input" id="detailVarName_${i}"
-                  value="${escHtml(v.colorName || '')}" placeholder="${escHtml(v.color || '—')}"
-                  onchange="detailVariantNameChange(${i},this.value)"
-                  style="background:transparent;border:none;border-bottom:1px solid transparent;color:var(--text);font-size:0.88rem;padding:2px 4px;outline:none;width:120px;cursor:text"
-                  onfocus="this.style.borderBottomColor='var(--primary)'"
-                  onblur="this.style.borderBottomColor='transparent'">
-              </div>
-              <div class="detail-variant-qty-control">
-                <button class="qty-quick-btn" onclick="quickVariantQty(${i},-1)">−</button>
-                <span class="variant-qty-display" id="detailVariantQty_${i}">${v.qty}</span>
-                <button class="qty-quick-btn" onclick="quickVariantQty(${i},1)">+</button>
-              </div>
-            </div>`).join('');
-      }
+      // Toujours visible : même sans variantes, on affiche le bouton "Ajouter
+      // une couleur" pour permettre d'en ajouter directement depuis le détail.
+      variantsDiv.style.display = 'block';
+      _renderDetailSimpleVariants(variants);
     }
 
     // Active l'écran détail (qui n'est plus une modale).
@@ -6736,6 +6723,84 @@
     if (history.state?.detailId) {
       history.back();
     }
+  }
+
+  // Rendu (re-render) de la liste des variantes simples dans la page détail.
+  // Extrait d'openDetail pour pouvoir être appelé après detailAddVariant /
+  // detailRemoveVariant sans recharger toute la page détail.
+  function _renderDetailSimpleVariants(variants) {
+    const variantsDiv = document.getElementById('detailVariants');
+    if (!variantsDiv) return;
+    const rowsHtml = variants.map((v, i) => `
+      <div class="detail-variant-row">
+        <div class="detail-variant-left">
+          <label title="Changer la couleur" style="cursor:pointer;position:relative;display:inline-flex;align-items:center">
+            <input type="color" value="${v.color||'#888888'}" id="detailVarColor_${i}"
+              style="opacity:0;width:0;height:0;position:absolute;pointer-events:none"
+              onchange="detailVariantColorChange(${i},this.value)">
+            <span id="detailVarDot_${i}" onclick="document.getElementById('detailVarColor_${i}').click()"
+              style="width:18px;height:18px;border-radius:50%;background:${v.color||'#888'};border:2px solid rgba(255,255,255,.25);display:inline-block;flex-shrink:0;cursor:pointer"
+              title="Cliquer pour changer la couleur" aria-hidden="true"></span>
+          </label>
+          <input type="text" class="detail-variant-name-input" id="detailVarName_${i}"
+            value="${escHtml(v.colorName || '')}" placeholder="${escHtml(v.color || '—')}"
+            onchange="detailVariantNameChange(${i},this.value)"
+            aria-label="Nom de la couleur"
+            style="background:transparent;border:none;border-bottom:1px solid transparent;color:var(--text);font-size:0.88rem;padding:2px 4px;outline:none;width:120px;cursor:text"
+            onfocus="this.style.borderBottomColor='var(--primary)'"
+            onblur="this.style.borderBottomColor='transparent'">
+        </div>
+        <div class="detail-variant-qty-control">
+          <button class="qty-quick-btn" onclick="quickVariantQty(${i},-1)" aria-label="−1">−</button>
+          <span class="variant-qty-display" id="detailVariantQty_${i}" aria-live="polite">${v.qty}</span>
+          <button class="qty-quick-btn" onclick="quickVariantQty(${i},1)" aria-label="+1">+</button>
+          ${variants.length > 1 ? `<button class="qty-quick-btn detail-variant-remove" onclick="detailRemoveVariant(${i})" aria-label="${t('card.delete')}" title="${t('card.delete')}">×</button>` : ''}
+        </div>
+      </div>`).join('');
+    variantsDiv.innerHTML =
+      (variants.length ? `<div class="detail-variants-title">Déclinaisons</div>${rowsHtml}` : '') +
+      `<button type="button" class="add-variant-btn detail-add-variant-btn" onclick="detailAddVariant()">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+         <span data-i18n="form.addColor">Ajouter une couleur</span>
+       </button>`;
+    if (typeof applyTranslations === 'function') applyTranslations(variantsDiv);
+  }
+
+  async function detailAddVariant() {
+    const item = items.find(i => i.id === detailId);
+    if (!item) return;
+    const variants = parseVariants(item);
+    variants.push({ color: '#6c47ff', colorName: '', qty: 0 });
+    detailSetSaveIndicator('saving');
+    await opVariants(detailId, variants);
+    item.variants = variants;
+    item.qty = totalQty(variants);
+    document.getElementById('detailQtyTotal').textContent = totalQty(variants);
+    _renderDetailSimpleVariants(variants);
+    detailSetSaveIndicator('saved');
+    render();
+    // Focus le champ "nom" de la nouvelle variante pour saisie immédiate.
+    const newIdx = variants.length - 1;
+    setTimeout(() => {
+      const input = document.getElementById('detailVarName_' + newIdx);
+      if (input) input.focus();
+    }, 30);
+  }
+
+  async function detailRemoveVariant(variantIndex) {
+    const item = items.find(i => i.id === detailId);
+    if (!item) return;
+    const variants = parseVariants(item);
+    if (variants.length <= 1) { showToast(t('toast.colorRequired'), 'error'); return; }
+    variants.splice(variantIndex, 1);
+    detailSetSaveIndicator('saving');
+    await opVariants(detailId, variants);
+    item.variants = variants;
+    item.qty = totalQty(variants);
+    document.getElementById('detailQtyTotal').textContent = totalQty(variants);
+    _renderDetailSimpleVariants(variants);
+    detailSetSaveIndicator('saved');
+    render();
   }
 
   async function quickVariantQty(variantIndex, delta) {
