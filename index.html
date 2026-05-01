@@ -345,7 +345,11 @@
 
     .filter-field {
       display: flex;
-      align-items: center;
+      /* baseline plutôt que center : "CATÉGORIE" est en majuscules avec
+         letter-spacing, "Toutes" est en mixte. Sans baseline, les centres
+         des boîtes s'alignent mais les textes paraissent décalés (les
+         capitales sont visuellement plus hautes que les minuscules). */
+      align-items: baseline;
       gap: 8px;
       flex: 1;
       min-width: 0;
@@ -354,6 +358,9 @@
     .filter-field-icon {
       color: var(--text-muted);
       flex-shrink: 0;
+      /* Override baseline pour l'icône : on veut qu'elle soit centrée
+         verticalement avec le texte, pas alignée à sa baseline. */
+      align-self: center;
       display: flex;
       align-items: center;
     }
@@ -368,6 +375,8 @@
       letter-spacing: 0.06em;
       white-space: nowrap;
       flex-shrink: 0;
+      line-height: 1.4;
+      margin: 0;
     }
 
     .filter-select {
@@ -388,7 +397,7 @@
       background-position: right 2px center !important;
       width: 100%;
       font-family: inherit;
-      vertical-align: middle;
+      margin: 0;
     }
     /* Neutralise le fond clair que Chrome applique aux select via
        autofill heuristic. */
