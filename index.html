@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="dark">
+<html lang="fr" data-theme="dark" style="background:#0f0f13;color-scheme:dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -11,6 +11,27 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Onlyfab">
   <link rel="apple-touch-icon" href="/icon.svg">
+  <script>
+    // Applique le thème AVANT le 1er paint pour éviter tout flash blanc
+    // (FOUC) au refresh. Ce bloc est synchrone, dans le <head>, et lu en
+    // tout 1er — il n'a pas accès à I18N ni aux helpers, juste à
+    // localStorage et document.documentElement.
+    // Le <html> a déjà style="background:#0f0f13" en dur pour couvrir le
+    // cas par défaut (dark). Cette IIFE bascule en light si l'utilisateur
+    // l'a choisi, AVANT le 1er paint pour eux aussi.
+    (function () {
+      try {
+        var saved = localStorage.getItem('onlyfab.theme');
+        if (saved === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          document.documentElement.style.background = '#f6f6fb';
+          document.documentElement.style.colorScheme = 'light';
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', '#f6f6fb');
+        }
+      } catch (e) {}
+    })();
+  </script>
   <style>
     :root {
       --primary: #6c47ff;
@@ -2490,14 +2511,9 @@
       .skeleton-card::before { aspect-ratio: auto; height: 110px; }
     }
 
-    /* Apparition douce des cards au render. Désactivé via reduced-motion. */
-    .grid > .card {
-      animation: card-enter 0.28s cubic-bezier(0.2, 0, 0.2, 1) both;
-    }
-    @keyframes card-enter {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
+    /* Pas d'animation d'apparition sur les cards : la virtualisation
+       réinjecte les cards à chaque scroll, ce qui re-déclenchait l'animation
+       et provoquait un flash visible à chaque rangée traversée. */
   </style>
 </head>
 <body>
