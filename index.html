@@ -461,6 +461,10 @@
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 16px;
       width: 100%;
+      /* Chaque card prend sa hauteur naturelle au lieu d'être étirée à la
+         hauteur de la plus haute de la rangée. Évite les zones vides en bas
+         des cards courtes quand une voisine a beaucoup de variantes. */
+      align-items: start;
     }
     .grid > .card { width: 100%; min-width: 0; }
 
@@ -586,6 +590,15 @@
       background: var(--surface2);
       border: 1px solid var(--border);
       color: var(--text-muted);
+    }
+
+    /* L'attribut [hidden] doit gagner sur le display:inline-flex des chips :
+       sans ce !important, les chips au-delà du seuil +N restaient visibles
+       car l'agent utilisateur applique [hidden]{display:none} avec une
+       spécificité inférieure à celle d'un sélecteur de classe. */
+    .variant-chip[hidden],
+    .part-chip[hidden] {
+      display: none !important;
     }
 
     /* Bouton "+N" qui révèle les variants cachés. Same look que les chips
@@ -5415,7 +5428,7 @@
            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openDetail('${item.id}');}">
         ${isLow ? `<div class="low-stock-badge">${t('card.lowStock')}</div>` : ''}
         ${item.photo
-          ? `<img class="card-img" src="${item.photo}" alt="${escHtml(item.name)}" width="400" height="300" loading="lazy" decoding="async" fetchpriority="low">`
+          ? `<img class="card-img" src="${item.photo}" alt="${escHtml(item.name)}" loading="lazy" decoding="async">`
           : `<div class="card-img-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`}
         <div class="card-body">
           <div class="card-name">${escHtml(item.name)}</div>
