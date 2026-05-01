@@ -1424,7 +1424,9 @@
       display: flex;
       flex-direction: column;
       transform: translateX(100%);
-      transition: transform 0.2s ease-out;
+      /* Transition courte (150ms) pour un feedback bouton retour / ouverture
+         d'item plus snappy. Au-delà de 200ms, perception de lag sur mobile. */
+      transition: transform 0.15s ease-out;
       pointer-events: none;
     }
     .detail-view-screen.open {
@@ -6969,6 +6971,27 @@
     detailId = id;
     clearTimeout(_detailSaveTimer);
 
+    // ── FEEDBACK VISUEL IMMÉDIAT ────────────────────────────────────────
+    // On active la vue + on remplit le titre TOUT DE SUITE pour que la
+    // transition CSS démarre dès le tap. Le reste du DOM update (variantes,
+    // pièces, photo…) est différé au prochain frame pour ne pas bloquer
+    // le démarrage de l'animation. Sans ça, sur mobile lent, ~100ms de
+    // travail DOM s'écoulaient avant que la slide-in ne commence et le
+    // user avait l'impression que le tap ne répondait pas.
+    const view = document.getElementById('detailView');
+    view.classList.add('open');
+    document.body.classList.add('detail-screen-active');
+    const titleEl = document.getElementById('detailTopbarTitle');
+    if (titleEl) titleEl.textContent = item.name || 'Détail';
+    if (history.state?.detailId !== id) {
+      history.pushState({ detailId: id }, '', '#item/' + encodeURIComponent(id));
+    }
+
+    requestAnimationFrame(() => _populateDetailView(item));
+  }
+
+  function _populateDetailView(item) {
+    if (!item || item.id !== detailId) return; // user a déjà changé d'écran
     // Photo
     const photo = document.getElementById('detailPhoto');
     const noPhoto = document.getElementById('detailNoPhoto');
@@ -7010,13 +7033,11 @@
       // Mode multi-pièces
       variantsDiv.style.display = 'none';
       document.getElementById('detailFilamentField').style.display = 'none';
-      // Section assemblés
       const assembledSec = document.getElementById('detailAssembledSection');
       assembledSec.style.display = '';
       document.getElementById('detailAssembledQty').textContent = item.assembledQty || 0;
       _assembleCount = 1;
       document.getElementById('assembleCountVal').textContent = 1;
-      // Grand chiffre = assemblés en stock
       document.getElementById('detailQtyTotal').textContent = item.assembledQty || 0;
       document.getElementById('detailQtyLabel').textContent = 'Assemblés en stock';
       renderDetailParts(parts);
@@ -7027,24 +7048,10 @@
       document.getElementById('detailAssembledSection').style.display  = 'none';
       document.getElementById('detailAssembledItemsList').style.display = 'none';
       document.getElementById('detailFilamentField').style.display  = '';
-      // Toujours visible : même sans variantes, on affiche le bouton "Ajouter
-      // une couleur" pour permettre d'en ajouter directement depuis le détail.
       variantsDiv.style.display = 'block';
       _renderDetailSimpleVariants(variants);
     }
 
-    // Active l'écran détail (qui n'est plus une modale).
-    const view = document.getElementById('detailView');
-    view.classList.add('open');
-    document.body.classList.add('detail-screen-active');
-    // Met à jour le titre de la topbar avec le nom de l'item.
-    const titleEl = document.getElementById('detailTopbarTitle');
-    if (titleEl) titleEl.textContent = item.name || 'Détail';
-    // Pousse un état dans l'historique pour que le bouton physique
-    // 'retour' du téléphone ferme le détail au lieu de quitter l'app.
-    if (history.state?.detailId !== id) {
-      history.pushState({ detailId: id }, '', '#item/' + encodeURIComponent(id));
-    }
     // Reset le scroll de la vue détail au top.
     const body = document.querySelector('#detailView .detail-view-body');
     if (body) body.scrollTop = 0;
@@ -7056,18 +7063,22 @@
     });
   }
 
-  async function closeDetailModal() {
+  function closeDetailModal() {
+    // Retire la classe IMMÉDIATEMENT pour que la transition de sortie
+    // démarre dès le tap. Sans ça, on attendait la sauvegarde réseau
+    // (50-500ms) avant tout feedback visuel — le user avait l'impression
+    // que le bouton retour ne répondait pas.
+    document.getElementById('detailView').classList.remove('open');
+    document.body.classList.remove('detail-screen-active');
+
+    // Sauvegarde en arrière-plan si une modif est pending (fire-and-forget).
     if (_detailSaveTimer) {
       clearTimeout(_detailSaveTimer);
       _detailSaveTimer = null;
-      await detailAutoSave();
+      detailAutoSave().catch(() => {});
     }
-    document.getElementById('detailView').classList.remove('open');
-    document.body.classList.remove('detail-screen-active');
+
     detailId = null;
-    // Si on a poussé un état #item/... on revient dans l'historique pour
-    // que l'URL redevienne propre. Mais seulement si on est encore sur cet
-    // état (sinon popstate s'occupe déjà du nettoyage).
     if (history.state?.detailId) {
       history.back();
     }
