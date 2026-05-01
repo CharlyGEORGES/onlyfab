@@ -531,6 +531,31 @@
       color: var(--text-muted);
     }
 
+    /* Bouton "+N" qui révèle les variants cachés. Same look que les chips
+       mais avec accent primary pour signaler l'interaction. */
+    .chip-more {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(108,71,255,0.12);
+      border: 1px solid rgba(108,71,255,0.3);
+      color: var(--primary);
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .chip-more:hover, .chip-more:focus-visible {
+      background: rgba(108,71,255,0.22);
+      border-color: var(--primary);
+      outline: none;
+    }
+    @media (max-width: 600px) {
+      .chip-more { font-size: 0.66rem; padding: 2px 6px; }
+    }
+
     .variant-chip .color-dot { width: 8px; height: 8px; }
 
     /* ── PIÈCES (objet multi-pièces) ──────────────────────────── */
@@ -2314,12 +2339,22 @@
       .photo-upload { padding: 16px; }
       .photo-preview { max-height: 180px; }
 
-      /* Grille articles. */
-      .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-      .card-body { padding: 10px; }
-      .card-name { font-size: 0.95rem; }
-      .card-desc { font-size: 0.75rem; }
-      .card-img, .card-img-placeholder { aspect-ratio: 1 / 1; }
+      /* Grille articles : 2 colonnes, plus dense.
+         Image en 16/10 au lieu de 1/1 → ~30% de hauteur en moins, donc
+         ~30% de cards visibles en plus à l'écran. */
+      .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .card-body { padding: 8px 9px 9px; }
+      .card-name { font-size: 0.86rem; margin-bottom: 4px; }
+      .card-desc { display: none; }
+      .card-meta { gap: 4px; margin-bottom: 6px; }
+      .card-meta .badge { font-size: 0.66rem; padding: 2px 6px; }
+      .card-variants { gap: 4px; margin-bottom: 6px; }
+      .variant-chip, .part-chip { font-size: 0.66rem; padding: 2px 6px; }
+      .card-img, .card-img-placeholder { aspect-ratio: 16 / 10; }
+      .card-img-placeholder svg { width: 32px; height: 32px; }
+      .card-footer { padding-top: 6px; }
+      .qty-display { font-size: 1.4rem; }
+      .qty-label { font-size: 0.65rem; }
 
       .fab { bottom: 16px; right: 16px; width: 52px; height: 52px; }
       .print-job-card { padding: 10px; }
@@ -2439,7 +2474,7 @@
       100% { background-position: -200% 0; }
     }
     @media (max-width: 600px) {
-      .skeleton-card { height: 320px; }
+      .skeleton-card { height: 230px; }
     }
 
     /* Apparition douce des cards au render. Désactivé via reduced-motion. */
@@ -5199,7 +5234,7 @@
   function buildCard(item) {
     const { variants, parts, tQty, isLow } = getItemStockStatus(item);
 
-    const variantsHtml = parts.length
+    const allChips = parts.length
       ? parts.map(p => {
           const dots = (p.variants || []).map(v =>
             `<span class="part-dot" style="background:${v.color||'#888'}" title="${escHtml(v.colorName||v.color||'')} · ${v.qty||0}"></span>`
@@ -5213,10 +5248,27 @@
             (p.filament ? `<span class="part-filament">${escHtml(p.filament)}</span>` : '') +
             `<span style="opacity:.55;margin-left:1px">·${ptot}</span>` +
             `</span>`;
-        }).join('')
+        })
       : variants.map(v =>
-          `<span class="variant-chip"><span class="color-dot" style="background:${v.color||'#888'}"></span>${escHtml(v.colorName || v.color || '—')} · ${v.qty}</span>`
-        ).join('');
+          `<span class="variant-chip"><span class="color-dot" style="background:${v.color||'#888'}" aria-hidden="true"></span>${escHtml(v.colorName || v.color || '—')} · ${v.qty}</span>`
+        );
+
+    // Limite à 3 chips visibles par défaut. Au-delà, on cache les surplus
+    // derrière un bouton "+N" qui les révèle au clic (sans ouvrir le détail).
+    const MAX_VISIBLE_CHIPS = 3;
+    let variantsHtml;
+    if (allChips.length <= MAX_VISIBLE_CHIPS) {
+      variantsHtml = allChips.join('');
+    } else {
+      const visible = allChips.slice(0, MAX_VISIBLE_CHIPS).join('');
+      const extras  = allChips.slice(MAX_VISIBLE_CHIPS)
+        .map(html => html.replace(/^<span /, '<span hidden '))
+        .join('');
+      const moreLabel = `+${allChips.length - MAX_VISIBLE_CHIPS}`;
+      const moreAria  = `Afficher ${allChips.length - MAX_VISIBLE_CHIPS} de plus`;
+      const more = `<button type="button" class="chip-more" aria-label="${moreAria}" onclick="event.stopPropagation();const p=this.parentNode;p.querySelectorAll('[hidden]').forEach(e=>e.removeAttribute('hidden'));this.remove();">${moreLabel}</button>`;
+      variantsHtml = visible + more + extras;
+    }
 
     const cardLabel = t('card.viewDetails') + ' : ' + (item.name || '');
     return `
@@ -5281,9 +5333,10 @@
   };
 
   function _virtCardHeight() {
-    // Doit matcher la valeur CSS .card height (incluant gap entre rangées).
-    const gap = window.innerWidth <= 480 ? 10 : 16;
-    return (window.innerWidth <= 480 ? 320 : 360) + gap;
+    // Doit matcher la hauteur CSS d'une .card (incluant gap entre rangées).
+    // Mobile (<=600px) : image 16/10 + body compact ≈ 230px ; desktop : 360px.
+    if (window.innerWidth <= 600) return 230 + 8;
+    return 360 + 16;
   }
 
   function _virtCols() {
