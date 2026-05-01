@@ -371,7 +371,8 @@
     }
 
     .filter-select {
-      background: transparent;
+      background: transparent !important;
+      background-color: transparent !important;
       border: none;
       color: var(--text);
       padding: 0 20px 0 0;
@@ -381,17 +382,16 @@
       outline: none;
       appearance: none;
       -webkit-appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237070a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 2px center;
+      -moz-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237070a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") !important;
+      background-repeat: no-repeat !important;
+      background-position: right 2px center !important;
       width: 100%;
       font-family: inherit;
-      /* Aligne le baseline avec le label .filter-label à côté (sinon
-         "Toutes" se retrouve quelques pixels plus haut que CATÉGORIE). */
       vertical-align: middle;
     }
     /* Neutralise le fond clair que Chrome applique aux select via
-       autofill heuristic (Toutes apparaissait dans un encadré blanc). */
+       autofill heuristic. */
     .filter-select:-webkit-autofill,
     .filter-select:-webkit-autofill:hover,
     .filter-select:-webkit-autofill:focus {
@@ -400,7 +400,16 @@
       transition: background-color 5000s ease-in-out 0s;
     }
 
-    .filter-select option { background: var(--surface2); }
+    /* Les <option> ne sont stylables que pour la liste déroulante (rendue
+       par l'OS, peu de contrôle). On match var(--surface) pour que le
+       fond ne bleed pas dans la zone bouton du select sur certains Chrome. */
+    .filter-select option {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    /* Style des options dans le formulaire d'ajout/édition (pas le filtre) */
+    select option { background: var(--surface2); }
 
     .search-wrap {
       position: relative;
