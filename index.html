@@ -271,8 +271,8 @@
 
     /* GRID */
     .grid {
-      display: grid !important;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 16px;
       width: 100%;
     }
@@ -3983,7 +3983,8 @@
               </button>
             </div>
           </div>
-        </div>`;
+        </div>
+      </div>`;
   }
 
   function render() {
@@ -4011,36 +4012,8 @@
 
     if (inventoryMode) { grid.className = ''; grid.style.cssText = ''; renderInventory(filtered, grid); return; }
     grid.className = 'grid';
-    // Inline style pour garantir le grid layout même si la CSS class était
-    // override par un cache obsolète ou une autre règle.
-    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;width:100%';
-
-    // RENDU SIMPLE en sync : on rend TOUTES les cards d'un coup.
+    grid.style.cssText = '';
     grid.innerHTML = filtered.map(buildCard).join('');
-
-    // Debug : log dans la console + petit indicateur visuel des dimensions
-    // mesurées pour diagnostiquer pourquoi le grid s'affiche en monobloc.
-    requestAnimationFrame(() => {
-      const main = document.querySelector('main');
-      const mainInner = document.querySelector('.main-inner');
-      const cs = getComputedStyle(grid);
-      const firstCard = grid.firstElementChild;
-      const fcRect = firstCard?.getBoundingClientRect();
-      const fcCS = firstCard ? getComputedStyle(firstCard) : null;
-      const info = `vp=${window.innerWidth} main=${main?.clientWidth} inner=${mainInner?.clientWidth} grid=${grid.clientWidth} cols=${cs.gridTemplateColumns}`;
-      const cardInfo = firstCard
-        ? ` | card1: w=${fcRect?.width.toFixed(0)} gridCol=${fcCS.gridColumn} display=${fcCS.display} children=${grid.children.length}`
-        : '';
-      console.log('[GRID DEBUG]', info + cardInfo);
-      let badge = document.getElementById('_gridDebug');
-      if (!badge) {
-        badge = document.createElement('div');
-        badge.id = '_gridDebug';
-        badge.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f00;color:#fff;font:10px monospace;padding:4px 8px;z-index:9999;text-align:center;line-height:1.4';
-        document.body.appendChild(badge);
-      }
-      badge.textContent = info + cardInfo;
-    });
   }
 
   // ── VIRTUALISATION : état + helpers ────────────────────────────────────
