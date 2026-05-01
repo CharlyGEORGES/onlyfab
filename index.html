@@ -419,6 +419,42 @@
 
     #searchInput::placeholder { color: var(--text-muted); }
 
+    /* STATS DE CATÉGORIE — visible uniquement quand une catégorie est filtrée */
+    .cat-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .cat-stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      text-align: center;
+    }
+    .cat-stat-value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--primary);
+      line-height: 1.1;
+    }
+    .cat-stat-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+    .cat-stat.accent .cat-stat-value { color: var(--accent); }
+    .cat-stat.alert  .cat-stat-value { color: var(--danger); }
+    @media (max-width: 600px) {
+      .cat-stats { gap: 6px; margin-bottom: 12px; }
+      .cat-stat { padding: 9px 8px; }
+      .cat-stat-value { font-size: 1.2rem; }
+      .cat-stat-label { font-size: 0.62rem; }
+    }
+
     /* GRID */
     .grid {
       display: grid;
@@ -2702,6 +2738,7 @@
           <input id="searchInput" type="text" placeholder="Rechercher un objet..." data-i18n-attr="placeholder:filters.searchPlaceholder">
         </div>
       </div>
+      <div class="cat-stats" id="catStats" hidden aria-live="polite"></div>
       <div class="grid" id="grid"></div>
     </div>
 
@@ -3713,6 +3750,9 @@
       'card.edit': 'Modifier',
       'card.delete': 'Supprimer',
       'card.viewDetails': "Voir le détail de l'article",
+      'stats.itemsCount': 'Articles',
+      'stats.totalStock': 'Stock total',
+      'stats.lowStock': 'Stock faible',
       'empty.noItems': 'Aucun article',
       'empty.noResults': 'Aucun résultat',
       'empty.addFirstHint': 'Cliquez sur + pour ajouter votre premier objet 3D.',
@@ -3833,6 +3873,9 @@
       'card.edit': 'Edit',
       'card.delete': 'Delete',
       'card.viewDetails': 'View item details',
+      'stats.itemsCount': 'Items',
+      'stats.totalStock': 'Total stock',
+      'stats.lowStock': 'Low stock',
       'empty.noItems': 'No items',
       'empty.noResults': 'No results',
       'empty.addFirstHint': 'Click + to add your first 3D item.',
@@ -3953,6 +3996,9 @@
       'card.edit': 'Editar',
       'card.delete': 'Eliminar',
       'card.viewDetails': 'Ver detalle del artículo',
+      'stats.itemsCount': 'Artículos',
+      'stats.totalStock': 'Stock total',
+      'stats.lowStock': 'Stock bajo',
       'empty.noItems': 'Sin artículos',
       'empty.noResults': 'Sin resultados',
       'empty.addFirstHint': 'Haz clic en + para añadir tu primer objeto 3D.',
@@ -4073,6 +4119,9 @@
       'card.edit': 'Bearbeiten',
       'card.delete': 'Löschen',
       'card.viewDetails': 'Artikeldetails ansehen',
+      'stats.itemsCount': 'Artikel',
+      'stats.totalStock': 'Gesamtbestand',
+      'stats.lowStock': 'Niedriger Bestand',
       'empty.noItems': 'Keine Artikel',
       'empty.noResults': 'Keine Ergebnisse',
       'empty.addFirstHint': 'Klicken Sie auf +, um Ihren ersten 3D-Artikel hinzuzufügen.',
@@ -4193,6 +4242,9 @@
       'card.edit': 'Modifica',
       'card.delete': 'Elimina',
       'card.viewDetails': "Vedi dettaglio dell'articolo",
+      'stats.itemsCount': 'Articoli',
+      'stats.totalStock': 'Scorta totale',
+      'stats.lowStock': 'Scorta bassa',
       'empty.noItems': 'Nessun articolo',
       'empty.noResults': 'Nessun risultato',
       'empty.addFirstHint': 'Clicca + per aggiungere il tuo primo oggetto 3D.',
@@ -4313,6 +4365,9 @@
       'card.edit': 'Editar',
       'card.delete': 'Eliminar',
       'card.viewDetails': 'Ver detalhe do artigo',
+      'stats.itemsCount': 'Artigos',
+      'stats.totalStock': 'Stock total',
+      'stats.lowStock': 'Stock baixo',
       'empty.noItems': 'Sem artigos',
       'empty.noResults': 'Sem resultados',
       'empty.addFirstHint': 'Clica em + para adicionar o teu primeiro objeto 3D.',
@@ -5188,6 +5243,42 @@
     showToast('Catégorie supprimée');
   }
 
+  // ── STATS DE CATÉGORIE ────────────────────────────────────────────────
+  // Affichées uniquement quand une catégorie est filtrée (sinon le panneau
+  // est caché). Calculées à chaque render pour rester sync avec les CRUD.
+  function _renderCategoryStats() {
+    const container = document.getElementById('catStats');
+    if (!container) return;
+    if (!currentCategoryFilter) { container.hidden = true; container.innerHTML = ''; return; }
+
+    const inCat = items.filter(i => i.category === currentCategoryFilter);
+    let totalStock = 0;
+    let lowCount = 0;
+    for (const it of inCat) {
+      const { variants, parts, tQty, tracked, isLow } = getItemStockStatus(it);
+      // Stock effectif : qty assemblée si multi-pièces, sinon somme des
+      // quantités des variantes simples.
+      totalStock += parts.length ? (it.assembledQty || 0) : tQty;
+      if (isLow) lowCount++;
+    }
+
+    container.hidden = false;
+    container.innerHTML = `
+      <div class="cat-stat">
+        <div class="cat-stat-value">${inCat.length}</div>
+        <div class="cat-stat-label" data-i18n="stats.itemsCount">Articles</div>
+      </div>
+      <div class="cat-stat accent">
+        <div class="cat-stat-value">${totalStock}</div>
+        <div class="cat-stat-label" data-i18n="stats.totalStock">Stock total</div>
+      </div>
+      <div class="cat-stat${lowCount ? ' alert' : ''}">
+        <div class="cat-stat-value">${lowCount}</div>
+        <div class="cat-stat-label" data-i18n="stats.lowStock">Stock faible</div>
+      </div>`;
+    if (typeof applyTranslations === 'function') applyTranslations(container);
+  }
+
   // ── RENDER ────────────────────────────────────────────────────────────────
   function getFiltered() {
     let result = [...items];
@@ -5353,6 +5444,7 @@
     }
     const filtered = getFiltered();
     const grid = document.getElementById('grid');
+    _renderCategoryStats();
 
     if (filtered.length === 0) {
       grid.innerHTML = `<div class="empty">
