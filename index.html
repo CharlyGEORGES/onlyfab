@@ -4988,12 +4988,27 @@
 
   // Génère le HTML d'une seule card. Au niveau module (pas dans render())
   // pour que la virtualisation puisse l'appeler depuis _virtRender().
-  function buildCard(item) {
+  // Helpers partagés entre buildCard (mode grille) et renderInventory
+  // (mode liste compact) pour éviter la duplication.
+  function getItemStockStatus(item) {
     const variants = parseVariants(item);
     const parts    = parseParts(item);
-    const tQty = totalQty(variants);
-    const tracked = item.trackStock === undefined || item.trackStock === 1 || item.trackStock === true;
-    const isLow = tracked && tQty <= (item.threshold ?? 3);
+    const tQty     = totalQty(variants);
+    const tracked  = item.trackStock === undefined || item.trackStock === 1 || item.trackStock === true;
+    const isLow    = tracked && tQty <= (item.threshold ?? 3);
+    return { variants, parts, tQty, tracked, isLow };
+  }
+
+  function renderItemBadges(item, { includeLow = false } = {}) {
+    let html = '';
+    if (item.filament) html += `<span class="badge">${escHtml(item.filament)}</span>`;
+    if (item.category) html += `<span class="badge category-badge">${escHtml(item.category)}</span>`;
+    if (includeLow)    html += `<span class="badge" style="color:var(--danger);border-color:var(--danger)">${t('card.lowStock')}</span>`;
+    return html;
+  }
+
+  function buildCard(item) {
+    const { variants, parts, tQty, isLow } = getItemStockStatus(item);
 
     const variantsHtml = parts.length
       ? parts.map(p => {
@@ -5026,10 +5041,7 @@
         <div class="card-body">
           <div class="card-name">${escHtml(item.name)}</div>
           ${item.desc ? `<div class="card-desc">${escHtml(item.desc)}</div>` : ''}
-          <div class="card-meta">
-            ${item.filament ? `<span class="badge">${escHtml(item.filament)}</span>` : ''}
-            ${item.category ? `<span class="badge category-badge">${escHtml(item.category)}</span>` : ''}
-          </div>
+          <div class="card-meta">${renderItemBadges(item)}</div>
           <div class="card-variants">${variantsHtml}</div>
           <div class="card-footer">
             <div>
@@ -5202,35 +5214,28 @@
   function renderInventory(filtered, grid) {
     grid.className = '';   // retire la classe "grid" pour ne pas appliquer le CSS grille
     grid.innerHTML = `<div class="inv-list">${filtered.map(item => {
-      const variants = parseVariants(item);
-      const tQty = totalQty(variants);
-      const tracked = item.trackStock === undefined || item.trackStock === 1 || item.trackStock === true;
-      const isLow = tracked && tQty <= (item.threshold ?? 3);
+      const { variants, tracked, isLow } = getItemStockStatus(item);
 
       const variantsHtml = variants.map((v, vi) => {
         const isVLow = tracked && v.qty <= 0;
         return `<div class="inv-variant">
-          <span class="inv-color" style="background:${v.color||'#888'}"></span>
+          <span class="inv-color" style="background:${v.color||'#888'}" aria-hidden="true"></span>
           <span class="inv-vname">${escHtml(v.colorName || v.color || '—')}</span>
           <div class="inv-qty-ctrl">
-            <button class="inv-qty-btn minus" onclick="invAdjust('${item.id}',${vi},-1)" title="Retirer 1">−</button>
-            <span class="inv-qty-val${isVLow ? ' low' : ''}">${v.qty}</span>
-            <button class="inv-qty-btn" onclick="invAdjust('${item.id}',${vi},+1)" title="Ajouter 1">+</button>
+            <button class="inv-qty-btn minus" onclick="invAdjust('${item.id}',${vi},-1)" aria-label="−1 ${escHtml(v.colorName||v.color||'')}">−</button>
+            <span class="inv-qty-val${isVLow ? ' low' : ''}" aria-live="polite">${v.qty}</span>
+            <button class="inv-qty-btn" onclick="invAdjust('${item.id}',${vi},+1)" aria-label="+1 ${escHtml(v.colorName||v.color||'')}">+</button>
           </div>
         </div>`;
       }).join('');
 
       return `<div class="inv-row${isLow ? ' low-border' : ''}">
         ${item.photo
-          ? `<img class="inv-thumb" data-src="${item.photo}" decoding="async" alt="">`
-          : `<div class="inv-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`}
+          ? `<img class="inv-thumb" data-src="${item.photo}" decoding="async" alt="${escHtml(item.name)}">`
+          : `<div class="inv-thumb-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`}
         <div class="inv-body">
           <div class="inv-name">${escHtml(item.name)}</div>
-          <div class="inv-badges">
-            ${item.filament ? `<span class="badge">${escHtml(item.filament)}</span>` : ''}
-            ${item.category ? `<span class="badge category-badge">${escHtml(item.category)}</span>` : ''}
-            ${isLow ? `<span class="badge" style="color:var(--danger);border-color:var(--danger)">Stock faible</span>` : ''}
-          </div>
+          <div class="inv-badges">${renderItemBadges(item, { includeLow: isLow })}</div>
           <div class="inv-variants">${variantsHtml}</div>
         </div>
       </div>`;
@@ -5303,27 +5308,63 @@
   }
 
   // ── PHOTO ─────────────────────────────────────────────────────────────────
+  // Compresse une image côté client avant upload : redimensionne à 1600px
+  // sur le côté le plus long et exporte en JPEG quality 0.85. Une photo de
+  // téléphone de 6 Mo devient ~250 Ko — ×24 plus rapide à uploader, ×24
+  // moins de data sur le mobile, et au final le SW cache moins lourd.
+  // Si le navigateur ne supporte pas createImageBitmap, on fallback sur le
+  // FileReader brut (pas de compression).
+  async function compressImageToDataURL(file, { maxSide = 1600, quality = 0.85 } = {}) {
+    if (!file.type.startsWith('image/') || !window.createImageBitmap) {
+      return await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(new Error('FileReader error'));
+        fr.readAsDataURL(file);
+      });
+    }
+    try {
+      const bitmap = await createImageBitmap(file);
+      const { width, height } = bitmap;
+      const scale = Math.min(1, maxSide / Math.max(width, height));
+      const w = Math.round(width * scale);
+      const h = Math.round(height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      bitmap.close && bitmap.close();
+      // JPEG pour les photos. PNG préservé seulement si transparence souhaitée.
+      return canvas.toDataURL('image/jpeg', quality);
+    } catch {
+      // Fallback si decode échoue (HEIC sur Safari < 17, etc).
+      return await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(new Error('FileReader error'));
+        fr.readAsDataURL(file);
+      });
+    }
+  }
+
   async function handlePhotoChange(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { showToast(t('toast.photoTooBig'), 'error'); return; }
-    const reader = new FileReader();
-    reader.onload = async ev => {
-      try {
-        const r = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: ev.target.result }) });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error || 'Erreur upload');
-        currentPhotoUrl = d.url;
-      } catch(err) {
-        showToast('Erreur upload photo : ' + err.message, 'error'); return;
-      }
-      const preview = document.getElementById('photoPreview');
-      preview.src = currentPhotoUrl;
-      preview.style.display = 'block';
-      document.getElementById('photoPlaceholder').style.display = 'none';
-      document.getElementById('removePhotoBtn').style.display = 'block';
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 15 * 1024 * 1024) { showToast(t('toast.photoTooBig'), 'error'); return; }
+    try {
+      const dataUrl = await compressImageToDataURL(file);
+      const r = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: dataUrl }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Erreur upload');
+      currentPhotoUrl = d.url;
+    } catch(err) {
+      showToast('Erreur upload photo : ' + err.message, 'error'); return;
+    }
+    const preview = document.getElementById('photoPreview');
+    preview.src = currentPhotoUrl;
+    preview.style.display = 'block';
+    document.getElementById('photoPlaceholder').style.display = 'none';
+    document.getElementById('removePhotoBtn').style.display = 'block';
   }
 
   function removePhoto() {
@@ -6259,34 +6300,31 @@
     scheduleDetailSave();
   }
 
-  function handleDetailPhotoChange(e) {
+  async function handleDetailPhotoChange(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { showToast(t('toast.photoTooBig'), 'error'); return; }
-    const reader = new FileReader();
-    reader.onload = async ev => {
-      const item = items.find(i => i.id === detailId);
-      if (!item) return;
-      detailSetSaveIndicator('saving');
-      try {
-        const r = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: ev.target.result }) });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error || 'Erreur upload');
-        item.photo = d.url;
-      } catch(err) {
-        showToast('Erreur upload photo : ' + err.message, 'error');
-        detailSetSaveIndicator('');
-        return;
-      }
-      const photo = document.getElementById('detailPhoto');
-      photo.src = item.photo;
-      photo.style.display = 'block';
-      document.getElementById('detailNoPhoto').style.display = 'none';
-      await opUpdate(item);
-      detailSetSaveIndicator('saved');
-      render();
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 15 * 1024 * 1024) { showToast(t('toast.photoTooBig'), 'error'); return; }
+    const item = items.find(i => i.id === detailId);
+    if (!item) return;
+    detailSetSaveIndicator('saving');
+    try {
+      const dataUrl = await compressImageToDataURL(file);
+      const r = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: dataUrl }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Erreur upload');
+      item.photo = d.url;
+    } catch(err) {
+      showToast('Erreur upload photo : ' + err.message, 'error');
+      detailSetSaveIndicator('');
+      return;
+    }
+    const photo = document.getElementById('detailPhoto');
+    photo.src = item.photo;
+    photo.style.display = 'block';
+    document.getElementById('detailNoPhoto').style.display = 'none';
+    await opUpdate(item);
+    detailSetSaveIndicator('saved');
+    render();
   }
 
   async function switchDetailMode(enableMultiPart) {

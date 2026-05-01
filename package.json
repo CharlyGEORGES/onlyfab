@@ -5,9 +5,17 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "scripts": {
+    "start": "node server.js",
+    "lint": "eslint server.js bambu.js",
+    "lint:fix": "eslint --fix server.js bambu.js"
+  },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.9.0",
     "mqtt": "^5.10.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
   }
 }

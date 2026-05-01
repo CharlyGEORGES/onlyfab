@@ -1,0 +1,38 @@
+{
+  "root": true,
+  "env": {
+    "node": true,
+    "browser": true,
+    "es2022": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-undef": "error",
+    "no-unreachable": "error",
+    "no-dupe-keys": "error",
+    "no-dupe-args": "error",
+    "no-duplicate-case": "error",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-extra-semi": "warn",
+    "no-irregular-whitespace": "error",
+    "no-redeclare": "error",
+    "no-self-assign": "error",
+    "no-self-compare": "warn",
+    "no-unused-expressions": "warn",
+    "no-useless-escape": "warn",
+    "no-var": "warn",
+    "prefer-const": "warn",
+    "eqeqeq": ["warn", "smart"],
+    "valid-typeof": "error"
+  },
+  "overrides": [
+    {
+      "files": ["server.js", "bambu.js"],
+      "env": { "node": true, "browser": false }
+    }
+  ]
+}

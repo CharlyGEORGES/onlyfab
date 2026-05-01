@@ -134,9 +134,6 @@ db.exec(`
   WHERE variants IS NULL;
 `);
 
-// Index pour les requêtes d'historique par item
-db.exec('CREATE INDEX IF NOT EXISTS idx_history_item_id ON history(item_id);');
-
 // Table catégories
 db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
@@ -193,6 +190,23 @@ addColumnIfMissing('history',    'user_id', 'TEXT');
 // Migrations users (admin + reset password)
 addColumnIfMissing('users', 'is_admin', 'INTEGER DEFAULT 0');
 addColumnIfMissing('users', 'last_login', 'TEXT');
+
+// Indexes pour requêtes fréquentes (créés après TOUTES les migrations
+// pour garantir que colonnes et tables existent) :
+// - history.item_id   : timeline d'un item (déjà existant)
+// - *.user_id         : multi-tenant — sans index c'est full scan
+// - items.category    : filtre par catégorie
+// - print_jobs.status : queue À valider WHERE status='pending'
+// - sessions.expires_at : purge des sessions expirées
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_history_item_id    ON history(item_id);
+  CREATE INDEX IF NOT EXISTS idx_history_user_id    ON history(user_id);
+  CREATE INDEX IF NOT EXISTS idx_items_user_id      ON items(user_id);
+  CREATE INDEX IF NOT EXISTS idx_items_category     ON items(category);
+  CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id);
+  CREATE INDEX IF NOT EXISTS idx_print_jobs_user    ON print_jobs(user_id, status);
+  CREATE INDEX IF NOT EXISTS idx_sessions_expires   ON sessions(expires_at);
+`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS password_resets (
@@ -427,7 +441,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v9';
+const CACHE_VERSION = 'bs-v10';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -782,12 +796,18 @@ http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && url === '/manifest.json') {
-      res.writeHead(200, { 'Content-Type': 'application/manifest+json' });
+      res.writeHead(200, {
+        'Content-Type': 'application/manifest+json',
+        'Cache-Control': 'public, max-age=86400',
+      });
       res.end(MANIFEST);
       return;
     }
     if (req.method === 'GET' && url === '/icon.svg') {
-      res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+      res.writeHead(200, {
+        'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'public, max-age=86400',
+      });
       res.end(ICON_SVG);
       return;
     }
@@ -809,7 +829,13 @@ http.createServer(async (req, res) => {
       const mimeMap = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif' };
       if (!mimeMap[ext]) { res.writeHead(403); res.end('Type de fichier non autorisé'); return; }
       if (!fs.existsSync(filepath)) { res.writeHead(404); res.end('Not found'); return; }
-      res.writeHead(200, { 'Content-Type': mimeMap[ext], 'Cache-Control': 'public, max-age=31536000' });
+      // Les uploads ont un nom UUID donc le contenu ne change JAMAIS pour
+      // une URL donnée — on peut servir avec immutable (les navigateurs
+      // sautent la revalidation conditionnelle).
+      res.writeHead(200, {
+        'Content-Type': mimeMap[ext],
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      });
       fs.createReadStream(filepath).pipe(res);
       return;
     }
