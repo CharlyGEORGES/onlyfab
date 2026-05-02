@@ -3640,8 +3640,15 @@
           <button type="submit" class="btn-primary" id="bambuLoginBtn" style="width:100%">
             Se connecter
           </button>
-          <div style="font-size:0.75rem;color:var(--text-muted);text-align:center;line-height:1.5">
-            Tes identifiants sont envoyés directement à Bambu Lab.<br>BambuStock ne stocke que le token de session.
+          <div style="display:flex;gap:8px;align-items:flex-start;font-size:0.75rem;color:var(--text-muted);line-height:1.5;background:rgba(0,212,170,0.06);border:1px solid rgba(0,212,170,0.2);border-radius:8px;padding:10px 12px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" width="16" height="16" style="flex-shrink:0;margin-top:1px" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <path d="M9 12l2 2 4-4"/>
+            </svg>
+            <div>
+              Ton mot de passe n'est <strong>jamais stocké</strong> côté BambuStock. Il est envoyé directement à Bambu Lab pour récupérer un token de session — c'est le token qui est gardé pour surveiller tes imprimantes.<br>
+              <span style="opacity:0.7">Le pré-remplissage du champ vient du gestionnaire de mots de passe de ton navigateur, pas du serveur.</span>
+            </div>
           </div>
         </form>
       </div>
