@@ -492,10 +492,10 @@
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 16px;
       width: 100%;
-      /* Chaque card prend sa hauteur naturelle au lieu d'être étirée à la
-         hauteur de la plus haute de la rangée. Évite les zones vides en bas
-         des cards courtes quand une voisine a beaucoup de variantes. */
-      align-items: start;
+      /* align-items par défaut = stretch : toutes les cards d'une rangée
+         prennent la même hauteur. L'espace vertical libre dans les cards
+         courtes est absorbé par .card-footer qui colle au bas grâce à
+         margin-top:auto sur le body en flex column. */
     }
     .grid > .card { width: 100%; min-width: 0; }
 
@@ -507,11 +507,14 @@
       overflow: hidden;
       cursor: pointer;
       position: relative;
+      /* Flex column : permet à .card-body de remplir tout l'espace dispo
+         et au .card-footer de coller en bas via margin-top:auto, donnant
+         des cards de hauteurs uniformes dans une rangée. */
+      display: flex;
+      flex-direction: column;
       /* Containment fort + content-visibility: auto :
          le navigateur saute le rendering layout/paint des cards hors
-         viewport. Gain énorme sur le scroll quand on a beaucoup d'items.
-         contain-intrinsic-size réserve l'espace pour que la scrollbar
-         et le scroll position restent corrects. */
+         viewport. Gain énorme sur le scroll quand on a beaucoup d'items. */
       contain: layout paint style;
       content-visibility: auto;
       contain-intrinsic-size: auto 360px;
@@ -559,7 +562,17 @@
 
     .card-img-placeholder svg { width: 48px; height: 48px; opacity: 0.3; }
 
-    .card-body { padding: 14px; }
+    .card-body {
+      padding: 14px;
+      /* Flex column pour que le footer (.card-footer) puisse coller en bas
+         via margin-top:auto, indépendamment de la quantité de variantes :
+         hauteurs de cards uniformes dans une rangée sans espace vide
+         en plein milieu. */
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
 
     .card-name {
       font-weight: 600;
@@ -972,7 +985,13 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 8px;
+      /* margin-top: auto pousse le footer en bas du body en flex column.
+         Sur une rangée d'align-items:stretch, les cards ont toutes la
+         même hauteur, et la qty se retrouve au même endroit dans chaque
+         card de la rangée — au lieu d'être plus ou moins haute selon le
+         nombre de variantes affichées. */
+      margin-top: auto;
+      padding-top: 8px;
     }
 
     .qty-display {
