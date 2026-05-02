@@ -154,34 +154,26 @@
     /* ── MENU UTILISATEUR ─────────────────────────────────────────── */
     .user-menu-wrap { position: relative; }
 
+    /* Trigger compact : juste l'avatar + chevron, sans nom utilisateur. */
     .user-menu-trigger {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
-      padding: 6px 10px 6px 8px;
+      padding: 7px 10px;
       cursor: pointer;
       font-family: inherit;
       transition: border-color 0.15s, color 0.15s;
     }
     .user-menu-trigger:hover { border-color: var(--primary); color: var(--primary); }
     .user-menu-trigger svg { width: 16px; height: 16px; }
-    .user-menu-trigger .user-menu-name {
-      font-size: 0.78rem;
-      font-weight: 600;
-      max-width: 110px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
     .user-menu-trigger .chev { width: 12px; height: 12px; opacity: 0.6; transition: transform 0.15s; }
     .user-menu-trigger[aria-expanded="true"] .chev { transform: rotate(180deg); }
 
     @media (max-width: 600px) {
-      .user-menu-trigger .user-menu-name { display: none; }
       .user-menu-trigger .chev { display: none; }
       .user-menu-trigger { padding: 7px 8px; }
     }
@@ -2945,12 +2937,11 @@
     <!-- MENU UTILISATEUR : tout le reste tient ici -->
     <div class="user-menu-wrap">
       <button class="user-menu-trigger" id="userMenuBtn" onclick="toggleUserMenu(event)"
-              aria-haspopup="true" aria-expanded="false" aria-controls="userMenu">
+              aria-haspopup="true" aria-expanded="false" aria-controls="userMenu" aria-label="Menu utilisateur">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <circle cx="12" cy="8" r="4"/>
           <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
         </svg>
-        <span class="user-menu-name" id="userMenuTriggerName"></span>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
@@ -5007,8 +4998,9 @@
 
   function applyUserToHeader(u) {
     if (!u) return;
-    const trigger = document.getElementById('userMenuTriggerName');
-    if (trigger) trigger.textContent = u.name || (u.email || '').split('@')[0];
+    // Note : le nom n'apparaît plus dans le bouton trigger (header trop chargé
+    // sinon — on garde juste l'avatar + chevron). Il reste visible dans le
+    // header du menu déroulant ouvert.
     const name = document.getElementById('userMenuName');
     if (name) name.textContent = u.name || u.email || '—';
     const email = document.getElementById('userMenuEmail');
