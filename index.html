@@ -1243,26 +1243,78 @@
     /* VARIANTS EDITOR */
     .variants-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 
-    .variant-row {
-      display: grid;
-      grid-template-columns: 42px 1fr 36px 70px 36px 32px;
-      gap: 6px;
-      align-items: center;
+    .variant-row-wrap {
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 10px;
     }
 
-    .variant-row input[type="color"] {
+    .variant-row {
+      display: grid;
+      grid-template-columns: 42px 1fr 36px 70px 36px 32px;
+      gap: 6px;
+      align-items: center;
+    }
+
+    /* Wrap : gros swatch carré qui montre la couleur courante. L'input
+       natif est positionné au-dessus en opacity 0 → click sur le wrap =
+       click sur le picker natif, sans dépendre du rendu OS-spécifique. */
+    .color-swatch-wrap {
+      position: relative;
       width: 42px;
       height: 36px;
-      padding: 2px;
       border-radius: 6px;
-      cursor: pointer;
-      flex-shrink: 0;
       border: 1px solid var(--border);
-      background: var(--surface);
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .color-swatch-wrap input[type="color"] {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+      border: none;
+      padding: 0;
+      background: transparent;
+    }
+
+    /* Palette de quick-pick : grille horizontale wrappable de petits cercles. */
+    .color-palette {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+    }
+    .color-preset {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+      transition: transform 0.1s, border-color 0.1s;
+    }
+    .color-preset:hover, .color-preset:focus-visible {
+      transform: scale(1.15);
+      border-color: var(--text);
+      outline: none;
+    }
+    .color-preset.selected {
+      border-color: var(--primary);
+      border-width: 2.5px;
+      box-shadow: 0 0 0 2px var(--bg);
+    }
+
+    .variant-row input[type="text"],
+    .variant-row input[type="number"] {
+      padding: 6px 8px;
+      font-size: 0.85rem;
     }
 
     .variant-row input[type="text"],
@@ -5202,6 +5254,66 @@
     return [{ color: item.color || '#888888', colorName: item.colorName || '', qty: item.qty || 0 }];
   }
 
+  // ── PALETTE COULEURS FILAMENTS ─────────────────────────────────────
+  // Couleurs fréquentes en impression 3D, ordonnées du clair au foncé.
+  // Servent à 1) la palette de quick-pick dans l'éditeur, 2) l'auto-fill
+  // du nom de couleur quand on en choisit une via le picker natif.
+  const COLOR_PALETTE = [
+    { hex: '#ffffff', name: 'Blanc' },
+    { hex: '#f5f5dc', name: 'Beige' },
+    { hex: '#fde68a', name: 'Crème' },
+    { hex: '#facc15', name: 'Jaune' },
+    { hex: '#f97316', name: 'Orange' },
+    { hex: '#dc2626', name: 'Rouge' },
+    { hex: '#ec4899', name: 'Rose' },
+    { hex: '#a855f7', name: 'Violet' },
+    { hex: '#3b82f6', name: 'Bleu' },
+    { hex: '#0ea5e9', name: 'Bleu clair' },
+    { hex: '#14b8a6', name: 'Turquoise' },
+    { hex: '#22c55e', name: 'Vert' },
+    { hex: '#15803d', name: 'Vert foncé' },
+    { hex: '#854d0e', name: 'Marron' },
+    { hex: '#9ca3af', name: 'Gris clair' },
+    { hex: '#4b5563', name: 'Gris foncé' },
+    { hex: '#000000', name: 'Noir' },
+  ];
+
+  // Distance euclidienne RGB simple. Suffisante pour matcher des couleurs
+  // de filament (vs delta-E qui serait plus juste perceptuellement mais
+  // overkill pour cet usage).
+  function _hexToRgb(hex) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+    return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+  }
+  function _rgbDist(a, b) {
+    return Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2);
+  }
+
+  // Renvoie le nom du préset le plus proche, ou le hex tel quel si trop loin.
+  function closestColorName(hex) {
+    const rgb = _hexToRgb(hex);
+    if (!rgb) return '';
+    let best = null, bestDist = Infinity;
+    for (const c of COLOR_PALETTE) {
+      const d = _rgbDist(rgb, _hexToRgb(c.hex));
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    // Au-delà de 50, considéré comme couleur custom : on garde le hex.
+    return bestDist <= 50 ? best.name : hex.toLowerCase();
+  }
+
+  // Génère le HTML d'une palette de quick-pick. onPick reçoit (hex, name).
+  // Utilisé dans addVariantRow / addVariantToPart.
+  function _renderColorPalette(currentHex, onPickAttr) {
+    return COLOR_PALETTE.map(c => {
+      const sel = c.hex.toLowerCase() === (currentHex || '').toLowerCase() ? ' selected' : '';
+      // onPickAttr est un nom de fonction globale qui prend (this, hex, name)
+      return `<button type="button" class="color-preset${sel}" style="background:${c.hex}"
+              title="${c.name}" aria-label="${c.name}"
+              onclick="${onPickAttr}(this,'${c.hex}','${c.name}')"></button>`;
+    }).join('');
+  }
+
   function parseTags(item) {
     if (!item) return [];
     if (Array.isArray(item.tags)) return item.tags.filter(Boolean);
@@ -6037,17 +6149,76 @@
   function addVariantRow(color = '#6c47ff', colorName = '', qty = 0) {
     const list = document.getElementById('variantsList');
     const row = document.createElement('div');
-    row.className = 'variant-row';
+    row.className = 'variant-row-wrap';
+    // Marque-t-on le nom comme auto-rempli ? Si oui, la prochaine
+    // modification de couleur le ré-écrit. Si user a tapé manuellement,
+    // on ne touche plus.
+    const initialAuto = !colorName;
     row.innerHTML = `
-      <input type="color" value="${color}" title="Couleur">
-      <input type="text" class="variant-name" placeholder="Nom couleur" value="${escHtml(colorName)}">
-      <button type="button" class="variant-qty-btn" onclick="changeVariantQty(this,-1)">−</button>
-      <input type="number" class="variant-qty" value="${qty}" min="0">
-      <button type="button" class="variant-qty-btn" onclick="changeVariantQty(this,1)">+</button>
-      <button type="button" class="remove-variant-btn" onclick="removeVariantRow(this)" title="Supprimer">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>`;
+      <div class="variant-row">
+        <div class="color-swatch-wrap" style="background:${color}" title="Choisir une couleur">
+          <input type="color" value="${color}" class="variant-color-input"
+                 oninput="_onVariantColorChange(this)" aria-label="Choisir une couleur">
+        </div>
+        <input type="text" class="variant-name" placeholder="Nom couleur"
+               value="${escHtml(colorName)}" data-auto="${initialAuto ? '1' : '0'}"
+               oninput="this.dataset.auto='0'">
+        <button type="button" class="variant-qty-btn" onclick="changeVariantQty(this,-1)" aria-label="−1">−</button>
+        <input type="number" class="variant-qty" value="${qty}" min="0">
+        <button type="button" class="variant-qty-btn" onclick="changeVariantQty(this,1)" aria-label="+1">+</button>
+        <button type="button" class="remove-variant-btn" onclick="removeVariantRow(this)" title="Supprimer" aria-label="Supprimer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="color-palette">
+        ${_renderColorPalette(color, '_onVariantPalettePick')}
+      </div>`;
     list.appendChild(row);
+  }
+
+  // Appelé quand l'utilisateur change la couleur via le picker natif.
+  // Met à jour le swatch + auto-fill du nom si pas déjà tapé manuellement.
+  function _onVariantColorChange(input) {
+    const row = input.closest('.variant-row');
+    const wrap = row.querySelector('.color-swatch-wrap');
+    if (wrap) wrap.style.background = input.value;
+    const nameInput = row.querySelector('.variant-name');
+    if (nameInput && nameInput.dataset.auto !== '0') {
+      nameInput.value = closestColorName(input.value);
+      nameInput.dataset.auto = '1';
+    }
+    const palette = row.parentElement.querySelector('.color-palette');
+    if (palette) {
+      palette.querySelectorAll('.color-preset').forEach(b => {
+        b.classList.toggle('selected', _sameColor(b, input.value));
+      });
+    }
+  }
+
+  // Appelé quand l'utilisateur clique sur un préset de la palette.
+  function _onVariantPalettePick(btn, hex, name) {
+    const wrapAll = btn.closest('.variant-row-wrap');
+    if (!wrapAll) return;
+    const colorInput = wrapAll.querySelector('.variant-color-input');
+    const swatchWrap = wrapAll.querySelector('.color-swatch-wrap');
+    const nameInput  = wrapAll.querySelector('.variant-name');
+    if (colorInput) colorInput.value = hex;
+    if (swatchWrap) swatchWrap.style.background = hex;
+    if (nameInput && nameInput.dataset.auto !== '0') {
+      nameInput.value = name;
+      nameInput.dataset.auto = '1';
+    }
+    wrapAll.querySelectorAll('.color-preset').forEach(b => b.classList.toggle('selected', b === btn));
+  }
+
+  // Compare la couleur d'arrière-plan d'un élément avec un hex.
+  function _sameColor(el, hex) {
+    const bg = el.style.backgroundColor || '';
+    // Convertit rgb(r, g, b) en hex
+    const m = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (!m) return false;
+    const elHex = '#' + [+m[1], +m[2], +m[3]].map(n => n.toString(16).padStart(2, '0')).join('');
+    return elHex.toLowerCase() === (hex || '').toLowerCase();
   }
 
   function changeVariantQty(btn, delta) {
@@ -6059,7 +6230,8 @@
   function removeVariantRow(btn) {
     const list = document.getElementById('variantsList');
     if (list.children.length <= 1) { showToast('Au moins une couleur est requise', 'error'); return; }
-    btn.closest('.variant-row').remove();
+    // Retire le wrap entier (qui contient la row + la palette de presets).
+    btn.closest('.variant-row-wrap').remove();
   }
 
   function getVariantsFromForm() {
@@ -6359,19 +6531,34 @@
     const list  = block.querySelector('.part-variants-list');
     const row   = document.createElement('div');
     row.className = 'part-variant-row';
+    const initialAuto = !colorName;
     row.innerHTML = `
       <div class="part-color-wrap" style="background:${color}">
-        <input type="color" value="${color}" oninput="this.parentElement.style.background=this.value;_updatePartBlockTotal(this);_updateFormAssembly()">
+        <input type="color" value="${color}" oninput="_onPartVariantColorChange(this)">
       </div>
-      <input type="text" class="part-variant-name" placeholder="Nom couleur (ex: Bleu)" value="${escHtml(colorName)}">
-      <button type="button" class="variant-qty-btn" onclick="_partVariantQtyChange(this,-1)">−</button>
+      <input type="text" class="part-variant-name" placeholder="Nom couleur (ex: Bleu)"
+             value="${escHtml(colorName)}" data-auto="${initialAuto ? '1' : '0'}"
+             oninput="this.dataset.auto='0'">
+      <button type="button" class="variant-qty-btn" onclick="_partVariantQtyChange(this,-1)" aria-label="−1">−</button>
       <input type="number" class="part-qty-input" value="${qty}" min="0" oninput="_updatePartBlockTotal(this);_updateFormAssembly()">
-      <button type="button" class="variant-qty-btn" onclick="_partVariantQtyChange(this,1)">+</button>
-      <button type="button" class="remove-variant-btn" onclick="removeVariantFromPart(this)" title="Supprimer">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      <button type="button" class="variant-qty-btn" onclick="_partVariantQtyChange(this,1)" aria-label="+1">+</button>
+      <button type="button" class="remove-variant-btn" onclick="removeVariantFromPart(this)" title="Supprimer" aria-label="Supprimer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>`;
     list.appendChild(row);
     _updatePartBlockTotal(row);
+    _updateFormAssembly();
+  }
+
+  function _onPartVariantColorChange(input) {
+    input.parentElement.style.background = input.value;
+    const row = input.closest('.part-variant-row');
+    const nameInput = row.querySelector('.part-variant-name');
+    if (nameInput && nameInput.dataset.auto !== '0') {
+      nameInput.value = closestColorName(input.value);
+      nameInput.dataset.auto = '1';
+    }
+    _updatePartBlockTotal(input);
     _updateFormAssembly();
   }
 
@@ -7247,9 +7434,22 @@
     const variants = parseVariants(item);
     if (!variants[variantIndex]) return;
     variants[variantIndex].color = newColor;
-    // Mettre à jour le dot visuel immédiatement
+    // Met à jour le dot visuel immédiatement
     const dot = document.getElementById(`detailVarDot_${variantIndex}`);
     if (dot) dot.style.background = newColor;
+    // Auto-fill du nom : seulement si le user ne l'a pas tapé manuellement.
+    // Heuristique : on remplit si le champ est vide, ou si sa valeur
+    // courante matche le nom du préset le plus proche de l'ancienne couleur
+    // (= il avait été auto-rempli auparavant).
+    const nameInput = document.getElementById(`detailVarName_${variantIndex}`);
+    if (nameInput) {
+      const cur = nameInput.value.trim();
+      if (!cur) {
+        const auto = closestColorName(newColor);
+        nameInput.value = auto;
+        variants[variantIndex].colorName = auto;
+      }
+    }
     await opVariants(detailId, variants);
     item.variants = variants;
     detailSetSaveIndicator('saved');
