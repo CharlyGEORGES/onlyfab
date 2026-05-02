@@ -8181,7 +8181,7 @@
           <div class="pill-text-sub">Les impressions ne seront pas détectées automatiquement</div>
         </div>
         <div class="pill-actions">
-          <button class="pill-connect-btn" onclick="openBambuSetup()">Connecter</button>
+          <button class="pill-connect-btn" onclick="bambuReconfigure()">Connecter</button>
         </div>`;
     }
   }
@@ -8189,6 +8189,14 @@
   // Ouvre le modal Bambu directement sur la vue login (pour reconfigurer
   // le compte sans repasser par la vue connectée intermédiaire).
   async function bambuReconfigure() {
+    // Reset l'état du formulaire au cas où il restait des données d'une
+    // ouverture précédente (erreur affichée, code 2FA en attente, etc.)
+    const errLogin = document.getElementById('bambuLoginError');
+    if (errLogin) errLogin.style.display = 'none';
+    const errCode  = document.getElementById('bambuCodeError');
+    if (errCode) errCode.style.display = 'none';
+    _bambuSessionId = null;
+
     document.getElementById('bambuSetupModal').classList.add('open');
     _bambuShowView('login');
     setTimeout(() => {
