@@ -1787,7 +1787,7 @@ http.createServer(async (req, res) => {
         const body = '﻿' + lines.join('\r\n');
         res.writeHead(200, {
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename="onlyfab-${new Date().toISOString().slice(0,10)}.csv"`,
+          'Content-Disposition': `attachment; filename="bambustock-${new Date().toISOString().slice(0,10)}.csv"`,
         });
         res.end(body);
         return;

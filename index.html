@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Onlyfab | Gestion du stock</title>
+  <title>BambuStock | Gestion du stock</title>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0f0f13">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Onlyfab">
+  <meta name="apple-mobile-web-app-title" content="BambuStock">
   <link rel="apple-touch-icon" href="/icon.svg">
   <script>
     // Applique le thème AVANT le 1er paint pour éviter tout flash blanc
@@ -2918,7 +2918,7 @@
       <circle cx="6" cy="21.5" r="1.5" fill="#6c47ff"/>
     </svg>
     <div>
-      <div style="font-size:1rem;font-weight:800;letter-spacing:-0.02em;line-height:1">Onlyfab</div>
+      <div style="font-size:1rem;font-weight:800;letter-spacing:-0.02em;line-height:1">BambuStock</div>
       <div style="font-size:0.65rem;font-weight:500;color:var(--text-muted);letter-spacing:0.04em;line-height:1;margin-top:2px" data-i18n="header.subtitle">GESTION DU STOCK</div>
     </div>
   </div>
@@ -3520,7 +3520,7 @@
             Se connecter
           </button>
           <div style="font-size:0.75rem;color:var(--text-muted);text-align:center;line-height:1.5">
-            Tes identifiants sont envoyés directement à Bambu Lab.<br>Onlyfab ne stocke que le token de session.
+            Tes identifiants sont envoyés directement à Bambu Lab.<br>BambuStock ne stocke que le token de session.
           </div>
         </form>
       </div>
@@ -7845,7 +7845,7 @@
   function exportData() {
     const a = document.createElement('a');
     a.href = '/api/export';
-    a.download = `onlyfab-${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `bambustock-${new Date().toISOString().slice(0,10)}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -8938,7 +8938,7 @@
     if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
     link.href = canvas.toDataURL();
     // Titre onglet
-    document.title = count > 0 ? `(${count}) Onlyfab` : 'Onlyfab';
+    document.title = count > 0 ? `(${count}) BambuStock` : 'BambuStock';
   }
 
   // ── SSE ───────────────────────────────────────────────────────────────────
@@ -8977,7 +8977,7 @@
       if (job.source === 'mqtt') {
         showPrintPopup(job);
         if (Notification.permission === 'granted' && document.hidden) {
-          new Notification('Onlyfab — Impression terminée', {
+          new Notification('BambuStock — Impression terminée', {
             body: `${job.printer_name} · ${job.file_name}`,
             icon: '/icon.svg',
             badge: '/icon.svg',
