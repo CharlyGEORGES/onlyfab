@@ -1973,6 +1973,7 @@
       margin-bottom: 16px;
     }
     .bambu-dot {
+      display: inline-block;
       width: 10px; height: 10px;
       border-radius: 50%;
       background: var(--accent);
@@ -8144,8 +8145,7 @@
       if (d.needsCode) {
         // Bambu demande une vérification par email → afficher étape 2
         _bambuSessionId = d.sessionId;
-        document.getElementById('bambuLoginForm').style.display = 'none';
-        document.getElementById('bambuCodeForm').style.display = 'flex';
+        _bambuShowView('code');
         setTimeout(() => document.getElementById('bambuCode').focus(), 50);
         return;
       }
