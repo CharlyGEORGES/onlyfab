@@ -1963,6 +1963,163 @@
     }
     .print-popup-close:hover { color: var(--text); }
 
+    /* ── BAMBU SETUP MODAL ─────────────────────────────────────────── */
+    .bambu-status-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+    .bambu-status-icon {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: rgba(0,212,170,0.15);
+      color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .bambu-status-card.is-warning .bambu-status-icon {
+      background: rgba(255,71,87,0.15);
+      color: var(--danger);
+    }
+    .bambu-status-card.is-pending .bambu-status-icon {
+      background: rgba(108,71,255,0.15);
+      color: var(--primary);
+      animation: bambu-pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes bambu-pulse {
+      50% { opacity: 0.4; }
+    }
+    .bambu-status-title {
+      font-weight: 700; font-size: 0.95rem;
+      color: var(--text);
+    }
+    .bambu-status-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bambu-info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .bambu-info-cell {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .bambu-info-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .bambu-info-value {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 2px;
+    }
+    .bambu-info-value.warning { color: var(--danger); }
+
+    .bambu-section-title {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .bambu-printers { margin-bottom: 14px; }
+    .bambu-printer-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 6px;
+    }
+    .bambu-printer-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .bambu-printer-serial {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: ui-monospace, Menlo, monospace;
+      margin-top: 2px;
+    }
+    .bambu-printers-empty {
+      padding: 12px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      background: var(--surface2);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+    }
+
+    .bambu-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .bambu-btn-secondary,
+    .bambu-btn-danger {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      border-radius: 10px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .bambu-btn-secondary {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .bambu-btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+    .bambu-btn-danger {
+      background: transparent;
+      border: 1px solid var(--danger);
+      color: var(--danger);
+    }
+    .bambu-btn-danger:hover { background: rgba(255,71,87,0.08); }
+
+    .bambu-help {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+    }
+    .bambu-help summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .bambu-help[open] summary { margin-bottom: 8px; }
+    .bambu-help-body p { margin: 6px 0; line-height: 1.5; }
+
     .toast {
       position: fixed;
       bottom: 90px;
@@ -3385,66 +3542,121 @@
 
 <!-- MODAL CONNEXION BAMBU -->
 <div class="modal-overlay" id="bambuSetupModal" role="dialog" aria-modal="true" aria-labelledby="bambuSetupTitle" aria-hidden="true">
-  <div class="modal" style="max-width:380px">
+  <div class="modal" style="max-width:480px">
     <div class="modal-header">
       <div>
         <div class="modal-title" id="bambuSetupTitle" data-i18n="bambu.connectTitle">Connexion Bambu Lab</div>
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px" data-i18n="bambu.connectSubtitle">Pour surveiller tes imprimantes</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px" id="bambuSetupSubtitle" data-i18n="bambu.connectSubtitle">Pour surveiller tes imprimantes</div>
       </div>
       <button class="close-btn" onclick="closeBambuSetup()" aria-label="Fermer" data-i18n-attr="aria-label:modal.close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
     <div class="modal-body">
-      <!-- Étape 1 : email + mot de passe -->
-      <form id="bambuLoginForm" onsubmit="bambuLogin(event)" style="display:flex;flex-direction:column;gap:14px" autocomplete="on">
-        <div class="form-group">
-          <label>Email</label>
-          <input type="text" id="bambuEmail" name="username" placeholder="ton@email.com"
-            autocomplete="username" inputmode="email" required>
-        </div>
-        <div class="form-group">
-          <label>Mot de passe</label>
-          <input type="password" id="bambuPassword" name="password" placeholder="••••••••"
-            autocomplete="current-password" required>
-        </div>
-        <div id="bambuLoginError" style="display:none;font-size:0.8rem;color:var(--danger);padding:8px 12px;background:rgba(255,71,87,0.08);border-radius:8px"></div>
-        <button type="submit" class="btn-primary" id="bambuLoginBtn" style="width:100%">
-          Se connecter
-        </button>
-        <div style="font-size:0.75rem;color:var(--text-muted);text-align:center;line-height:1.5">
-          Tes identifiants sont envoyés directement à Bambu Lab.<br>Onlyfab ne stocke que le token de session.
-        </div>
-      </form>
 
-      <!-- Étape 2 : code de vérification (masqué jusqu'à ce que Bambu demande la 2FA) -->
-      <form id="bambuCodeForm" onsubmit="bambuVerify(event)" style="display:none;flex-direction:column;gap:14px" autocomplete="off">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px;background:rgba(108,71,255,0.08);border-radius:10px">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" style="width:20px;flex-shrink:0"><path d="M4 4h16v16H4z" rx="2"/><path d="M8 10h8M8 14h5"/></svg>
-          <div style="font-size:0.8rem;color:var(--text-muted);line-height:1.5">
-            Bambu Lab a envoyé un code de vérification à ton adresse email. Saisis-le ci-dessous. <strong>Si tu as reçu plusieurs codes, utilise le plus récent.</strong>
+      <!-- VUE CONNECTÉE : status, expiry, imprimantes, actions -->
+      <div id="bambuConnectedView" style="display:none">
+        <div class="bambu-status-card" id="bambuStatusCard">
+          <div class="bambu-status-icon" id="bambuStatusDot">●</div>
+          <div style="flex:1;min-width:0">
+            <div class="bambu-status-title" id="bambuStatusLabel">Connecté</div>
+            <div class="bambu-status-sub" id="bambuStatusEmail">—</div>
           </div>
         </div>
-        <div class="form-group">
-          <label>Code de vérification</label>
-          <input type="text" id="bambuCode" name="code" placeholder="123456"
-            inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="one-time-code"
-            style="letter-spacing:0.2em;font-size:1.2rem;text-align:center" required>
+
+        <div class="bambu-info-grid">
+          <div class="bambu-info-cell">
+            <div class="bambu-info-label">Expire</div>
+            <div class="bambu-info-value" id="bambuExpiry">—</div>
+          </div>
+          <div class="bambu-info-cell">
+            <div class="bambu-info-label">Dernière sync</div>
+            <div class="bambu-info-value" id="bambuLastSync">—</div>
+          </div>
         </div>
-        <div id="bambuCodeError" style="display:none;font-size:0.8rem;color:var(--danger);padding:8px 12px;background:rgba(255,71,87,0.08);border-radius:8px"></div>
-        <div id="bambuCodeOk" style="display:none;font-size:0.8rem;color:var(--accent);padding:8px 12px;background:rgba(0,212,170,0.08);border-radius:8px"></div>
-        <button type="submit" class="btn-primary" id="bambuCodeBtn" style="width:100%">
-          Valider le code
-        </button>
-        <div style="display:flex;justify-content:space-between;gap:12px;font-size:0.78rem">
-          <button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0" onclick="bambuBackToLogin()">
-            ← Recommencer
+
+        <div class="bambu-printers" id="bambuPrintersWrap">
+          <div class="bambu-section-title">Imprimantes surveillées</div>
+          <div id="bambuPrintersList"></div>
+        </div>
+
+        <div class="bambu-actions">
+          <button type="button" class="btn-primary" onclick="bambuSyncNowFromModal()" id="bambuSyncBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:6px;vertical-align:-2px"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+            Synchroniser maintenant
           </button>
-          <button type="button" id="bambuResendBtn" style="background:none;border:none;color:var(--primary);cursor:pointer;padding:0" onclick="bambuResendCode()">
-            Renvoyer un code
+          <button type="button" class="bambu-btn-secondary" onclick="bambuShowLoginView()">
+            Reconfigurer le compte
+          </button>
+          <button type="button" class="bambu-btn-danger" onclick="bambuDisconnect()">
+            Se déconnecter
           </button>
         </div>
-      </form>
+
+        <details class="bambu-help">
+          <summary>Comment fonctionne la détection auto&nbsp;?</summary>
+          <div class="bambu-help-body">
+            <p>Le serveur reste connecté à Bambu Cloud en MQTT et écoute en temps réel les évènements de fin d'impression sur tes imprimantes. Tes prints arrivent automatiquement dans <strong>À&nbsp;valider</strong>, sans avoir besoin de garder l'app ouverte.</p>
+            <p>Toutes les 10&nbsp;minutes, on poll aussi l'API REST de Bambu en filet de sécurité, au cas où un message MQTT serait perdu.</p>
+            <p>Le token d'accès est rafraîchi automatiquement quand il approche son expiration (24&nbsp;h avant). Tu n'as à te reconnecter que si Bambu invalide la session.</p>
+          </div>
+        </details>
+      </div>
+
+      <!-- VUE LOGIN : email + mot de passe (Bambu) -->
+      <div id="bambuLoginView">
+        <form id="bambuLoginForm" onsubmit="bambuLogin(event)" style="display:flex;flex-direction:column;gap:14px" autocomplete="on">
+          <div class="form-group">
+            <label for="bambuEmail">Email Bambu Lab</label>
+            <input type="text" id="bambuEmail" name="username" placeholder="ton@email.com"
+              autocomplete="username" inputmode="email" required>
+          </div>
+          <div class="form-group">
+            <label for="bambuPassword">Mot de passe</label>
+            <input type="password" id="bambuPassword" name="password" placeholder="••••••••"
+              autocomplete="current-password" required>
+          </div>
+          <div id="bambuLoginError" style="display:none;font-size:0.8rem;color:var(--danger);padding:8px 12px;background:rgba(255,71,87,0.08);border-radius:8px"></div>
+          <button type="submit" class="btn-primary" id="bambuLoginBtn" style="width:100%">
+            Se connecter
+          </button>
+          <div style="font-size:0.75rem;color:var(--text-muted);text-align:center;line-height:1.5">
+            Tes identifiants sont envoyés directement à Bambu Lab.<br>Onlyfab ne stocke que le token de session.
+          </div>
+        </form>
+      </div>
+
+      <!-- VUE 2FA : code de vérification email -->
+      <div id="bambuCodeView" style="display:none">
+        <form id="bambuCodeForm" onsubmit="bambuVerify(event)" style="display:flex;flex-direction:column;gap:14px" autocomplete="off">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px;background:rgba(108,71,255,0.08);border-radius:10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" style="width:20px;flex-shrink:0" aria-hidden="true"><path d="M4 4h16v16H4z" rx="2"/><path d="M8 10h8M8 14h5"/></svg>
+            <div style="font-size:0.8rem;color:var(--text-muted);line-height:1.5">
+              Bambu Lab a envoyé un code de vérification à ton adresse email. Saisis-le ci-dessous. <strong>Si tu as reçu plusieurs codes, utilise le plus récent.</strong>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="bambuCode">Code de vérification</label>
+            <input type="text" id="bambuCode" name="code" placeholder="123456"
+              inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="one-time-code"
+              style="letter-spacing:0.2em;font-size:1.2rem;text-align:center" required>
+          </div>
+          <div id="bambuCodeError" style="display:none;font-size:0.8rem;color:var(--danger);padding:8px 12px;background:rgba(255,71,87,0.08);border-radius:8px"></div>
+          <div id="bambuCodeOk" style="display:none;font-size:0.8rem;color:var(--accent);padding:8px 12px;background:rgba(0,212,170,0.08);border-radius:8px"></div>
+          <button type="submit" class="btn-primary" id="bambuCodeBtn" style="width:100%">
+            Valider le code
+          </button>
+          <div style="display:flex;justify-content:space-between;gap:12px;font-size:0.78rem">
+            <button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0" onclick="bambuBackToLogin()">
+              ← Recommencer
+            </button>
+            <button type="button" id="bambuResendBtn" style="background:none;border:none;color:var(--primary);cursor:pointer;padding:0" onclick="bambuResendCode()">
+              Renvoyer un code
+            </button>
+          </div>
+        </form>
+      </div>
+
     </div>
   </div>
 </div>
@@ -7846,7 +8058,7 @@
 
     if (status === 'token-expired') {
       pill.innerHTML = `<span>⚠ Token Bambu expiré — reconnecte-toi pour relancer la détection automatique</span>
-        <button class="pill-connect-btn" onclick="document.getElementById('bambuSetupModal').classList.add('open')">
+        <button class="pill-connect-btn" onclick="openBambuSetup()">
           Reconnecter
         </button>`;
       return;
@@ -7859,12 +8071,12 @@
         <button class="pill-connect-btn" onclick="bambuSyncNow()" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:4px 10px;font-size:0.72rem;cursor:pointer">
           Synchroniser
         </button>
-        <button class="pill-connect-btn" onclick="document.getElementById('bambuSetupModal').classList.add('open')" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:4px 10px;font-size:0.72rem;cursor:pointer">
+        <button class="pill-connect-btn" onclick="openBambuSetup()" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:4px 10px;font-size:0.72rem;cursor:pointer">
           Reconfigurer
         </button>`;
     } else {
       pill.innerHTML = `<span>Non connecté à Bambu Lab — les impressions ne seront pas détectées automatiquement</span>
-        <button class="pill-connect-btn" onclick="document.getElementById('bambuSetupModal').classList.add('open')">
+        <button class="pill-connect-btn" onclick="openBambuSetup()">
           Connecter
         </button>`;
     }
@@ -7901,23 +8113,176 @@
   let _bambuSessionId = null; // stocke l'ID de session 2FA en attente
   let _sseReady       = false; // true dès que le SSE a envoyé l'état initial Bambu
 
+  // Sélecteurs raccourcis pour les 3 vues du modal Bambu.
+  function _bambuViews() {
+    return {
+      connected: document.getElementById('bambuConnectedView'),
+      login:     document.getElementById('bambuLoginView'),
+      code:      document.getElementById('bambuCodeView'),
+    };
+  }
+  function _bambuShowView(name) {
+    const v = _bambuViews();
+    v.connected.style.display = name === 'connected' ? '' : 'none';
+    v.login.style.display     = name === 'login'     ? '' : 'none';
+    v.code.style.display      = name === 'code'      ? '' : 'none';
+    // Sous-titre adapté à la vue.
+    const sub = document.getElementById('bambuSetupSubtitle');
+    if (sub) {
+      sub.textContent = name === 'connected'
+        ? 'Détection automatique de tes impressions'
+        : (name === 'code' ? 'Vérification email Bambu Lab' : 'Pour surveiller tes imprimantes');
+    }
+  }
+
   function closeBambuSetup() {
     document.getElementById('bambuSetupModal').classList.remove('open');
-    document.getElementById('bambuLoginError').style.display = 'none';
-    document.getElementById('bambuCodeError').style.display = 'none';
+    const errLogin = document.getElementById('bambuLoginError'); if (errLogin) errLogin.style.display = 'none';
+    const errCode  = document.getElementById('bambuCodeError');  if (errCode)  errCode.style.display  = 'none';
     document.getElementById('bambuLoginForm').reset();
     document.getElementById('bambuCodeForm').reset();
-    document.getElementById('bambuLoginForm').style.display = 'flex';
-    document.getElementById('bambuCodeForm').style.display = 'none';
+    _bambuShowView('login');
     _bambuSessionId = null;
   }
 
+  // Entrée principale : ouvre le modal et choisit la bonne vue selon l'état.
+  async function openBambuSetup() {
+    openBambuSetup();
+    // Affiche d'abord la vue connected en placeholder pour ne pas flasher
+    // entre 2 vues. Si on découvre qu'on n'est pas connecté, on switch.
+    _bambuShowView('connected');
+    document.getElementById('bambuStatusLabel').textContent = 'Chargement…';
+    document.getElementById('bambuStatusEmail').textContent = '';
+    try {
+      const r = await fetch('/api/bambu/info');
+      const d = await r.json();
+      if (!r.ok || !d.connected) { _bambuShowView('login'); return; }
+      _renderBambuConnectedView(d);
+    } catch {
+      _bambuShowView('login');
+    }
+  }
+
+  function _renderBambuConnectedView(info) {
+    _bambuShowView('connected');
+    const card = document.getElementById('bambuStatusCard');
+    const dot  = document.getElementById('bambuStatusDot');
+    const lbl  = document.getElementById('bambuStatusLabel');
+    const sub  = document.getElementById('bambuStatusEmail');
+
+    card.classList.remove('is-warning', 'is-pending');
+    if (info.tokenExpired) {
+      card.classList.add('is-warning');
+      dot.textContent = '⚠';
+      lbl.textContent = 'Session expirée';
+    } else if (info.status === 'reconnecting' || info.status === 'connecting') {
+      card.classList.add('is-pending');
+      dot.textContent = '◌';
+      lbl.textContent = 'Reconnexion en cours…';
+    } else if (info.status === 'connected') {
+      dot.textContent = '●';
+      lbl.textContent = 'Connecté à Bambu Lab';
+    } else {
+      card.classList.add('is-warning');
+      dot.textContent = '○';
+      lbl.textContent = 'Hors ligne';
+    }
+    sub.textContent = info.email || '';
+
+    // Expiry
+    const expEl = document.getElementById('bambuExpiry');
+    if (info.expiresAt) {
+      const ms = info.expiresAt - Date.now();
+      if (ms <= 0) {
+        expEl.textContent = 'Expirée';
+        expEl.classList.add('warning');
+      } else {
+        const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+        const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+        expEl.textContent = days > 0 ? `dans ${days}j ${hours}h` : `dans ${hours}h`;
+        expEl.classList.toggle('warning', days < 1);
+      }
+    } else {
+      expEl.textContent = '—';
+      expEl.classList.remove('warning');
+    }
+
+    // Last sync
+    const lsEl = document.getElementById('bambuLastSync');
+    lsEl.textContent = info.lastSyncAt ? _formatRelTime(info.lastSyncAt) : 'jamais';
+
+    // Imprimantes
+    const list = document.getElementById('bambuPrintersList');
+    if (info.printers && info.printers.length) {
+      list.innerHTML = info.printers.map(p => `
+        <div class="bambu-printer-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" width="18" height="18" aria-hidden="true">
+            <path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8" rx="1"/>
+          </svg>
+          <div style="flex:1;min-width:0">
+            <div class="bambu-printer-name">${escHtml(p.name || 'Imprimante')}</div>
+            <div class="bambu-printer-serial">${escHtml(p.serial || '')}</div>
+          </div>
+        </div>`).join('');
+    } else {
+      list.innerHTML = '<div class="bambu-printers-empty">Aucune imprimante détectée. Bambu Lab les renvoie au premier MQTT subscribe — patiente quelques secondes après la connexion.</div>';
+    }
+  }
+
+  function bambuShowLoginView() {
+    _bambuShowView('login');
+    setTimeout(() => document.getElementById('bambuEmail').focus(), 30);
+  }
+
+  async function bambuSyncNowFromModal() {
+    const btn = document.getElementById('bambuSyncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Synchronisation…'; }
+    try {
+      const r = await fetch('/api/bambu/sync', { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Erreur');
+      _bambuLastSyncAt = Date.now();
+      showToast(d.imported > 0
+        ? `${d.imported} impression(s) importée(s)`
+        : 'Aucune nouvelle impression');
+      // Rafraîchit la fiche avec les nouvelles infos.
+      try {
+        const info = await fetch('/api/bambu/info').then(r => r.json());
+        _renderBambuConnectedView(info);
+      } catch {}
+    } catch (err) {
+      showToast('Sync échouée : ' + (err.message || 'erreur'), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:6px;vertical-align:-2px"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Synchroniser maintenant'; }
+    }
+  }
+
+  async function bambuDisconnect() {
+    if (!confirm('Te déconnecter de Bambu Lab ? La détection automatique des prints sera arrêtée jusqu\'à ce que tu te reconnectes.')) return;
+    try {
+      const r = await fetch('/api/bambu/disconnect', { method: 'POST' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Erreur');
+      setBambuStatus('disconnected');
+      _bambuLastSyncAt = null;
+      _bambuShowView('login');
+      showToast('Déconnecté de Bambu Lab');
+    } catch (err) {
+      showToast('Erreur : ' + (err.message || 'inconnue'), 'error');
+    }
+  }
+
   function bambuBackToLogin() {
-    document.getElementById('bambuCodeForm').style.display = 'none';
-    document.getElementById('bambuLoginForm').style.display = 'flex';
+    _bambuShowView('login');
     document.getElementById('bambuCodeError').style.display = 'none';
     _bambuSessionId = null;
   }
+
+  window.openBambuSetup = openBambuSetup;
+  window.bambuShowLoginView = bambuShowLoginView;
+  window.bambuSyncNowFromModal = bambuSyncNowFromModal;
+  window.bambuDisconnect = bambuDisconnect;
 
   async function bambuLogin(e) {
     if (e) e.preventDefault();

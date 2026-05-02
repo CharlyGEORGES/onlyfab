@@ -1394,6 +1394,53 @@ http.createServer(async (req, res) => {
         return;
       }
 
+      // Infos détaillées pour l'écran de gestion de la connexion : email,
+      // expiry exacte, imprimantes, état refresh token, last sync.
+      if (req.method === 'GET' && url === '/api/bambu/info') {
+        const u = db.prepare('SELECT bambu_token, bambu_refresh_token, bambu_email, bambu_printers FROM users WHERE id=?').get(userId);
+        const state = bambuByUser.get(userId) || {};
+        let expiresAt = null;
+        let expired = null;
+        if (u?.bambu_token) {
+          try {
+            const payload = JSON.parse(Buffer.from(u.bambu_token.split('.')[1], 'base64url').toString());
+            if (payload.exp) {
+              expiresAt = payload.exp * 1000;
+              expired = Date.now() > expiresAt;
+            }
+          } catch {}
+        }
+        const printers = (() => {
+          try { return JSON.parse(u?.bambu_printers || '[]'); }
+          catch { return []; }
+        })();
+        json(res, {
+          connected: !!u?.bambu_token && !expired,
+          status: expired ? 'token-expired' : (state.status || 'disconnected'),
+          email: u?.bambu_email || null,
+          expiresAt,
+          tokenExpired: expired,
+          hasRefreshToken: !!u?.bambu_refresh_token,
+          lastSyncAt: state.lastSyncAt || null,
+          lastSyncCount: state.lastSyncCount ?? null,
+          printers,
+        });
+        return;
+      }
+
+      // Déconnexion Bambu : on coupe MQTT et on efface tokens + email + printers.
+      if (req.method === 'POST' && url === '/api/bambu/disconnect') {
+        const prev = bambuByUser.get(userId);
+        if (prev?.client) { try { prev.client.end(true); } catch {} }
+        bambuByUser.delete(userId);
+        db.prepare('UPDATE users SET bambu_token=NULL, bambu_refresh_token=NULL, bambu_email=NULL, bambu_printers=? WHERE id=?')
+          .run('[]', userId);
+        broadcast(userId, 'bambu-status', { status: 'disconnected', lastSyncAt: null });
+        console.log(`  [Bambu] User ${userId} déconnecté manuellement`);
+        json(res, { ok: true });
+        return;
+      }
+
       // Trigger un poll Bambu manuel (bouton "Synchroniser maintenant").
       // Renvoie le nombre de prints importés.
       if (req.method === 'POST' && url === '/api/bambu/sync') {
