@@ -1165,7 +1165,14 @@
       margin-bottom: 6px;
     }
 
-    input[type="text"], input[type="number"], textarea, select {
+    /* Tous les inputs textuels partagent le même style. Avant on listait
+       text/number/textarea/select mais on oubliait email/password/search/
+       tel/url, qui retombaient en native browser style — fond blanc,
+       bordure différente, baseline qui ne matche pas. */
+    input[type="text"], input[type="number"], input[type="email"],
+    input[type="password"], input[type="search"], input[type="tel"],
+    input[type="url"], input[type="date"], input[type="time"],
+    textarea, select {
       width: 100%;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -1176,6 +1183,7 @@
       outline: none;
       transition: border-color 0.2s;
       font-family: inherit;
+      box-sizing: border-box;
     }
 
     input:focus, textarea:focus, select:focus { border-color: var(--primary); }
@@ -2997,9 +3005,16 @@
     <div class="save-dot" id="saveDot" title="Sauvegardé" data-i18n-attr="title:header.saved" aria-label="Sauvegardé" role="status"></div>
 
     <button class="btn-icon-header" id="inventoryModeBtn" onclick="toggleInventoryMode()" title="Mode inventaire rapide" data-i18n-attr="title:header.inventoryMode,aria-label:header.inventoryMode" aria-label="Mode inventaire rapide">
+      <!-- Icône liste avec puces : viewBox repensé pour que l'ensemble
+           (puces à gauche + lignes à droite) soit visuellement centré
+           dans le carré du bouton, plutôt que biaisé sur un côté. -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-        <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+        <circle cx="4" cy="6"  r="1" fill="currentColor" stroke="none"/>
+        <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/>
+        <circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/>
+        <line x1="9" y1="6"  x2="20" y2="6"/>
+        <line x1="9" y1="12" x2="20" y2="12"/>
+        <line x1="9" y1="18" x2="20" y2="18"/>
       </svg>
     </button>
 
