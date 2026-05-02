@@ -8380,21 +8380,30 @@
 
   async function bambuLogin(e) {
     if (e) e.preventDefault();
-    const email    = document.getElementById('bambuEmail').value.trim();
-    const password = document.getElementById('bambuPassword').value;
-    const errEl    = document.getElementById('bambuLoginError');
-    const btn      = document.getElementById('bambuLoginBtn');
-    if (!email || !password) { errEl.textContent = 'Remplis les deux champs.'; errEl.style.display = 'block'; return; }
+    const emailEl    = document.getElementById('bambuEmail');
+    const passwordEl = document.getElementById('bambuPassword');
+    const errEl      = document.getElementById('bambuLoginError');
+    const btn        = document.getElementById('bambuLoginBtn');
+    if (!emailEl || !passwordEl || !btn) {
+      console.warn('[bambuLogin] champ manquant', { emailEl, passwordEl, btn });
+      return;
+    }
+    const email    = emailEl.value.trim();
+    const password = passwordEl.value;
+    const showErr = (msg) => {
+      if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+    };
+
+    if (!email || !password) { showErr('Remplis les deux champs.'); return; }
     if (!_isValidEmail(email)) {
-      errEl.textContent = 'Adresse email invalide. Format attendu : nom@domaine.fr';
-      errEl.style.display = 'block';
-      document.getElementById('bambuEmail').focus();
+      showErr('Adresse email invalide. Format attendu : nom@domaine.fr');
+      emailEl.focus();
       return;
     }
 
     btn.disabled = true;
     btn.textContent = 'Connexion…';
-    errEl.style.display = 'none';
+    if (errEl) errEl.style.display = 'none';
 
     try {
       const r = await fetch('/api/bambu/auth', {
@@ -8416,14 +8425,30 @@
       closeBambuSetup();
       setBambuStatus('reconnecting');
       showToast(t('toast.bambuConnected'));
-    } catch(e) {
-      errEl.textContent = e.message;
-      errEl.style.display = 'block';
+    } catch(err) {
+      showErr(err.message);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Se connecter';
     }
   }
+  // Fallback : on attache aussi un click handler direct sur le bouton, au
+  // cas où l'onsubmit du form serait empêché par un événement parasite
+  // (ex. ancien SW cache, extension navigateur). Idempotent : preventDefault
+  // sur le submit empêche le double appel.
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('bambuLoginBtn');
+    if (btn && !btn.dataset.bambuLoginBound) {
+      btn.dataset.bambuLoginBound = '1';
+      btn.addEventListener('click', (e) => {
+        // Si le bouton est dans son <form>, le submit fera tout — on le
+        // laisse remonter. Sinon (cas anormal), on appelle direct.
+        const form = btn.closest('form');
+        if (!form) { e.preventDefault(); bambuLogin(e); }
+      });
+    }
+  });
+  window.bambuLogin = bambuLogin;
 
   async function bambuVerify(e) {
     if (e) e.preventDefault();
