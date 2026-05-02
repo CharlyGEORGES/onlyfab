@@ -2439,6 +2439,32 @@
 
     /* MODAL HISTORIQUE BAMBU */
     .history-task-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; }
+
+    /* Filtre par imprimante dans le modal d'import Bambu : pleine largeur,
+       même style que les autres selects mais visible (background propre). */
+    .bambu-history-filter {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 32px 8px 12px;
+      font-size: 0.85rem;
+      border-radius: 8px;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237070a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      font-family: inherit;
+    }
+    .bambu-history-filter:focus { border-color: var(--primary); }
+    .bambu-history-filter option { background: var(--surface); color: var(--text); }
+    .bambu-history-filter:-webkit-autofill {
+      -webkit-box-shadow: 0 0 0 1000px var(--surface2) inset;
+      -webkit-text-fill-color: var(--text);
+    }
     .history-task {
       display: flex; align-items: center; gap: 12px;
       padding: 10px 12px;
@@ -3556,6 +3582,16 @@
       </button>
     </div>
     <div class="modal-body" style="padding-top:8px">
+      <!-- Filtre par imprimante : visible uniquement quand >=2 imprimantes
+           sont détectées dans les tâches chargées (sinon il n'y a rien à
+           filtrer). Reset auto à chaque ouverture. -->
+      <div id="bambuHistoryFilterWrap" style="display:none;margin-bottom:10px">
+        <label for="bambuHistoryPrinterFilter" class="sr-only">Filtrer par imprimante</label>
+        <select id="bambuHistoryPrinterFilter" class="bambu-history-filter"
+                onchange="_bambuHistoryFilterChange(this.value)" autocomplete="off">
+          <option value="">Toutes les imprimantes</option>
+        </select>
+      </div>
       <div id="bambuHistoryContent">
         <div style="text-align:center;padding:32px 0;color:var(--text-muted);font-size:0.88rem">Chargement…</div>
       </div>
@@ -8235,10 +8271,19 @@
   // ── HISTORIQUE BAMBU ──────────────────────────────────────────────────────
   let _historyOffset = 0;
   let _historyTotal  = 0;
+  // Imprimantes vues dans les tâches déjà chargées (label → count) +
+  // sélection courante du filtre (label exact ou '' = toutes).
+  const _historyPrinters = new Map();
+  let _historyPrinterFilter = '';
 
   function openBambuHistory() {
     _historyOffset = 0;
     _historyTotal  = 0;
+    _historyPrinters.clear();
+    _historyPrinterFilter = '';
+    const filterSel = document.getElementById('bambuHistoryPrinterFilter');
+    if (filterSel) filterSel.value = '';
+    document.getElementById('bambuHistoryFilterWrap').style.display = 'none';
     document.getElementById('bambuHistoryContent').innerHTML =
       '<div style="text-align:center;padding:32px 0;color:var(--text-muted);font-size:0.88rem">Chargement…</div>';
     document.getElementById('bambuHistoryMore').style.display = 'none';
@@ -8249,6 +8294,50 @@
   function closeBambuHistory() {
     document.getElementById('bambuHistoryModal').classList.remove('open');
   }
+
+  // Refresh la liste des options du select à partir des imprimantes vues.
+  function _refreshHistoryPrinterFilter() {
+    const wrap = document.getElementById('bambuHistoryFilterWrap');
+    const sel  = document.getElementById('bambuHistoryPrinterFilter');
+    if (!wrap || !sel) return;
+    // Affiche le filtre uniquement si on a au moins 2 imprimantes : sinon
+    // pas la peine, il n'y a rien à filtrer.
+    if (_historyPrinters.size < 2) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    const sorted = [...new Set(_historyPrinters.keys())].sort();
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">Toutes les imprimantes</option>` +
+      sorted.map(p => `<option value="${escHtml(p)}">${escHtml(p)} (${_historyPrinters.get(p)})</option>`).join('');
+    sel.value = cur || '';
+  }
+
+  // Applique le filtre sur le DOM existant : montre/cache les .history-task
+  // selon leur data-printer. Pas de fetch supplémentaire — filtre client-side.
+  function _bambuHistoryFilterChange(value) {
+    _historyPrinterFilter = value || '';
+    const list = document.querySelectorAll('#bambuHistoryContent .history-task');
+    let visible = 0;
+    list.forEach(el => {
+      const p = el.dataset.printer || '';
+      const ok = !_historyPrinterFilter || p === _historyPrinterFilter;
+      el.style.display = ok ? '' : 'none';
+      if (ok) visible++;
+    });
+    // Si tout est filtré, message d'état.
+    let emptyMsg = document.getElementById('bambuHistoryFilterEmpty');
+    if (!visible && _historyPrinterFilter) {
+      if (!emptyMsg) {
+        emptyMsg = document.createElement('div');
+        emptyMsg.id = 'bambuHistoryFilterEmpty';
+        emptyMsg.style.cssText = 'text-align:center;padding:24px 12px;color:var(--text-muted);font-size:0.85rem';
+        emptyMsg.textContent = 'Aucune impression pour cette imprimante dans le lot chargé.';
+        document.getElementById('bambuHistoryContent').appendChild(emptyMsg);
+      }
+    } else if (emptyMsg) {
+      emptyMsg.remove();
+    }
+  }
+  window._bambuHistoryFilterChange = _bambuHistoryFilterChange;
 
   async function loadBambuHistory(append = false) {
     const content = document.getElementById('bambuHistoryContent');
@@ -8297,6 +8386,16 @@
 
         const el = document.createElement('div');
         el.className = 'history-task';
+        // Marque l'imprimante pour permettre le filtrage côté client.
+        if (printerName) {
+          el.dataset.printer = printerName;
+          _historyPrinters.set(printerName, (_historyPrinters.get(printerName) || 0) + 1);
+        }
+        // Si un filtre est actif, masque immédiatement les tâches qui ne
+        // matchent pas (utile pour le "Charger plus" pendant un filtre).
+        if (_historyPrinterFilter && printerName !== _historyPrinterFilter) {
+          el.style.display = 'none';
+        }
 
         el.innerHTML = `
           ${thumb
@@ -8348,6 +8447,9 @@
 
       _historyOffset += tasks.length;
       moreBtn.style.display = (_historyOffset < _historyTotal) ? 'block' : 'none';
+      // Rafraîchit le select de filtre maintenant qu'on connaît plus
+      // d'imprimantes (apparaît seulement à partir de 2).
+      _refreshHistoryPrinterFilter();
 
     } catch(e) {
       content.innerHTML = `<div style="text-align:center;padding:32px 0;color:var(--danger);font-size:0.85rem">${escHtml(e.message)}</div>`;
