@@ -198,6 +198,10 @@ addColumnIfMissing('items', 'tags', 'TEXT');
 // de l'item juste avant l'update/delete pour pouvoir le restaurer.
 addColumnIfMissing('history', 'before_state', 'TEXT');
 
+// Refresh token Bambu : permet de renouveler l'access token (qui expire
+// régulièrement) sans demander à l'utilisateur de se re-login.
+addColumnIfMissing('users', 'bambu_refresh_token', 'TEXT');
+
 // Indexes pour requêtes fréquentes (créés après TOUTES les migrations
 // pour garantir que colonnes et tables existent) :
 // - history.item_id   : timeline d'un item (déjà existant)
@@ -743,11 +747,18 @@ function onPrintCompleteForUser(userId, job) {
 // perdu). On poll donc périodiquement l'API REST de Bambu pour détecter les
 // prints manqués. Marche même si MQTT est complètement KO.
 async function pollBambuForUser(userId) {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  let user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user?.bambu_token) return { imported: 0, error: 'no-token' };
+  // Token expiré ? On tente un refresh avant de baisser les bras.
   if (isTokenExpired(user.bambu_token)) {
-    onStateChange(userId, 'token-expired');
-    return { imported: 0, error: 'token-expired' };
+    if (user.bambu_refresh_token) {
+      const r = await refreshBambuTokenForUser(userId);
+      if (r.ok) user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+      else { onStateChange(userId, 'token-expired'); return { imported: 0, error: 'token-expired' }; }
+    } else {
+      onStateChange(userId, 'token-expired');
+      return { imported: 0, error: 'token-expired' };
+    }
   }
   let tasks;
   try {
@@ -853,6 +864,37 @@ async function bambuPollAllUsers() {
 setTimeout(bambuPollAllUsers, 60_000);
 setInterval(bambuPollAllUsers, BAMBU_POLL_INTERVAL_MS);
 
+// ── KEEP-ALIVE (anti-sleep Render free tier) ───────────────────────────────
+// Render Free met le service en sommeil après 15 min sans requête HTTP
+// entrante. Quand le service dort, on perd la connexion MQTT et le poll
+// périodique → les prints terminés pendant ce temps ne sont jamais détectés.
+//
+// Solution : on s'auto-ping toutes les 10 min via PUBLIC_URL (= l'URL
+// publique de l'app, ex bambustock.com). Le ping compte comme requête
+// entrante côté Render → reset du timer de sleep.
+//
+// Activation : définir PUBLIC_URL dans les env vars Render
+// (ex: PUBLIC_URL=https://bambustock.com).
+// Pas de PUBLIC_URL → keep-alive inactif (utile pour dev local et Fly où
+// auto_stop_machines=false rend ça inutile).
+const PUBLIC_URL = process.env.PUBLIC_URL || '';
+if (PUBLIC_URL) {
+  const KEEPALIVE_INTERVAL_MS = parseInt(process.env.KEEPALIVE_INTERVAL_MS || (10 * 60 * 1000), 10);
+  console.log(`  [Keep-alive] Auto-ping ${PUBLIC_URL}/api/version toutes les ${Math.round(KEEPALIVE_INTERVAL_MS/60000)} min`);
+  setInterval(async () => {
+    try {
+      const r = await fetch(PUBLIC_URL.replace(/\/$/, '') + '/api/version', {
+        method: 'GET',
+        headers: { 'User-Agent': 'onlyfab-keepalive/1.0' },
+      });
+      // On log seulement les erreurs : succès = silencieux pour pas spammer
+      if (!r.ok) console.warn(`  [Keep-alive] Ping HTTP ${r.status}`);
+    } catch (e) {
+      console.warn(`  [Keep-alive] Échec ping : ${e.message}`);
+    }
+  }, KEEPALIVE_INTERVAL_MS);
+}
+
 function connectBambu(userId, token, printers, userEmail) {
   const prev = bambuByUser.get(userId);
   if (prev?.client) prev.client.end(true);
@@ -867,11 +909,78 @@ function connectBambu(userId, token, printers, userEmail) {
   bambuByUser.set(userId, { status: 'connecting', client });
 }
 
-// Sauvegarde un token Bambu dans la table users
-function saveBambuToken(userId, token, printers, email) {
-  db.prepare('UPDATE users SET bambu_token=?, bambu_printers=?, bambu_email=? WHERE id=?')
-    .run(token, JSON.stringify(printers || []), email || null, userId);
+// Sauvegarde un token Bambu (+ refresh token si fourni) dans la table users.
+function saveBambuToken(userId, token, printers, email, refreshToken) {
+  if (refreshToken !== undefined) {
+    db.prepare('UPDATE users SET bambu_token=?, bambu_printers=?, bambu_email=?, bambu_refresh_token=? WHERE id=?')
+      .run(token, JSON.stringify(printers || []), email || null, refreshToken || null, userId);
+  } else {
+    // Compat : si on n'a pas de nouveau refresh token, on garde l'ancien.
+    db.prepare('UPDATE users SET bambu_token=?, bambu_printers=?, bambu_email=? WHERE id=?')
+      .run(token, JSON.stringify(printers || []), email || null, userId);
+  }
 }
+
+// ── REFRESH TOKEN BAMBU ────────────────────────────────────────────────────
+// Bambu fournit un refresh token au login → on l'échange contre un nouvel
+// access token avant que ce dernier n'expire, sans demander à l'utilisateur
+// de se re-connecter (et sans devoir re-saisir le code 2FA).
+async function refreshBambuTokenForUser(userId) {
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId);
+  if (!user?.bambu_refresh_token) return { ok: false, reason: 'no-refresh-token' };
+  try {
+    // Endpoint Bambu : POST /v1/user-service/user/refreshtoken
+    // Body : { refreshToken }. Réponse : { accessToken, refreshToken }.
+    const r = await fetch('https://api.bambulab.com/v1/user-service/user/refreshtoken', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent':   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify({ refreshToken: user.bambu_refresh_token }),
+    });
+    const text = await r.text();
+    if (text.trimStart().startsWith('<')) return { ok: false, reason: 'cloudflare-html' };
+    const d = JSON.parse(text);
+    const newAccess  = d.accessToken || d.token || d.data?.accessToken;
+    const newRefresh = d.refreshToken || d.data?.refreshToken || user.bambu_refresh_token;
+    if (!newAccess) return { ok: false, reason: 'no-token-in-response', raw: text.slice(0, 200) };
+    const printers = JSON.parse(user.bambu_printers || '[]');
+    saveBambuToken(userId, newAccess, printers, user.bambu_email, newRefresh);
+    console.log(`  [Bambu refresh] OK pour user ${user.email}`);
+    // Reconnecte MQTT avec le nouveau token (l'ancienne session se ferme).
+    connectBambu(userId, newAccess, printers, user.bambu_email);
+    return { ok: true };
+  } catch (e) {
+    console.warn(`  [Bambu refresh] Échec pour user ${userId} :`, e.message);
+    return { ok: false, reason: e.message };
+  }
+}
+
+// Boucle automatique : toutes les 30 min, refresh proactif des tokens qui
+// expirent dans moins de 24h. Beaucoup mieux que d'attendre l'expiry pour
+// constater le pb (entre temps, MQTT est déconnecté + poll échoue + prints
+// manqués). 30 min suffisent : si Bambu emet un access token de 7j, on a
+// largement le temps de le rattraper.
+async function refreshExpiringBambuTokens() {
+  const users = db.prepare("SELECT id, bambu_token, bambu_refresh_token, email FROM users WHERE bambu_token IS NOT NULL AND bambu_refresh_token IS NOT NULL").all();
+  for (const u of users) {
+    try {
+      const payload = JSON.parse(Buffer.from(u.bambu_token.split('.')[1], 'base64url').toString());
+      const expSec = payload.exp;
+      if (!expSec) continue;
+      const remainingHours = (expSec - Date.now() / 1000) / 3600;
+      // Refresh si moins de 24h restantes (ou déjà expiré).
+      if (remainingHours < 24) {
+        console.log(`  [Bambu refresh] Token de ${u.email} expire dans ${remainingHours.toFixed(1)}h → refresh`);
+        await refreshBambuTokenForUser(u.id);
+      }
+    } catch (e) { /* token mal formé, on skip */ }
+  }
+}
+// 1er passage 2 min après le boot, puis toutes les 30 min.
+setTimeout(refreshExpiringBambuTokens, 2 * 60_000);
+setInterval(refreshExpiringBambuTokens, 30 * 60_000);
 
 // Sessions 2FA en attente (stockées en mémoire, expirent en 10 min)
 const pendingTfa = new Map(); // sessionId → { email, password, expires, userId }
@@ -1322,10 +1431,11 @@ http.createServer(async (req, res) => {
             return;
           }
           const token = d.accessToken || d.token || d.data?.accessToken;
+          const refreshToken = d.refreshToken || d.data?.refreshToken || null;
           if (!token) throw new Error(d.message || d.error || 'Pas de token dans la réponse');
           const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(userId);
           const printers = JSON.parse(currentUser?.bambu_printers || '[]');
-          saveBambuToken(userId, token, printers, b.email);
+          saveBambuToken(userId, token, printers, b.email, refreshToken);
           connectBambu(userId, token, printers, b.email);
           onStateChange(userId, 'connected');
           json(res, { ok: true });
@@ -1360,6 +1470,7 @@ http.createServer(async (req, res) => {
           if (tfa.tfaKey) payload.tfaKey = tfa.tfaKey;
           const d = await curlPost('https://api.bambulab.com/v1/user-service/user/login', payload);
           const token = d.accessToken || d.token || d.data?.accessToken;
+          const refreshToken = d.refreshToken || d.data?.refreshToken || null;
           if (!token) {
             console.warn('  [Bambu] /api/bambu/verify : pas de token. Réponse :', JSON.stringify(d).slice(0, 500));
             throw new Error(d.message || d.error || `Code invalide ou expiré (réponse Bambu : ${JSON.stringify(d).slice(0,120)})`);
@@ -1369,7 +1480,7 @@ http.createServer(async (req, res) => {
           pendingTfa.delete(sessionId);
           const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(tfaUserId);
           const printers = JSON.parse(currentUser?.bambu_printers || '[]');
-          saveBambuToken(tfaUserId, token, printers, email);
+          saveBambuToken(tfaUserId, token, printers, email, refreshToken);
           connectBambu(tfaUserId, token, printers, email);
           onStateChange(tfaUserId, 'connected');
           console.log(`  [Bambu] 2FA validé pour ${email}`);
@@ -2266,8 +2377,15 @@ http.createServer(async (req, res) => {
         bambuByUser.set(u.id, { status: 'connected' });
         console.log(`  [Bambu] User ${u.email} : token valide, pas d'imprimante configurée.`);
       }
+    } else if (u.bambu_refresh_token) {
+      // Token expiré mais on a un refresh : on essaie de récupérer un nouveau
+      // access token. Si succès → connectBambu est rappelé en interne.
+      console.log(`  [Bambu] User ${u.email} : token expiré, tentative de refresh…`);
+      refreshBambuTokenForUser(u.id).then(r => {
+        if (!r.ok) console.log(`  [Bambu] Refresh échoué pour ${u.email} (${r.reason}) — reconnexion manuelle requise.`);
+      });
     } else {
-      console.log(`  [Bambu] User ${u.email} : token expiré, reconnexion requise.`);
+      console.log(`  [Bambu] User ${u.email} : token expiré sans refresh, reconnexion requise.`);
     }
   }
   if (!usersWithToken.length) {
