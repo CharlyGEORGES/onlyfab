@@ -1963,162 +1963,71 @@
     }
     .print-popup-close:hover { color: var(--text); }
 
-    /* ── BAMBU SETUP MODAL ─────────────────────────────────────────── */
-    .bambu-status-card {
+    /* ── BAMBU SETUP MODAL (minimaliste) ────────────────────────────── */
+    .bambu-status-line {
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding: 14px 16px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      margin-bottom: 14px;
+      gap: 10px;
+      padding: 12px 0 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
     }
-    .bambu-status-icon {
-      width: 36px; height: 36px;
+    .bambu-dot {
+      width: 10px; height: 10px;
       border-radius: 50%;
-      background: rgba(0,212,170,0.15);
-      color: var(--accent);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem;
+      background: var(--accent);
       flex-shrink: 0;
+      box-shadow: 0 0 0 4px rgba(0,212,170,0.15);
     }
-    .bambu-status-card.is-warning .bambu-status-icon {
-      background: rgba(255,71,87,0.15);
-      color: var(--danger);
+    .bambu-status-line.is-warning .bambu-dot {
+      background: var(--danger);
+      box-shadow: 0 0 0 4px rgba(255,71,87,0.15);
     }
-    .bambu-status-card.is-pending .bambu-status-icon {
-      background: rgba(108,71,255,0.15);
-      color: var(--primary);
+    .bambu-status-line.is-pending .bambu-dot {
+      background: var(--primary);
+      box-shadow: 0 0 0 4px rgba(108,71,255,0.15);
       animation: bambu-pulse 1.5s ease-in-out infinite;
     }
-    @keyframes bambu-pulse {
-      50% { opacity: 0.4; }
-    }
-    .bambu-status-title {
-      font-weight: 700; font-size: 0.95rem;
+    @keyframes bambu-pulse { 50% { opacity: 0.45; } }
+    .bambu-status-text { flex: 1; min-width: 0; }
+    .bambu-status-label {
+      font-weight: 600;
+      font-size: 0.92rem;
       color: var(--text);
     }
-    .bambu-status-sub {
+    .bambu-status-email {
       font-size: 0.78rem;
       color: var(--text-muted);
-      margin-top: 2px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .bambu-info-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-    .bambu-info-cell {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-    }
-    .bambu-info-label {
-      font-size: 0.68rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .bambu-info-value {
-      font-size: 0.92rem;
-      font-weight: 600;
-      color: var(--text);
-      margin-top: 2px;
-    }
-    .bambu-info-value.warning { color: var(--danger); }
-
-    .bambu-section-title {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .bambu-printers { margin-bottom: 14px; }
-    .bambu-printer-row {
+    /* Liens texte alignés horizontalement, séparés par un point. */
+    .bambu-text-actions {
       display: flex;
+      justify-content: center;
       align-items: center;
       gap: 10px;
-      padding: 9px 12px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      margin-bottom: 6px;
-    }
-    .bambu-printer-name {
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: var(--text);
-    }
-    .bambu-printer-serial {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      font-family: ui-monospace, Menlo, monospace;
-      margin-top: 2px;
-    }
-    .bambu-printers-empty {
-      padding: 12px;
-      text-align: center;
-      color: var(--text-muted);
       font-size: 0.82rem;
-      background: var(--surface2);
-      border: 1px dashed var(--border);
-      border-radius: 8px;
+      color: var(--text-muted);
     }
-
-    .bambu-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-    .bambu-btn-secondary,
-    .bambu-btn-danger {
-      width: 100%;
-      padding: 10px 14px;
-      font-size: 0.88rem;
-      font-weight: 600;
-      border-radius: 10px;
+    .bambu-text-actions button {
+      background: none;
+      border: 0;
+      padding: 4px 2px;
+      color: var(--text-muted);
       cursor: pointer;
       font-family: inherit;
-      transition: border-color 0.15s, background 0.15s;
+      font-size: inherit;
     }
-    .bambu-btn-secondary {
-      background: var(--surface2);
-      border: 1px solid var(--border);
+    .bambu-text-actions button:hover,
+    .bambu-text-actions button:focus-visible {
       color: var(--text);
+      outline: none;
     }
-    .bambu-btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
-    .bambu-btn-danger {
-      background: transparent;
-      border: 1px solid var(--danger);
-      color: var(--danger);
-    }
-    .bambu-btn-danger:hover { background: rgba(255,71,87,0.08); }
-
-    .bambu-help {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 14px;
-    }
-    .bambu-help summary {
-      cursor: pointer;
-      font-weight: 600;
-      color: var(--text);
-    }
-    .bambu-help[open] summary { margin-bottom: 8px; }
-    .bambu-help-body p { margin: 6px 0; line-height: 1.5; }
+    .bambu-text-actions button.danger:hover,
+    .bambu-text-actions button.danger:focus-visible { color: var(--danger); }
 
     .toast {
       position: fixed;
@@ -3554,53 +3463,25 @@
     </div>
     <div class="modal-body">
 
-      <!-- VUE CONNECTÉE : status, expiry, imprimantes, actions -->
+      <!-- VUE CONNECTÉE : minimaliste — 1 ligne de statut + 1 action principale -->
       <div id="bambuConnectedView" style="display:none">
-        <div class="bambu-status-card" id="bambuStatusCard">
-          <div class="bambu-status-icon" id="bambuStatusDot">●</div>
-          <div style="flex:1;min-width:0">
-            <div class="bambu-status-title" id="bambuStatusLabel">Connecté</div>
-            <div class="bambu-status-sub" id="bambuStatusEmail">—</div>
+        <div class="bambu-status-line" id="bambuStatusCard">
+          <span class="bambu-dot" id="bambuStatusDot"></span>
+          <div class="bambu-status-text">
+            <div class="bambu-status-label" id="bambuStatusLabel">Connecté</div>
+            <div class="bambu-status-email" id="bambuStatusEmail">—</div>
           </div>
         </div>
 
-        <div class="bambu-info-grid">
-          <div class="bambu-info-cell">
-            <div class="bambu-info-label">Expire</div>
-            <div class="bambu-info-value" id="bambuExpiry">—</div>
-          </div>
-          <div class="bambu-info-cell">
-            <div class="bambu-info-label">Dernière sync</div>
-            <div class="bambu-info-value" id="bambuLastSync">—</div>
-          </div>
-        </div>
+        <button type="button" class="btn-primary" onclick="bambuSyncNowFromModal()" id="bambuSyncBtn" style="width:100%;margin-bottom:12px">
+          Synchroniser maintenant
+        </button>
 
-        <div class="bambu-printers" id="bambuPrintersWrap">
-          <div class="bambu-section-title">Imprimantes surveillées</div>
-          <div id="bambuPrintersList"></div>
+        <div class="bambu-text-actions">
+          <button type="button" onclick="bambuShowLoginView()">Changer de compte</button>
+          <span aria-hidden="true">·</span>
+          <button type="button" onclick="bambuDisconnect()" class="danger">Se déconnecter</button>
         </div>
-
-        <div class="bambu-actions">
-          <button type="button" class="btn-primary" onclick="bambuSyncNowFromModal()" id="bambuSyncBtn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" aria-hidden="true" style="margin-right:6px;vertical-align:-2px"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
-            Synchroniser maintenant
-          </button>
-          <button type="button" class="bambu-btn-secondary" onclick="bambuShowLoginView()">
-            Reconfigurer le compte
-          </button>
-          <button type="button" class="bambu-btn-danger" onclick="bambuDisconnect()">
-            Se déconnecter
-          </button>
-        </div>
-
-        <details class="bambu-help">
-          <summary>Comment fonctionne la détection auto&nbsp;?</summary>
-          <div class="bambu-help-body">
-            <p>Le serveur reste connecté à Bambu Cloud en MQTT et écoute en temps réel les évènements de fin d'impression sur tes imprimantes. Tes prints arrivent automatiquement dans <strong>À&nbsp;valider</strong>, sans avoir besoin de garder l'app ouverte.</p>
-            <p>Toutes les 10&nbsp;minutes, on poll aussi l'API REST de Bambu en filet de sécurité, au cas où un message MQTT serait perdu.</p>
-            <p>Le token d'accès est rafraîchi automatiquement quand il approche son expiration (24&nbsp;h avant). Tu n'as à te reconnecter que si Bambu invalide la session.</p>
-          </div>
-        </details>
       </div>
 
       <!-- VUE LOGIN : email + mot de passe (Bambu) -->
@@ -8165,69 +8046,24 @@
 
   function _renderBambuConnectedView(info) {
     _bambuShowView('connected');
-    const card = document.getElementById('bambuStatusCard');
-    const dot  = document.getElementById('bambuStatusDot');
+    const line = document.getElementById('bambuStatusCard');
     const lbl  = document.getElementById('bambuStatusLabel');
     const sub  = document.getElementById('bambuStatusEmail');
 
-    card.classList.remove('is-warning', 'is-pending');
+    line.classList.remove('is-warning', 'is-pending');
     if (info.tokenExpired) {
-      card.classList.add('is-warning');
-      dot.textContent = '⚠';
+      line.classList.add('is-warning');
       lbl.textContent = 'Session expirée';
     } else if (info.status === 'reconnecting' || info.status === 'connecting') {
-      card.classList.add('is-pending');
-      dot.textContent = '◌';
-      lbl.textContent = 'Reconnexion en cours…';
+      line.classList.add('is-pending');
+      lbl.textContent = 'Reconnexion…';
     } else if (info.status === 'connected') {
-      dot.textContent = '●';
-      lbl.textContent = 'Connecté à Bambu Lab';
+      lbl.textContent = 'Connecté';
     } else {
-      card.classList.add('is-warning');
-      dot.textContent = '○';
+      line.classList.add('is-warning');
       lbl.textContent = 'Hors ligne';
     }
     sub.textContent = info.email || '';
-
-    // Expiry
-    const expEl = document.getElementById('bambuExpiry');
-    if (info.expiresAt) {
-      const ms = info.expiresAt - Date.now();
-      if (ms <= 0) {
-        expEl.textContent = 'Expirée';
-        expEl.classList.add('warning');
-      } else {
-        const days = Math.floor(ms / (24 * 60 * 60 * 1000));
-        const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-        expEl.textContent = days > 0 ? `dans ${days}j ${hours}h` : `dans ${hours}h`;
-        expEl.classList.toggle('warning', days < 1);
-      }
-    } else {
-      expEl.textContent = '—';
-      expEl.classList.remove('warning');
-    }
-
-    // Last sync
-    const lsEl = document.getElementById('bambuLastSync');
-    lsEl.textContent = info.lastSyncAt ? _formatRelTime(info.lastSyncAt) : 'jamais';
-
-    // Imprimantes
-    const list = document.getElementById('bambuPrintersList');
-    if (info.printers && info.printers.length) {
-      list.innerHTML = info.printers.map(p => `
-        <div class="bambu-printer-row">
-          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" width="18" height="18" aria-hidden="true">
-            <path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-            <rect x="6" y="14" width="12" height="8" rx="1"/>
-          </svg>
-          <div style="flex:1;min-width:0">
-            <div class="bambu-printer-name">${escHtml(p.name || 'Imprimante')}</div>
-            <div class="bambu-printer-serial">${escHtml(p.serial || '')}</div>
-          </div>
-        </div>`).join('');
-    } else {
-      list.innerHTML = '<div class="bambu-printers-empty">Aucune imprimante détectée. Bambu Lab les renvoie au premier MQTT subscribe — patiente quelques secondes après la connexion.</div>';
-    }
   }
 
   function bambuShowLoginView() {
