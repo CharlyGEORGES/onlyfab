@@ -507,7 +507,17 @@
       overflow: hidden;
       cursor: pointer;
       position: relative;
-      contain: layout;
+      /* Containment fort + content-visibility: auto :
+         le navigateur saute le rendering layout/paint des cards hors
+         viewport. Gain énorme sur le scroll quand on a beaucoup d'items.
+         contain-intrinsic-size réserve l'espace pour que la scrollbar
+         et le scroll position restent corrects. */
+      contain: layout paint style;
+      content-visibility: auto;
+      contain-intrinsic-size: auto 360px;
+    }
+    @media (max-width: 600px) {
+      .card { contain-intrinsic-size: auto 215px; }
     }
 
     /* :hover seulement sur devices avec un vrai pointeur (souris).
@@ -2093,6 +2103,11 @@
       gap: 12px;
       padding: 12px;
       transition: border-color 0.2s;
+      /* Skip rendering hors viewport (cf. .card). Gain perf scroll mode
+         inventaire avec beaucoup de lignes. */
+      contain: layout paint style;
+      content-visibility: auto;
+      contain-intrinsic-size: auto 80px;
     }
     .inv-row:hover { border-color: var(--primary); }
     .inv-row.low-border { border-color: var(--danger); }
