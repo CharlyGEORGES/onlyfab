@@ -154,28 +154,35 @@
     /* ── MENU UTILISATEUR ─────────────────────────────────────────── */
     .user-menu-wrap { position: relative; }
 
-    /* Trigger compact : juste l'avatar + chevron, sans nom utilisateur. */
+    /* Trigger compact : juste l'avatar + chevron, sans nom utilisateur.
+       Hauteur fixe 36px pour matcher .btn-icon-header (sinon les 2 boutons
+       du header n'avaient pas la même hauteur — mode inventaire plus
+       court que le menu user). */
     .user-menu-trigger {
-      display: flex;
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 8px;
-      color: var(--text);
-      padding: 7px 10px;
+      color: var(--text-muted);
+      width: auto;
+      height: 36px;
+      padding: 0 10px;
       cursor: pointer;
       font-family: inherit;
+      flex-shrink: 0;
       transition: border-color 0.15s, color 0.15s;
     }
     .user-menu-trigger:hover { border-color: var(--primary); color: var(--primary); }
-    .user-menu-trigger svg { width: 16px; height: 16px; }
+    .user-menu-trigger > svg { width: 17px; height: 17px; }
     .user-menu-trigger .chev { width: 12px; height: 12px; opacity: 0.6; transition: transform 0.15s; }
     .user-menu-trigger[aria-expanded="true"] .chev { transform: rotate(180deg); }
 
     @media (max-width: 600px) {
       .user-menu-trigger .chev { display: none; }
-      .user-menu-trigger { padding: 7px 8px; }
+      .user-menu-trigger { padding: 0 8px; }
     }
 
     .user-menu {
@@ -5145,11 +5152,30 @@
   }
   async function refreshAdminPanel() {
     try {
-      const [stats, users, activity] = await Promise.all([
-        fetch('/api/admin/stats').then(r => r.json()),
-        fetch('/api/admin/users').then(r => r.json()),
-        fetch('/api/admin/activity').then(r => r.json()).catch(() => []),
+      // Fetch les 3 endpoints en parallèle. On vérifie le status HTTP
+      // explicitement : si /api/admin/* renvoie 403 ou 401, on affiche
+      // un message clair plutôt que de rendre tous les compteurs à 0.
+      const [statsR, usersR, actR] = await Promise.all([
+        fetch('/api/admin/stats'),
+        fetch('/api/admin/users'),
+        fetch('/api/admin/activity'),
       ]);
+      if (statsR.status === 403 || statsR.status === 401 ||
+          usersR.status === 403 || usersR.status === 401) {
+        document.getElementById('adminStats').innerHTML = '';
+        document.getElementById('adminUsers').innerHTML =
+          '<div style="background:rgba(255,71,87,0.1);border:1px solid var(--danger);color:var(--danger);padding:14px;border-radius:10px;font-size:0.88rem">' +
+          'Tu n\'as pas (ou plus) les droits administrateur. ' +
+          'Si c\'est une erreur, demande à un autre admin de te repromouvoir, ' +
+          'ou définis la variable d\'environnement <code>ADMIN_EMAIL</code> côté serveur.' +
+          '</div>';
+        return;
+      }
+      if (!statsR.ok) throw new Error('Stats HTTP ' + statsR.status);
+      if (!usersR.ok) throw new Error('Users HTTP ' + usersR.status);
+      const stats = await statsR.json();
+      const users = await usersR.json();
+      const activity = actR.ok ? await actR.json().catch(() => []) : [];
 
       // Section 1 : capacité bêta + onboarding funnel
       const cap = stats.users_capacity || 0;
