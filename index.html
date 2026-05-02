@@ -36,6 +36,7 @@
     :root {
       --primary: #6c47ff;
       --primary-dark: #5535d4;
+      --primary-light: #8b6fff;
       --accent: #00d4aa;
       --danger: #ff4757;
       --bg: #0f0f13;
@@ -53,6 +54,7 @@
     html[data-theme="light"] {
       --primary: #5535d4;
       --primary-dark: #3d20a8;
+      --primary-light: #7d5fff;
       --accent: #00a37e;
       --danger: #e0394a;
       --bg: #f6f6fb;
@@ -120,16 +122,21 @@
       height: 60px;
     }
 
+    /* Logo : aligné avec la landing (cube SVG + "Bambu" + "Stock" violet).
+       Cliquable pour revenir à l'accueil de l'app. */
     .logo {
       display: flex;
       align-items: center;
       gap: 10px;
       font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--primary);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      text-decoration: none;
     }
-
-    .logo svg { width: 28px; height: 28px; }
+    .logo svg { width: 30px; height: 30px; flex-shrink: 0; }
+    .logo-wordmark { line-height: 1; }
+    .logo-accent { color: var(--primary); }
 
     .header-actions { display: flex; gap: 8px; align-items: center; }
 
@@ -2385,29 +2392,93 @@
 
     .tab-spacer { flex: 1; }
 
+    /* Pill statut Bambu Lab : carte aérée alignée avec le design landing.
+       Bordure subtile teintée + petite icône colorée + actions discrètes. */
     #bambuStatusPill {
       display: none;
       align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      background: var(--surface);
+      gap: 12px;
+      font-size: 0.85rem;
+      color: var(--text);
+      background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 14px;
-      margin-bottom: 4px;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    #bambuStatusPill.is-ok    { border-color: rgba(0,212,170,0.35); }
+    #bambuStatusPill.is-warn  { border-color: rgba(255,71,87,0.35); }
+    #bambuStatusPill.is-pending { border-color: rgba(108,71,255,0.35); }
+
+    .pill-icon {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      background: rgba(108,71,255,0.12);
+      color: var(--primary);
+      position: relative;
+    }
+    .pill-icon.is-ok   { background: rgba(0,212,170,0.15); color: var(--accent); }
+    .pill-icon.is-warn { background: rgba(255,71,87,0.15); color: var(--danger); }
+    .pill-icon .pill-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0 4px rgba(255,255,255,0.06);
+    }
+    .pill-icon.is-pending .pill-dot { animation: pill-pulse 1.4s ease-in-out infinite; }
+    @keyframes pill-pulse { 50% { opacity: 0.4; } }
+
+    .pill-text {
+      flex: 1;
+      min-width: 0;
+      line-height: 1.3;
+    }
+    .pill-text-title {
+      font-weight: 600;
+      color: var(--text);
+    }
+    .pill-text-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    .pill-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
     }
     #bambuStatusPill .pill-connect-btn {
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light, #8b6fff) 100%);
       color: #fff;
       border: none;
-      border-radius: 6px;
-      padding: 5px 12px;
-      font-size: 0.76rem;
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 0.78rem;
       font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
+      font-family: inherit;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    #bambuStatusPill .pill-connect-btn:hover { opacity: 0.92; transform: translateY(-1px); }
+    #bambuStatusPill .pill-connect-btn.ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    #bambuStatusPill .pill-connect-btn.ghost:hover {
+      color: var(--text);
+      border-color: var(--text-muted);
+      transform: none;
+    }
+    @media (max-width: 600px) {
+      #bambuStatusPill { gap: 10px; padding: 10px 12px; font-size: 0.8rem; }
+      .pill-text-sub { display: none; }
+      .pill-actions { flex-direction: column; gap: 4px; }
+      #bambuStatusPill .pill-connect-btn { padding: 6px 10px; font-size: 0.72rem; }
     }
 
     /* VUE À VALIDER */
@@ -2909,26 +2980,19 @@
 
 <!-- HEADER -->
 <header>
-  <div class="logo">
-    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-      <rect width="32" height="32" rx="8" fill="#6c47ff" opacity="0.15"/>
-      <path d="M16 5 L26 10.5 L26 21.5 L16 27 L6 21.5 L6 10.5 Z" stroke="#6c47ff" stroke-width="1.8" fill="none" stroke-linejoin="round"/>
-      <path d="M16 5 L16 27" stroke="#6c47ff" stroke-width="1.2" stroke-dasharray="2 2" opacity="0.5"/>
-      <path d="M6 10.5 L26 10.5" stroke="#6c47ff" stroke-width="1.2" stroke-dasharray="2 2" opacity="0.5"/>
-      <path d="M6 21.5 L26 21.5" stroke="#6c47ff" stroke-width="1.2" stroke-dasharray="2 2" opacity="0.5"/>
-      <circle cx="16" cy="16" r="3" fill="#6c47ff" opacity="0.9"/>
-      <circle cx="16" cy="5" r="1.5" fill="#6c47ff"/>
-      <circle cx="26" cy="10.5" r="1.5" fill="#6c47ff"/>
-      <circle cx="26" cy="21.5" r="1.5" fill="#6c47ff"/>
-      <circle cx="16" cy="27" r="1.5" fill="#6c47ff"/>
-      <circle cx="6" cy="10.5" r="1.5" fill="#6c47ff"/>
-      <circle cx="6" cy="21.5" r="1.5" fill="#6c47ff"/>
+  <a class="logo" href="/app" aria-label="BambuStock — accueil">
+    <!-- Logo cube : reprise exacte de la landing pour cohérence de marque -->
+    <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect width="512" height="512" rx="80" fill="var(--surface2)"/>
+      <g transform="translate(256,256)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M0,-130 L-120,-65 L0,0 L120,-65 Z" fill="#6c47ff" opacity="0.4"/>
+        <path d="M0,-130 L-120,-65 L0,0 L120,-65 Z" stroke="#6c47ff" stroke-width="14"/>
+        <path d="M-120,-65 L-120,65 L0,130 L0,0 Z" stroke="#6c47ff" stroke-width="14"/>
+        <path d="M120,-65 L120,65 L0,130 L0,0 Z" stroke="#6c47ff" stroke-width="14"/>
+      </g>
     </svg>
-    <div>
-      <div style="font-size:1rem;font-weight:800;letter-spacing:-0.02em;line-height:1">BambuStock</div>
-      <div style="font-size:0.65rem;font-weight:500;color:var(--text-muted);letter-spacing:0.04em;line-height:1;margin-top:2px" data-i18n="header.subtitle">GESTION DU STOCK</div>
-    </div>
-  </div>
+    <span class="logo-wordmark">Bambu<span class="logo-accent">Stock</span></span>
+  </a>
   <div class="header-actions">
     <div class="save-dot" id="saveDot" title="Sauvegardé" data-i18n-attr="title:header.saved" aria-label="Sauvegardé" role="status"></div>
 
@@ -7990,33 +8054,80 @@
     if (!_sseReady) { pill.style.display = 'none'; return; }
     pill.style.display = 'flex';
 
-    const lastSync = _bambuLastSyncAt ? _formatRelTime(_bambuLastSyncAt) : 'jamais';
+    // "dernière sync" : on ne dit "jamais" que si on est connecté depuis
+    // un moment et qu'aucun poll n'a tourné. Au boot ou tout de suite après
+    // une connexion, on affiche un message neutre.
+    const subSync = _bambuLastSyncAt
+      ? `Dernière sync ${_formatRelTime(_bambuLastSyncAt)}`
+      : 'Synchronisation auto activée';
+
+    pill.classList.remove('is-ok', 'is-warn', 'is-pending');
 
     if (status === 'token-expired') {
-      pill.innerHTML = `<span>⚠ Token Bambu expiré — reconnecte-toi pour relancer la détection automatique</span>
-        <button class="pill-connect-btn" onclick="openBambuSetup()">
-          Reconnecter
-        </button>`;
+      pill.classList.add('is-warn');
+      pill.innerHTML = `
+        <div class="pill-icon is-warn"><span class="pill-dot"></span></div>
+        <div class="pill-text">
+          <div class="pill-text-title">Session Bambu Lab expirée</div>
+          <div class="pill-text-sub">Reconnecte-toi pour relancer la détection automatique</div>
+        </div>
+        <div class="pill-actions">
+          <button class="pill-connect-btn" onclick="bambuReconfigure()">Reconnecter</button>
+        </div>`;
       return;
     }
 
-    const isOk = status === 'connected' || status === 'reconnecting';
-    if (isOk) {
-      const label = status === 'connected' ? '● Connecté à Bambu Lab' : '◌ Reconnexion en cours…';
-      pill.innerHTML = `<span>${label} <span style="opacity:0.6;font-size:0.72rem">· dernière sync ${lastSync}</span></span>
-        <button class="pill-connect-btn" onclick="bambuSyncNow()" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:4px 10px;font-size:0.72rem;cursor:pointer">
-          Synchroniser
-        </button>
-        <button class="pill-connect-btn" onclick="openBambuSetup()" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:4px 10px;font-size:0.72rem;cursor:pointer">
-          Reconfigurer
-        </button>`;
+    const isConnected = status === 'connected';
+    const isPending   = status === 'reconnecting' || status === 'connecting';
+
+    if (isConnected) {
+      pill.classList.add('is-ok');
+      pill.innerHTML = `
+        <div class="pill-icon is-ok"><span class="pill-dot"></span></div>
+        <div class="pill-text">
+          <div class="pill-text-title">Connecté à Bambu Lab</div>
+          <div class="pill-text-sub">${escHtml(subSync)}</div>
+        </div>
+        <div class="pill-actions">
+          <button class="pill-connect-btn ghost" onclick="bambuSyncNow()">Synchroniser</button>
+          <button class="pill-connect-btn ghost" onclick="bambuReconfigure()">Reconfigurer</button>
+        </div>`;
+    } else if (isPending) {
+      pill.classList.add('is-pending');
+      pill.innerHTML = `
+        <div class="pill-icon is-pending"><span class="pill-dot"></span></div>
+        <div class="pill-text">
+          <div class="pill-text-title">Reconnexion en cours…</div>
+          <div class="pill-text-sub">${escHtml(subSync)}</div>
+        </div>
+        <div class="pill-actions">
+          <button class="pill-connect-btn ghost" onclick="bambuReconfigure()">Reconfigurer</button>
+        </div>`;
     } else {
-      pill.innerHTML = `<span>Non connecté à Bambu Lab — les impressions ne seront pas détectées automatiquement</span>
-        <button class="pill-connect-btn" onclick="openBambuSetup()">
-          Connecter
-        </button>`;
+      pill.classList.add('is-warn');
+      pill.innerHTML = `
+        <div class="pill-icon is-warn"><span class="pill-dot"></span></div>
+        <div class="pill-text">
+          <div class="pill-text-title">Non connecté à Bambu Lab</div>
+          <div class="pill-text-sub">Les impressions ne seront pas détectées automatiquement</div>
+        </div>
+        <div class="pill-actions">
+          <button class="pill-connect-btn" onclick="openBambuSetup()">Connecter</button>
+        </div>`;
     }
   }
+
+  // Ouvre le modal Bambu directement sur la vue login (pour reconfigurer
+  // le compte sans repasser par la vue connectée intermédiaire).
+  async function bambuReconfigure() {
+    document.getElementById('bambuSetupModal').classList.add('open');
+    _bambuShowView('login');
+    setTimeout(() => {
+      const inp = document.getElementById('bambuEmail');
+      if (inp) inp.focus();
+    }, 50);
+  }
+  window.bambuReconfigure = bambuReconfigure;
 
   // Trigger une synchro manuelle (poll API Bambu côté serveur).
   async function bambuSyncNow() {
