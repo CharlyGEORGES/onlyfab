@@ -1434,6 +1434,16 @@
   }
 
   // ── Handle register ─────────────────────────────────────────────────────
+  // Vérifie qu'une chaîne ressemble à une adresse email valide.
+  // Pas la regex RFC 5322 complète (overkill) mais couvre le besoin :
+  // local-part + @ + domaine avec au moins un . et un TLD ≥ 2 caractères.
+  function isValidEmail(s) {
+    if (!s || typeof s !== 'string') return false;
+    const t = s.trim();
+    if (t.length > 254 || t.includes(' ')) return false;
+    return /^[^\s@]+@[^\s@.]+\.[^\s@]{2,}$/.test(t);
+  }
+
   async function handleRegister(e) {
     e.preventDefault();
     const name     = document.getElementById('reg-name').value.trim();
@@ -1443,6 +1453,11 @@
 
     if (!email || !password) {
       showAlert('register-alert', 'error', 'Email et mot de passe requis.');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showAlert('register-alert', 'error', 'Adresse email invalide. Format attendu : nom@domaine.fr');
+      document.getElementById('reg-email').focus();
       return;
     }
     if (password.length < 8) {
