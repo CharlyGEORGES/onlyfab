@@ -644,7 +644,12 @@ function getBambuStatus(userId) {
 
 function onStateChange(userId, status) {
   bambuByUser.set(userId, { ...(bambuByUser.get(userId) || {}), status });
-  broadcast(userId, 'bambu-status', { status });
+  const state = bambuByUser.get(userId) || {};
+  broadcast(userId, 'bambu-status', {
+    status,
+    lastSyncAt: state.lastSyncAt || null,
+    lastSyncCount: state.lastSyncCount ?? null,
+  });
 }
 
 // ── BAMBU CALLBACKS ───────────────────────────────────────────────────────
@@ -732,6 +737,121 @@ function onPrintCompleteForUser(userId, job) {
   // 10 s après, enrichir depuis l'API historique (thumbnail, poids, durée…)
   setTimeout(() => enrichJobFromHistory(userId, newJob.id, job.fileName), 10_000);
 }
+
+// ── POLL FALLBACK Bambu API ────────────────────────────────────────────────
+// MQTT peut rater des messages (déconnexion silencieuse, sub failed, message
+// perdu). On poll donc périodiquement l'API REST de Bambu pour détecter les
+// prints manqués. Marche même si MQTT est complètement KO.
+async function pollBambuForUser(userId) {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!user?.bambu_token) return { imported: 0, error: 'no-token' };
+  if (isTokenExpired(user.bambu_token)) {
+    onStateChange(userId, 'token-expired');
+    return { imported: 0, error: 'token-expired' };
+  }
+  let tasks;
+  try {
+    const d = await curlGet(
+      'https://api.bambulab.com/v1/user-service/my/tasks?deviceId=&limit=30&offset=0',
+      user.bambu_token,
+    );
+    tasks = d.hits || d.data?.hits || d.tasks || [];
+  } catch (e) {
+    return { imported: 0, error: e.message };
+  }
+
+  const printers = JSON.parse(user.bambu_printers || '[]');
+  const printerSerials = new Set(printers.map(p => p.serial));
+  let imported = 0;
+
+  for (const task of tasks) {
+    // Filtre : on veut uniquement les prints terminés. Bambu utilise
+    // status numérique : on a vu '4' = success, '3' = en cours, autres
+    // valeurs incluent failed/cancelled. On accepte 4 et la string
+    // 'COMPLETED' au cas où l'API change.
+    const st = task.status;
+    const completed = st === 4 || st === '4' || st === 'COMPLETED' || st === 'SUCCESS';
+    if (!completed) continue;
+
+    const serial = task.deviceId || task.printerId;
+    if (!serial) continue;
+    // Si la liste de printers est vide on accepte quand même (l'utilisateur
+    // n'a peut-être pas encore configuré, mais l'API renvoie ses tasks).
+    if (printerSerials.size > 0 && !printerSerials.has(serial)) continue;
+
+    const fileName = (task.designTitle || task.title || task.subtaskName || task.name || '')
+      .replace(/\.gcode\.3mf$|\.gcode$|\.3mf$/i, '').trim();
+    if (!fileName) continue;
+
+    // Dédup : on évite de réimporter un print déjà présent (par MQTT ou
+    // un poll précédent). Match sur printer + filename dans une fenêtre
+    // de 6 heures autour de l'endTime — couvre les variations entre l'heure
+    // d'enregistrement MQTT vs l'heure rapportée par l'API.
+    const taskTs = task.endTime || task.startTime;
+    let dupQ;
+    if (taskTs) {
+      // taskTs peut être en ms (number) ou string ISO
+      const isoTs = typeof taskTs === 'number' ? new Date(taskTs).toISOString() : taskTs;
+      dupQ = db.prepare(`
+        SELECT id FROM print_jobs
+        WHERE printer_serial = :ps AND file_name = :fn AND user_id = :uid
+          AND ABS((julianday(:ts) - julianday(ts)) * 24) < 6
+      `).get({ ps: serial, fn: fileName, uid: userId, ts: isoTs });
+    } else {
+      // Pas de timestamp — fallback sur dédup classique 24h.
+      dupQ = db.prepare(`
+        SELECT id FROM print_jobs
+        WHERE printer_serial = :ps AND file_name = :fn AND user_id = :uid
+          AND ts > datetime('now','-1 day')
+      `).get({ ps: serial, fn: fileName, uid: userId });
+    }
+    if (dupQ) continue;
+
+    const filaments = Array.isArray(task.filamentUsed) ? task.filamentUsed
+                    : Array.isArray(task.filamentList)  ? task.filamentList : [];
+    const fc = normColor(filaments[0]?.color || filaments[0]?.colorCode || task.filamentColor || null);
+    const ft = (filaments.map(f => f.type || f.materialName || f.name).filter(Boolean).join(' · '))
+            || task.filamentType || task.materialName || null;
+    const tl = task.totalLayer || task.totalLayerNum || null;
+    const printer = printers.find(p => p.serial === serial);
+
+    const row = db.prepare(`
+      INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers, user_id)
+      VALUES (:ps, :pn, :fn, :fc, :ft, :tl, :uid)
+    `).run({
+      ps: serial, pn: printer?.name || serial, fn: fileName,
+      fc, ft, tl, uid: userId,
+    });
+    const newJob = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: row.lastInsertRowid });
+    broadcast(userId, 'print-complete', { ...newJob, source: 'poll' });
+    imported++;
+    // Enrichissement asynchrone (thumbnail, poids, durée)
+    setTimeout(() => enrichJobFromHistory(userId, newJob.id, fileName), 5_000);
+  }
+
+  // Mémorise la date du dernier poll réussi (visible côté client).
+  bambuByUser.set(userId, { ...(bambuByUser.get(userId) || {}), lastSyncAt: Date.now(), lastSyncCount: imported });
+  // Re-broadcast pour que le pill côté client mette à jour "dernière sync".
+  const state = bambuByUser.get(userId) || {};
+  broadcast(userId, 'bambu-status', {
+    status: state.status || 'connected',
+    lastSyncAt: state.lastSyncAt,
+    lastSyncCount: state.lastSyncCount,
+  });
+  if (imported > 0) console.log(`  [Bambu poll] User ${userId} : ${imported} print(s) importé(s) via fallback`);
+  return { imported, error: null };
+}
+
+// Boucle automatique : 10 min entre chaque poll, démarre 1 min après le boot.
+const BAMBU_POLL_INTERVAL_MS = parseInt(process.env.BAMBU_POLL_INTERVAL_MS || (10 * 60 * 1000), 10);
+async function bambuPollAllUsers() {
+  const users = db.prepare("SELECT id FROM users WHERE bambu_token IS NOT NULL").all();
+  for (const u of users) {
+    try { await pollBambuForUser(u.id); } catch (e) { console.warn('  [Bambu poll]', e.message); }
+  }
+}
+setTimeout(bambuPollAllUsers, 60_000);
+setInterval(bambuPollAllUsers, BAMBU_POLL_INTERVAL_MS);
 
 function connectBambu(userId, token, printers, userEmail) {
   const prev = bambuByUser.get(userId);
@@ -1151,9 +1271,28 @@ http.createServer(async (req, res) => {
         return;
       }
 
-      // Statut connexion Bambu
+      // Statut connexion Bambu (étendu : last sync, token expiry)
       if (req.method === 'GET' && url === '/api/bambu/status') {
-        json(res, { status: getBambuStatus(userId) });
+        const u = db.prepare('SELECT bambu_token FROM users WHERE id=?').get(userId);
+        const expired = u?.bambu_token ? isTokenExpired(u.bambu_token) : null;
+        const state = bambuByUser.get(userId) || {};
+        json(res, {
+          status: expired ? 'token-expired' : (state.status || 'disconnected'),
+          lastSyncAt: state.lastSyncAt || null,
+          lastSyncCount: state.lastSyncCount ?? null,
+          tokenExpired: expired,
+        });
+        return;
+      }
+
+      // Trigger un poll Bambu manuel (bouton "Synchroniser maintenant").
+      // Renvoie le nombre de prints importés.
+      if (req.method === 'POST' && url === '/api/bambu/sync') {
+        const result = await pollBambuForUser(userId);
+        if (result.error === 'token-expired') { json(res, { error: 'Token Bambu expiré, reconnecte-toi.', tokenExpired: true }, 401); return; }
+        if (result.error === 'no-token')      { json(res, { error: 'Pas de connexion Bambu configurée.' }, 400); return; }
+        if (result.error)                     { json(res, { error: result.error }, 502); return; }
+        json(res, { imported: result.imported });
         return;
       }
 
