@@ -8069,10 +8069,13 @@
         qty:    { cls: 'qty',    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M3 3h18v18H3z"/><path d="M9 12h6M12 9v6"/></svg>' },
         delete: { cls: 'delete', svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>' },
         assemble: { cls: 'update', svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>' },
+        'print-dismiss': { cls: 'delete', svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>' },
       };
       const labels = {
         add: 'Ajouté', update: 'Modifié', qty: 'Quantité', delete: 'Supprimé',
-        assemble: 'Assemblage', 'undo-add': 'Annulation (ajout)', 'undo-update': 'Annulation (modif)', 'undo-delete': 'Restauré',
+        assemble: 'Assemblage',
+        'print-dismiss': 'Impression ignorée',
+        'undo-add': 'Annulation (ajout)', 'undo-update': 'Annulation (modif)', 'undo-delete': 'Restauré',
       };
 
       list.innerHTML = history.map(h => {
@@ -8083,6 +8086,7 @@
         if (h.action === 'qty' && detail) desc = `${detail.from} → ${detail.to}`;
         if (h.action === 'update' && detail) desc = `Qté : ${detail.totalQty ?? '—'}`;
         if (h.action === 'assemble' && detail) desc = `${detail.delta > 0 ? '+' : ''}${detail.delta} assemblage(s)`;
+        if (h.action === 'print-dismiss' && detail) desc = (detail.bulk ? 'Lot · ' : '') + (detail.printer || 'Imprimante inconnue');
         // Bouton Annuler : visible uniquement si on a un before_state ou si
         // c'est un add (cas particulier où l'annulation = suppression).
         const canUndo = (h.action === 'add' || h.action === 'update' || h.action === 'delete')
