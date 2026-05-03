@@ -744,13 +744,13 @@
       padding: 5px 0; border-bottom: 1px solid var(--border);
     }
     .part-variant-row:last-child { border-bottom: none; }
-    .part-color-wrap {
+    .part-color-btn {
       width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-      border: 2px solid rgba(255,255,255,.15); position: relative; overflow: hidden; cursor: pointer;
+      border: 2px solid rgba(255,255,255,.15); cursor: pointer; padding: 0;
+      transition: transform 0.1s, border-color 0.1s;
     }
-    .part-color-wrap input[type=color] {
-      opacity: 0; position: absolute; inset: 0; width: 100%; height: 100%;
-      cursor: pointer; border: none; padding: 0;
+    .part-color-btn:hover, .part-color-btn:focus-visible {
+      transform: scale(1.1); border-color: var(--text); outline: none;
     }
     .part-variant-name {
       flex: 1; background: transparent; border: none;
@@ -1319,28 +1319,24 @@
       align-items: center;
     }
 
-    /* Wrap : gros swatch carré qui montre la couleur courante. L'input
-       natif est positionné au-dessus en opacity 0 → click sur le wrap =
-       click sur le picker natif, sans dépendre du rendu OS-spécifique. */
-    .color-swatch-wrap {
-      position: relative;
+    /* Bouton swatch : montre la couleur courante. Click → ouvre notre
+       picker custom (modal #colorPickerModal), pas l'input[type=color]
+       natif (qui rend hideux sur Android). */
+    .color-swatch-btn {
       width: 42px;
       height: 36px;
       border-radius: 6px;
       border: 1px solid var(--border);
       flex-shrink: 0;
-      overflow: hidden;
-    }
-    .color-swatch-wrap input[type="color"] {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
       cursor: pointer;
-      border: none;
       padding: 0;
-      background: transparent;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .color-swatch-btn:hover,
+    .color-swatch-btn:focus-visible {
+      border-color: var(--text);
+      transform: scale(1.04);
+      outline: none;
     }
 
     /* Palette de quick-pick : grille horizontale wrappable de petits cercles. */
@@ -1372,6 +1368,95 @@
       border-width: 2.5px;
       box-shadow: 0 0 0 2px var(--bg);
     }
+
+    /* ── COLOR PICKER MODAL ─────────────────────────────────────────── */
+    .cpicker-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .cpicker-swatch {
+      aspect-ratio: 1;
+      width: 100%;
+      border-radius: 10px;
+      border: 2px solid var(--border);
+      cursor: pointer;
+      padding: 0;
+      transition: transform 0.1s, border-color 0.1s, box-shadow 0.1s;
+      position: relative;
+    }
+    .cpicker-swatch:hover,
+    .cpicker-swatch:focus-visible {
+      transform: scale(1.06);
+      border-color: var(--text);
+      outline: none;
+    }
+    .cpicker-swatch.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(108,71,255,0.25);
+    }
+    .cpicker-swatch.selected::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/55% no-repeat;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+    }
+
+    .cpicker-custom { margin-bottom: 18px; }
+    .cpicker-label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .cpicker-custom-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .cpicker-preview {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+      background: #6c47ff;
+    }
+    #colorPickerHex {
+      flex: 1;
+      font-family: ui-monospace, Menlo, monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .cpicker-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .cpicker-btn {
+      padding: 9px 18px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .cpicker-btn-ghost:hover { color: var(--text); border-color: var(--text-muted); }
+    .cpicker-btn-primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: #fff;
+      border: none;
+    }
+    .cpicker-btn-primary:hover { opacity: 0.92; }
 
     .variant-row input[type="text"],
     .variant-row input[type="number"] {
@@ -3582,6 +3667,37 @@
   </div>
 </div>
 
+<!-- MODAL COLOR PICKER : remplace l'input type=color natif (très moche
+     sur Android). Affiché à la demande via openColorPicker(). -->
+<div class="modal-overlay" id="colorPickerModal" role="dialog" aria-modal="true" aria-labelledby="colorPickerTitle" aria-hidden="true">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-header">
+      <div class="modal-title" id="colorPickerTitle">Choisir une couleur</div>
+      <button class="close-btn" onclick="closeColorPicker(false)" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="cpicker-grid" id="colorPickerGrid"></div>
+
+      <div class="cpicker-custom">
+        <label class="cpicker-label">Couleur personnalisée</label>
+        <div class="cpicker-custom-row">
+          <span class="cpicker-preview" id="colorPickerPreview"></span>
+          <input type="text" id="colorPickerHex" placeholder="#6c47ff"
+                 maxlength="7" autocomplete="off" spellcheck="false"
+                 oninput="_cpickerHexInput(this.value)">
+        </div>
+      </div>
+
+      <div class="cpicker-actions">
+        <button type="button" class="cpicker-btn cpicker-btn-ghost" onclick="closeColorPicker(false)">Annuler</button>
+        <button type="button" class="cpicker-btn cpicker-btn-primary" onclick="closeColorPicker(true)">Définir</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL CONNEXION BAMBU -->
 <div class="modal-overlay" id="bambuSetupModal" role="dialog" aria-modal="true" aria-labelledby="bambuSetupTitle" aria-hidden="true">
   <div class="modal" style="max-width:480px">
@@ -5614,6 +5730,75 @@
     }).join('');
   }
 
+  // ── COLOR PICKER MODAL custom (remplace input[type=color] natif) ──────
+  // openColorPicker(initialHex, callback) : ouvre le modal. Au "Définir",
+  // appelle callback(hex, name) avec le nom du préset le plus proche.
+  let _cpickerCb = null;
+  let _cpickerCurrent = '#6c47ff';
+
+  function openColorPicker(initial, callback) {
+    _cpickerCb = callback || null;
+    _cpickerCurrent = (initial && /^#[0-9a-f]{6}$/i.test(initial)) ? initial : '#6c47ff';
+    const grid = document.getElementById('colorPickerGrid');
+    if (!grid) return;
+    grid.innerHTML = COLOR_PALETTE.map(c => {
+      const sel = c.hex.toLowerCase() === _cpickerCurrent.toLowerCase() ? ' selected' : '';
+      return `<button type="button" class="cpicker-swatch${sel}" style="background:${c.hex}"
+              title="${c.name}" aria-label="${c.name}"
+              onclick="_cpickerSelect('${c.hex}')"></button>`;
+    }).join('');
+    document.getElementById('colorPickerPreview').style.background = _cpickerCurrent;
+    document.getElementById('colorPickerHex').value = _cpickerCurrent.toUpperCase();
+    document.getElementById('colorPickerModal').classList.add('open');
+  }
+
+  function _cpickerSelect(hex) {
+    _cpickerCurrent = hex;
+    document.getElementById('colorPickerPreview').style.background = hex;
+    document.getElementById('colorPickerHex').value = hex.toUpperCase();
+    document.querySelectorAll('#colorPickerGrid .cpicker-swatch').forEach(b => {
+      b.classList.toggle('selected', _cpickerSameColor(b.style.backgroundColor, hex));
+    });
+  }
+
+  // Saisie hex manuelle : valide et applique en live si format OK.
+  function _cpickerHexInput(value) {
+    let v = String(value || '').trim();
+    if (v && !v.startsWith('#')) v = '#' + v;
+    if (/^#[0-9a-f]{6}$/i.test(v)) {
+      _cpickerCurrent = v;
+      document.getElementById('colorPickerPreview').style.background = v;
+      document.querySelectorAll('#colorPickerGrid .cpicker-swatch').forEach(b => {
+        b.classList.toggle('selected', _cpickerSameColor(b.style.backgroundColor, v));
+      });
+    }
+  }
+
+  function _cpickerSameColor(bgColor, hex) {
+    const m = (bgColor || '').match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (!m) return false;
+    const elHex = '#' + [+m[1], +m[2], +m[3]].map(n => n.toString(16).padStart(2,'0')).join('');
+    return elHex.toLowerCase() === (hex || '').toLowerCase();
+  }
+
+  function closeColorPicker(apply) {
+    if (apply && _cpickerCb) {
+      // Reprend la valeur la plus à jour : le champ hex peut avoir été
+      // édité après une sélection de préset.
+      const raw = document.getElementById('colorPickerHex').value.trim();
+      let hex = raw.startsWith('#') ? raw : '#' + raw;
+      if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = _cpickerCurrent;
+      try { _cpickerCb(hex.toLowerCase(), closestColorName(hex)); } catch {}
+    }
+    document.getElementById('colorPickerModal').classList.remove('open');
+    _cpickerCb = null;
+  }
+
+  window.openColorPicker  = openColorPicker;
+  window.closeColorPicker = closeColorPicker;
+  window._cpickerSelect   = _cpickerSelect;
+  window._cpickerHexInput = _cpickerHexInput;
+
   function parseTags(item) {
     if (!item) return [];
     if (Array.isArray(item.tags)) return item.tags.filter(Boolean);
@@ -6450,16 +6635,13 @@
     const list = document.getElementById('variantsList');
     const row = document.createElement('div');
     row.className = 'variant-row-wrap';
-    // Marque-t-on le nom comme auto-rempli ? Si oui, la prochaine
-    // modification de couleur le ré-écrit. Si user a tapé manuellement,
-    // on ne touche plus.
     const initialAuto = !colorName;
     row.innerHTML = `
       <div class="variant-row">
-        <div class="color-swatch-wrap" style="background:${color}" title="Choisir une couleur">
-          <input type="color" value="${color}" class="variant-color-input"
-                 oninput="_onVariantColorChange(this)" aria-label="Choisir une couleur">
-        </div>
+        <button type="button" class="color-swatch-btn" data-color="${color}"
+                style="background:${color}" title="Choisir une couleur"
+                aria-label="Choisir une couleur"
+                onclick="_openVariantPicker(this)"></button>
         <input type="text" class="variant-name" placeholder="Nom couleur"
                value="${escHtml(colorName)}" data-auto="${initialAuto ? '1' : '0'}"
                oninput="this.dataset.auto='0'">
@@ -6476,40 +6658,39 @@
     list.appendChild(row);
   }
 
-  // Appelé quand l'utilisateur change la couleur via le picker natif.
-  // Met à jour le swatch + auto-fill du nom si pas déjà tapé manuellement.
-  function _onVariantColorChange(input) {
-    const row = input.closest('.variant-row');
-    const wrap = row.querySelector('.color-swatch-wrap');
-    if (wrap) wrap.style.background = input.value;
-    const nameInput = row.querySelector('.variant-name');
-    if (nameInput && nameInput.dataset.auto !== '0') {
-      nameInput.value = closestColorName(input.value);
-      nameInput.dataset.auto = '1';
-    }
-    const palette = row.parentElement.querySelector('.color-palette');
-    if (palette) {
-      palette.querySelectorAll('.color-preset').forEach(b => {
-        b.classList.toggle('selected', _sameColor(b, input.value));
-      });
-    }
+  // Click sur le swatch principal d'une variante : ouvre notre picker
+  // custom (modal). Au callback, applique la couleur + auto-fill nom.
+  function _openVariantPicker(btn) {
+    const cur = btn.dataset.color || '#6c47ff';
+    openColorPicker(cur, (hex, name) => _applyVariantColor(btn, hex, name));
   }
 
-  // Appelé quand l'utilisateur clique sur un préset de la palette.
-  function _onVariantPalettePick(btn, hex, name) {
-    const wrapAll = btn.closest('.variant-row-wrap');
+  // Mutualise la maj swatch + nom + sélection palette (utilisé par le
+  // modal custom et par les click sur preset inline).
+  function _applyVariantColor(swatchBtn, hex, name) {
+    const wrapAll = swatchBtn.closest('.variant-row-wrap');
     if (!wrapAll) return;
-    const colorInput = wrapAll.querySelector('.variant-color-input');
-    const swatchWrap = wrapAll.querySelector('.color-swatch-wrap');
-    const nameInput  = wrapAll.querySelector('.variant-name');
-    if (colorInput) colorInput.value = hex;
-    if (swatchWrap) swatchWrap.style.background = hex;
+    swatchBtn.dataset.color = hex;
+    swatchBtn.style.background = hex;
+    const nameInput = wrapAll.querySelector('.variant-name');
     if (nameInput && nameInput.dataset.auto !== '0') {
       nameInput.value = name;
       nameInput.dataset.auto = '1';
     }
-    wrapAll.querySelectorAll('.color-preset').forEach(b => b.classList.toggle('selected', b === btn));
+    wrapAll.querySelectorAll('.color-preset').forEach(b => {
+      b.classList.toggle('selected', _sameColor(b, hex));
+    });
   }
+
+  // Click sur un préset de la palette inline : applique la couleur via
+  // le helper partagé.
+  function _onVariantPalettePick(btn, hex, name) {
+    const wrapAll = btn.closest('.variant-row-wrap');
+    if (!wrapAll) return;
+    const swatchBtn = wrapAll.querySelector('.color-swatch-btn');
+    if (swatchBtn) _applyVariantColor(swatchBtn, hex, name);
+  }
+  window._openVariantPicker = _openVariantPicker;
 
   // Compare la couleur d'arrière-plan d'un élément avec un hex.
   function _sameColor(el, hex) {
@@ -6536,7 +6717,7 @@
 
   function getVariantsFromForm() {
     return Array.from(document.querySelectorAll('#variantsList .variant-row')).map(row => ({
-      color: row.querySelector('input[type="color"]').value,
+      color: row.querySelector('.color-swatch-btn').dataset.color,
       colorName: row.querySelector('.variant-name').value.trim(),
       qty: Math.max(0, parseInt(row.querySelector('.variant-qty').value) || 0),
     }));
@@ -6833,9 +7014,10 @@
     row.className = 'part-variant-row';
     const initialAuto = !colorName;
     row.innerHTML = `
-      <div class="part-color-wrap" style="background:${color}">
-        <input type="color" value="${color}" oninput="_onPartVariantColorChange(this)">
-      </div>
+      <button type="button" class="part-color-btn color-swatch-btn" data-color="${color}"
+              style="background:${color}" title="Choisir une couleur"
+              aria-label="Choisir une couleur"
+              onclick="_openPartVariantPicker(this)"></button>
       <input type="text" class="part-variant-name" placeholder="Nom couleur (ex: Bleu)"
              value="${escHtml(colorName)}" data-auto="${initialAuto ? '1' : '0'}"
              oninput="this.dataset.auto='0'">
@@ -6850,17 +7032,22 @@
     _updateFormAssembly();
   }
 
-  function _onPartVariantColorChange(input) {
-    input.parentElement.style.background = input.value;
-    const row = input.closest('.part-variant-row');
-    const nameInput = row.querySelector('.part-variant-name');
-    if (nameInput && nameInput.dataset.auto !== '0') {
-      nameInput.value = closestColorName(input.value);
-      nameInput.dataset.auto = '1';
-    }
-    _updatePartBlockTotal(input);
-    _updateFormAssembly();
+  function _openPartVariantPicker(btn) {
+    const cur = btn.dataset.color || '#6c47ff';
+    openColorPicker(cur, (hex, name) => {
+      btn.dataset.color = hex;
+      btn.style.background = hex;
+      const row = btn.closest('.part-variant-row');
+      const nameInput = row.querySelector('.part-variant-name');
+      if (nameInput && nameInput.dataset.auto !== '0') {
+        nameInput.value = name;
+        nameInput.dataset.auto = '1';
+      }
+      _updatePartBlockTotal(row);
+      _updateFormAssembly();
+    });
   }
+  window._openPartVariantPicker = _openPartVariantPicker;
 
   function _partVariantQtyChange(btn, delta) {
     const input = btn.parentElement.querySelector('.part-qty-input') ||
@@ -6938,7 +7125,7 @@
       photo:    block.querySelector('.part-photo-preview')?.dataset?.photo || null,
       variants: Array.from(block.querySelectorAll('.part-variant-row')).map(row => ({
         id:        genId(),
-        color:     row.querySelector('input[type="color"]').value,
+        color:     row.querySelector('.part-color-btn').dataset.color,
         colorName: row.querySelector('.part-variant-name').value.trim(),
         qty:       Math.max(0, parseInt(row.querySelector('.part-qty-input').value) || 0),
       })),
@@ -6998,13 +7185,9 @@
         <div class="detail-part-variants">
           ${(p.variants||[]).map((v, vi) => `
           <div class="detail-part-variant-row">
-            <label style="position:relative;display:inline-flex;align-items:center">
-              <input type="color" value="${v.color||'#888'}" id="dpvc_${pi}_${vi}"
-                style="opacity:0;width:0;height:0;position:absolute;pointer-events:none"
-                onchange="detailPartVariantColorChange(${pi},${vi},this.value)">
-              <span class="detail-part-dot" style="background:${v.color||'#888'}"
-                onclick="document.getElementById('dpvc_${pi}_${vi}').click()"></span>
-            </label>
+            <button type="button" class="detail-part-dot" style="background:${v.color||'#888'};border:none;padding:0;cursor:pointer"
+              onclick="openColorPicker('${v.color||'#888888'}', (hex) => detailPartVariantColorChange(${pi}, ${vi}, hex))"
+              aria-label="Choisir une couleur"></button>
             <input type="text" class="detail-part-variant-name"
               value="${escHtml(v.colorName||'')}" placeholder="Nom couleur"
               onchange="detailPartVariantNameChange(${pi},${vi},this.value)"
@@ -7643,14 +7826,10 @@
     const rowsHtml = variants.map((v, i) => `
       <div class="detail-variant-row">
         <div class="detail-variant-left">
-          <label title="Changer la couleur" style="cursor:pointer;position:relative;display:inline-flex;align-items:center">
-            <input type="color" value="${v.color||'#888888'}" id="detailVarColor_${i}"
-              style="opacity:0;width:0;height:0;position:absolute;pointer-events:none"
-              onchange="detailVariantColorChange(${i},this.value)">
-            <span id="detailVarDot_${i}" onclick="document.getElementById('detailVarColor_${i}').click()"
-              style="width:18px;height:18px;border-radius:50%;background:${v.color||'#888'};border:2px solid rgba(255,255,255,.25);display:inline-block;flex-shrink:0;cursor:pointer"
-              title="Cliquer pour changer la couleur" aria-hidden="true"></span>
-          </label>
+          <button type="button" id="detailVarDot_${i}"
+            onclick="openColorPicker('${v.color||'#888888'}', (hex,name) => detailVariantColorChange(${i}, hex))"
+            style="width:22px;height:22px;border-radius:50%;background:${v.color||'#888'};border:2px solid rgba(255,255,255,.25);flex-shrink:0;cursor:pointer;padding:0"
+            title="Choisir une couleur" aria-label="Choisir une couleur"></button>
           <input type="text" class="detail-variant-name-input" id="detailVarName_${i}"
             value="${escHtml(v.colorName || '')}" placeholder="${escHtml(v.color || '—')}"
             onchange="detailVariantNameChange(${i},this.value)"
