@@ -796,7 +796,18 @@ async function pollBambuForUser(userId) {
     return { imported: 0, error: e.message };
   }
 
-  const printers = JSON.parse(user.bambu_printers || '[]');
+  let printers = JSON.parse(user.bambu_printers || '[]');
+  // Si la liste est vide (ancien compte créé avant le fetch auto), on
+  // tente de la peupler maintenant — ça permet de remplir les noms
+  // conviviaux sans forcer l'utilisateur à se reconnecter.
+  if (!printers.length) {
+    const fetched = await bambu.fetchPrinters(user.bambu_token);
+    if (fetched.length) {
+      printers = fetched;
+      saveBambuToken(userId, user.bambu_token, printers, user.bambu_email, user.bambu_refresh_token);
+      _backfillPrinterNames(userId, printers);
+    }
+  }
   const printerSerials = new Set(printers.map(p => p.serial));
   let imported = 0;
 
@@ -850,12 +861,15 @@ async function pollBambuForUser(userId) {
             || task.filamentType || task.materialName || null;
     const tl = task.totalLayer || task.totalLayerNum || null;
     const printer = printers.find(p => p.serial === serial);
+    // Priorité : nom convivial dans bambu_printers > deviceName du task
+    // (souvent renseigné par Bambu cloud) > serial brut en dernier recours.
+    const friendlyName = printer?.name || task.deviceName || task.printerName || serial;
 
     const row = db.prepare(`
       INSERT INTO print_jobs (printer_serial, printer_name, file_name, filament_color, filament_type, total_layers, user_id)
       VALUES (:ps, :pn, :fn, :fc, :ft, :tl, :uid)
     `).run({
-      ps: serial, pn: printer?.name || serial, fn: fileName,
+      ps: serial, pn: friendlyName, fn: fileName,
       fc, ft, tl, uid: userId,
     });
     const newJob = db.prepare('SELECT * FROM print_jobs WHERE id = :id').get({ id: row.lastInsertRowid });
@@ -935,6 +949,25 @@ function connectBambu(userId, token, printers, userEmail) {
 }
 
 // Sauvegarde un token Bambu (+ refresh token si fourni) dans la table users.
+// Backfill : met à jour les print_jobs existants dont printer_name est
+// soit vide soit égal au serial, pour utiliser le vrai nom convivial.
+// Appelé à chaque récupération fraîche de la liste des imprimantes.
+function _backfillPrinterNames(userId, printers) {
+  if (!printers || !printers.length) return;
+  const upd = db.prepare(
+    `UPDATE print_jobs SET printer_name = :name
+     WHERE user_id = :uid AND printer_serial = :serial
+       AND (printer_name IS NULL OR printer_name = '' OR printer_name = printer_serial)`
+  );
+  let total = 0;
+  for (const p of printers) {
+    if (!p.serial || !p.name || p.name === p.serial) continue;
+    const r = upd.run({ name: p.name, uid: userId, serial: p.serial });
+    total += r.changes;
+  }
+  if (total) console.log(`  [Bambu] Backfill noms imprimantes : ${total} print_jobs mis à jour`);
+}
+
 function saveBambuToken(userId, token, printers, email, refreshToken) {
   if (refreshToken !== undefined) {
     db.prepare('UPDATE users SET bambu_token=?, bambu_printers=?, bambu_email=?, bambu_refresh_token=? WHERE id=?')
@@ -1529,9 +1562,17 @@ http.createServer(async (req, res) => {
           const token = d.accessToken || d.token || d.data?.accessToken;
           const refreshToken = d.refreshToken || d.data?.refreshToken || null;
           if (!token) throw new Error(d.message || d.error || 'Pas de token dans la réponse');
-          const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(userId);
-          const printers = JSON.parse(currentUser?.bambu_printers || '[]');
+          // Récupère les imprimantes liées (avec leur nom convivial) pour
+          // les afficher dans la queue À valider plutôt que le serial brut.
+          let printers = await bambu.fetchPrinters(token);
+          if (!printers.length) {
+            // Fallback : on garde l'éventuelle liste précédente (ré-auth
+            // sur le même compte) plutôt que d'écraser avec [].
+            const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(userId);
+            printers = JSON.parse(currentUser?.bambu_printers || '[]');
+          }
           saveBambuToken(userId, token, printers, b.email, refreshToken);
+          _backfillPrinterNames(userId, printers);
           connectBambu(userId, token, printers, b.email);
           onStateChange(userId, 'connected');
           json(res, { ok: true });
@@ -1574,9 +1615,13 @@ http.createServer(async (req, res) => {
           const email = tfa.email;
           const tfaUserId = tfa.userId || userId;
           pendingTfa.delete(sessionId);
-          const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(tfaUserId);
-          const printers = JSON.parse(currentUser?.bambu_printers || '[]');
+          let printers = await bambu.fetchPrinters(token);
+          if (!printers.length) {
+            const currentUser = db.prepare('SELECT bambu_printers FROM users WHERE id=?').get(tfaUserId);
+            printers = JSON.parse(currentUser?.bambu_printers || '[]');
+          }
           saveBambuToken(tfaUserId, token, printers, email, refreshToken);
+          _backfillPrinterNames(tfaUserId, printers);
           connectBambu(tfaUserId, token, printers, email);
           onStateChange(tfaUserId, 'connected');
           console.log(`  [Bambu] 2FA validé pour ${email}`);

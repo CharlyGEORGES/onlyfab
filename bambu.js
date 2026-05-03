@@ -154,4 +154,40 @@ function connect({ token, printers, onPrintComplete, onStateChange, userEmail })
   return client;
 }
 
-module.exports = { getToken, connect };
+// Récupère la liste des imprimantes liées au compte Bambu, avec leur
+// nom convivial (= celui que l'utilisateur a défini dans l'app Bambu).
+// Endpoint /v1/iot-service/api/user/bind. Renvoie [] en cas d'erreur
+// (auth invalide, réseau, etc.) — l'appelant gère le fallback.
+async function fetchPrinters(token) {
+  try {
+    const r = await fetch('https://api.bambulab.com/v1/iot-service/api/user/bind', {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'User-Agent':    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept':        'application/json',
+      },
+    });
+    if (!r.ok) {
+      console.warn(`  [Bambu] fetchPrinters HTTP ${r.status}`);
+      return [];
+    }
+    const text = await r.text();
+    if (text.trimStart().startsWith('<')) return []; // page Cloudflare
+    const d = JSON.parse(text);
+    const devices = d.devices || d.data?.devices || d.data || [];
+    const printers = devices.map(dev => ({
+      serial: dev.dev_id || dev.deviceId || dev.id || '',
+      name:   dev.name   || dev.dev_name || dev.nickname || dev.dev_model_name || (dev.dev_id || dev.deviceId || ''),
+      model:  dev.dev_model_name || dev.model || null,
+      online: !!dev.online,
+    })).filter(p => p.serial);
+    if (printers.length) console.log(`  [Bambu] ${printers.length} imprimante(s) liée(s) : ${printers.map(p => p.name).join(', ')}`);
+    return printers;
+  } catch (e) {
+    console.warn('  [Bambu] fetchPrinters échec :', e.message);
+    return [];
+  }
+}
+
+module.exports = { getToken, connect, fetchPrinters };
