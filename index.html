@@ -9391,12 +9391,17 @@
   }
 
   // Marquer le job Bambu quand on crée un article depuis le formulaire
+  // (lancé via "Créer un nouvel article" depuis la queue À valider).
   document.getElementById('itemForm').addEventListener('submit', async () => {
     const jobId = parseInt(document.getElementById('itemForm').dataset.bambuJobId);
     if (jobId) {
       await fetch(`/api/print-jobs/${jobId}/done`, { method: 'PATCH' }).catch(() => {});
       printJobs = printJobs.filter(j => j.id !== jobId);
       updateBambuBadge();
+      // Re-render la liste : sans ça, le compteur "X impressions à
+      // valider" et les cards restaient sur l'ancien état alors que le
+      // badge dans l'onglet, lui, était à jour. Incohérence visible.
+      renderPrintJobs();
       delete document.getElementById('itemForm').dataset.bambuJobId;
     }
   }, { capture: true });
