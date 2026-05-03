@@ -3365,7 +3365,9 @@
           </div>
           <div class="form-group">
             <label for="modalCategory" data-i18n="form.category">Catégorie</label>
-            <select id="modalCategory">
+            <select id="modalCategory"
+                    onfocus="this.dataset.prevCategory=this.value"
+                    onchange="handleCategorySelectChange(this)">
               <option value="" data-i18n="form.noCategory">Aucune</option>
             </select>
           </div>
@@ -3583,7 +3585,8 @@
         </div>
         <div class="detail-field">
           <div class="detail-field-label">Catégorie</div>
-          <select class="detail-field-input" id="detailCategoryInput">
+          <select class="detail-field-input" id="detailCategoryInput"
+                  onfocus="this.dataset.prevCategory=this.value">
             <option value="">Aucune</option>
           </select>
         </div>
@@ -5953,20 +5956,69 @@
 
   // ── CATEGORIES ────────────────────────────────────────────────────────────
   function refreshCategorySelects() {
-    const opts = ['<option value="">Aucune</option>',
-      ...categories.map(c => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`)
+    // Selects de saisie (form + détail) : option "+ Nouvelle catégorie…"
+    // ajoutée à la fin pour permettre de créer une catégorie sans quitter
+    // l'écran d'édition.
+    const editOpts = ['<option value="">Aucune</option>',
+      ...categories.map(c => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`),
+      '<option value="__new_category__">+ Nouvelle catégorie…</option>'
     ].join('');
-    document.getElementById('modalCategory').innerHTML = opts;
-    document.getElementById('detailCategoryInput').innerHTML = opts;
+    const modalCat  = document.getElementById('modalCategory');
+    const detailCat = document.getElementById('detailCategoryInput');
+    if (modalCat)  modalCat.innerHTML  = editOpts;
+    if (detailCat) detailCat.innerHTML = editOpts;
 
+    // Le filtre "Catégorie" en haut de la grille n'a pas besoin du "+" :
+    // il sert juste à filtrer, pas à éditer.
     const filterOpts = ['<option value="">Toutes</option>',
       ...categories.map(c => `<option value="${escHtml(c.name)}">${escHtml(c.name)}</option>`)
     ].join('');
-    // Ne reconstruire le dropdown que si le contenu a changé (préserve le focus / état ouvert)
     const filterEl = document.getElementById('categoryFilter');
-    if (filterEl.innerHTML !== filterOpts) filterEl.innerHTML = filterOpts;
-    filterEl.value = currentCategoryFilter;
+    if (filterEl && filterEl.innerHTML !== filterOpts) filterEl.innerHTML = filterOpts;
+    if (filterEl) filterEl.value = currentCategoryFilter;
   }
+
+  // Intercepte le choix "__new_category__" dans un select de catégorie :
+  // demande le nom, crée via l'API, refresh tous les selects et sélectionne
+  // la nouvelle. Renvoie true si une création a eu lieu, false sinon.
+  async function handleCategorySelectChange(selectEl) {
+    if (!selectEl || selectEl.value !== '__new_category__') return false;
+    const prev = selectEl.dataset.prevCategory || '';
+    const raw  = window.prompt('Nom de la nouvelle catégorie :');
+    const name = (raw || '').trim();
+    if (!name) {
+      selectEl.value = prev;
+      return false;
+    }
+    // Si la catégorie existe déjà localement, on la sélectionne sans appel API.
+    const existing = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      selectEl.value = existing.name;
+      selectEl.dataset.prevCategory = existing.name;
+      showToast('Catégorie déjà existante — sélectionnée');
+      return true;
+    }
+    try {
+      let cat;
+      if (USE_SERVER) {
+        cat = await api('POST', '/api/categories', { name });
+      } else {
+        cat = { id: Date.now(), name };
+        await idbSet('categories', [...categories, cat]);
+      }
+      categories.push(cat);
+      refreshCategorySelects();
+      selectEl.value = cat.name;
+      selectEl.dataset.prevCategory = cat.name;
+      showToast('Catégorie ajoutée');
+      return true;
+    } catch (err) {
+      showToast('Erreur : ' + (err && err.message ? err.message : 'création impossible'), 'error');
+      selectEl.value = prev;
+      return false;
+    }
+  }
+  window.handleCategorySelectChange = handleCategorySelectChange;
 
   function openCategoriesModal() {
     renderCatList();
@@ -7792,7 +7844,17 @@
     // Listeners auto-save
     ['detailNameInput','detailDescInput','detailFilamentInput','detailCategoryInput','detailThresholdInput'].forEach(elId => {
       const el = document.getElementById(elId);
-      el.oninput = el.onchange = scheduleDetailSave;
+      if (elId === 'detailCategoryInput') {
+        // Catégorie : intercepte d'abord le cas "+ Nouvelle catégorie…",
+        // puis save dans tous les cas (la nouvelle valeur, ou la valeur
+        // précédente si l'user a annulé).
+        el.onchange = async () => {
+          await handleCategorySelectChange(el);
+          scheduleDetailSave();
+        };
+      } else {
+        el.oninput = el.onchange = scheduleDetailSave;
+      }
     });
   }
 
