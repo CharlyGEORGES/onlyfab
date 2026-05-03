@@ -190,6 +190,11 @@ addColumnIfMissing('history',    'user_id', 'TEXT');
 // Migrations users (admin + reset password)
 addColumnIfMissing('users', 'is_admin', 'INTEGER DEFAULT 0');
 addColumnIfMissing('users', 'last_login', 'TEXT');
+// last_seen : mis à jour à chaque ouverture de l'app (= chaque requête
+// authentifiée), throttlé à 5 min côté getSessionUser. Reflète la
+// dernière fois où l'utilisateur a ouvert l'app, même s'il n'a fait
+// aucune action explicite. last_login reste figé au dernier POST login.
+addColumnIfMissing('users', 'last_seen', 'TEXT');
 
 // Tags multiples sur items (JSON array) — complète category (single).
 addColumnIfMissing('items', 'tags', 'TEXT');
@@ -619,9 +624,29 @@ function getSessionUser(req) {
   const cookie = req.headers.cookie || '';
   const m = cookie.match(/(?:^|;\s*)bs_session=([^;]+)/);
   if (!m) return null;
-  return db.prepare(
+  const user = db.prepare(
     "SELECT u.* FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires_at>datetime('now')"
   ).get(m[1]) || null;
+  if (user) _touchLastSeen(user);
+  return user;
+}
+
+// Met à jour users.last_seen avec un throttle 5 min : évite d'écrire en
+// BDD à chaque requête (un user qui ouvre l'app fait des dizaines de
+// requêtes en quelques secondes). Le throttle est mémorisé en RAM, donc
+// reset au redémarrage du serveur — acceptable.
+const _lastSeenTouches = new Map(); // userId → timestamp ms du dernier UPDATE
+const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
+function _touchLastSeen(user) {
+  if (!user || !user.id) return;
+  const now = Date.now();
+  const prev = _lastSeenTouches.get(user.id) || 0;
+  if (now - prev < LAST_SEEN_THROTTLE_MS) return;
+  _lastSeenTouches.set(user.id, now);
+  try {
+    db.prepare('UPDATE users SET last_seen=? WHERE id=?')
+      .run(new Date(now).toISOString(), user.id);
+  } catch {}
 }
 
 function setSessionCookie(res, token) {
@@ -2221,7 +2246,7 @@ http.createServer(async (req, res) => {
         if (req.method === 'GET' && url === '/api/admin/users') {
           const rows = db.prepare(`
             SELECT u.id, u.email, u.name, u.plan, u.is_admin, u.bambu_email,
-                   u.created_at, u.last_login,
+                   u.created_at, u.last_login, u.last_seen,
                    (SELECT COUNT(*) FROM items      WHERE user_id=u.id) AS items_count,
                    (SELECT COUNT(*) FROM print_jobs WHERE user_id=u.id) AS prints_count,
                    (SELECT COUNT(*) FROM sessions   WHERE user_id=u.id AND expires_at>datetime('now')) AS active_sessions
@@ -2306,9 +2331,12 @@ http.createServer(async (req, res) => {
             users_7d:        c("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-7 days')"),
             users_30d:       c("SELECT COUNT(*) AS c FROM users WHERE created_at > datetime('now','-30 days')"),
             // ── Activité ──
-            active_24h:      c("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-1 day')"),
-            active_7d:       c("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-7 days')"),
-            active_30d:      c("SELECT COUNT(*) AS c FROM users WHERE last_login > datetime('now','-30 days')"),
+            // "Actifs" = vus récemment (= qui ont ouvert l'app), pas juste
+            // qui se sont logués au sens strict. Fallback sur last_login pour
+            // les comptes anciens qui n'ont pas encore last_seen.
+            active_24h:      c("SELECT COUNT(*) AS c FROM users WHERE COALESCE(last_seen, last_login) > datetime('now','-1 day')"),
+            active_7d:       c("SELECT COUNT(*) AS c FROM users WHERE COALESCE(last_seen, last_login) > datetime('now','-7 days')"),
+            active_30d:      c("SELECT COUNT(*) AS c FROM users WHERE COALESCE(last_seen, last_login) > datetime('now','-30 days')"),
             never_logged:    c("SELECT COUNT(*) AS c FROM users WHERE last_login IS NULL"),
             // ── Onboarding funnel ──
             users_with_bambu:   usersWithBambu,

@@ -5533,7 +5533,12 @@
         '<div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px">Tous les utilisateurs</div>' +
         users.map(u => {
         const created = u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '—';
-        const lastLog = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR') : 'jamais';
+        // "vu" = dernière fois où l'app a été ouverte (last_seen, mis à jour
+        // sur chaque requête authentifiée). Fallback sur last_login pour les
+        // anciens comptes qui n'ont pas encore de last_seen.
+        const seenTs  = u.last_seen || u.last_login;
+        const seenStr = seenTs ? new Date(seenTs).toLocaleDateString('fr-FR') : 'jamais';
+        const loginStr = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR') : 'jamais';
         return `
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
           <div style="flex:1;min-width:180px">
@@ -5543,8 +5548,8 @@
               ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.6rem;padding:2px 6px;border-radius:4px">BAMBU</span>' : ''}
             </div>
             <div style="font-size:0.75rem;color:var(--text-muted)">${escHtml(u.email)}</div>
-            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px">
-              ${u.items_count} articles · ${u.prints_count} impressions · inscrit ${created} · vu ${lastLog}
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px" title="vu : dernière ouverture de l'app · login : dernière saisie email/mdp">
+              ${u.items_count} articles · ${u.prints_count} impressions · inscrit ${created} · vu ${seenStr} · login ${loginStr}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
