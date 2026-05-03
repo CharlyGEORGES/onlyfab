@@ -547,6 +547,27 @@ const MANIFEST = JSON.stringify({
 });
 
 // ── UTILITAIRES ───────────────────────────────────────────────────────────
+// Traduit les messages d'erreur connus de l'API Bambu en français + ajoute
+// éventuellement une piste de résolution. Si le message ne matche aucun
+// pattern, on le renvoie tel quel.
+function _translateBambuError(msg) {
+  if (!msg) return 'Erreur inconnue de Bambu Lab';
+  const m = String(msg);
+  if (/incorrect account or password/i.test(m)) {
+    return 'Email ou mot de passe incorrect côté Bambu Lab. Vérifie sur bambulab.com que tu peux te connecter avec ces identifiants. Si tu as fait plusieurs essais ratés, attends 15-30 min : Bambu rate-limite les comptes.';
+  }
+  if (/captcha|verify code/i.test(m) && /not.*found|invalid/i.test(m)) {
+    return 'Vérification Bambu Lab requise. Connecte-toi une fois sur bambulab.com pour valider, puis réessaie ici.';
+  }
+  if (/too many|rate.?limit/i.test(m)) {
+    return 'Trop de tentatives — Bambu Lab bloque temporairement les connexions. Patiente 15-30 min et réessaie.';
+  }
+  if (/account.*locked|disabled/i.test(m)) {
+    return 'Compte Bambu Lab verrouillé. Vérifie le statut sur bambulab.com.';
+  }
+  return m;
+}
+
 function parseBody(req, maxBytes = 10 * 1024 * 1024) {
   return new Promise((res, rej) => {
     let raw = '';
@@ -1578,7 +1599,7 @@ http.createServer(async (req, res) => {
           json(res, { ok: true });
         } catch(e) {
           console.warn('  [Bambu] /api/bambu/auth erreur :', e.message);
-          json(res, { error: e.message }, 401);
+          json(res, { error: _translateBambuError(e.message) }, 401);
         }
         return;
       }
@@ -1628,7 +1649,7 @@ http.createServer(async (req, res) => {
           json(res, { ok: true });
         } catch(e) {
           console.warn('  [Bambu] /api/bambu/verify erreur :', e.message);
-          json(res, { error: e.message }, 401);
+          json(res, { error: _translateBambuError(e.message) }, 401);
         }
         return;
       }
