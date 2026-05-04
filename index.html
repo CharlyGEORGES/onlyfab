@@ -8317,7 +8317,7 @@
   // Affichage de la version
   fetch('/api/version').then(r => r.json()).then(v => {
     const el = document.getElementById('appVersion');
-    if (el) el.textContent = `v${v.version} · ${v.commit}`;
+    if (el) el.textContent = `v${v.version}`;
   }).catch(() => {});
 
   // ── ONGLETS ───────────────────────────────────────────────────────────────
