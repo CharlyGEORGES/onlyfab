@@ -146,10 +146,10 @@ function connect({ token, printers, onPrintComplete, onStateChange, userEmail })
     } catch { /* ignore parsing errors */ }
   });
 
-  client.on('error',     err => { console.error('  [Bambu] Erreur:', err.message); if (onStateChange) onStateChange('error'); });
-  client.on('reconnect', ()  => { console.log('  [Bambu] Reconnexion...'); if (onStateChange) onStateChange('reconnecting'); });
-  client.on('offline',   ()  => { console.log('  [Bambu] Hors ligne');     if (onStateChange) onStateChange('offline'); });
-  client.on('close',     ()  => { if (onStateChange) onStateChange('disconnected'); });
+  client.on('error',     err => { console.error('  [Bambu MQTT] error :', err.message, '(code:', err.code || '?', ')'); if (onStateChange) onStateChange('error'); });
+  client.on('reconnect', ()  => { console.log('  [Bambu MQTT] Reconnexion…'); if (onStateChange) onStateChange('reconnecting'); });
+  client.on('offline',   ()  => { console.log('  [Bambu MQTT] Hors ligne'); if (onStateChange) onStateChange('offline'); });
+  client.on('close',     ()  => { console.log('  [Bambu MQTT] Connexion fermée'); if (onStateChange) onStateChange('disconnected'); });
 
   return client;
 }
@@ -159,9 +159,15 @@ function connect({ token, printers, onPrintComplete, onStateChange, userEmail })
 // Endpoint /v1/iot-service/api/user/bind. Renvoie [] en cas d'erreur
 // (auth invalide, réseau, etc.) — l'appelant gère le fallback.
 async function fetchPrinters(token) {
+  // Timeout 8 s pour ne pas bloquer le flow d'auth si l'API bind est lente.
+  // Si on n'a pas la liste à temps, l'appelant continue avec [] et la
+  // récupération sera retentée au prochain poll.
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), 8000);
   try {
     const r = await fetch('https://api.bambulab.com/v1/iot-service/api/user/bind', {
       method: 'GET',
+      signal: controller.signal,
       headers: {
         'Authorization': 'Bearer ' + token,
         'User-Agent':    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -187,6 +193,8 @@ async function fetchPrinters(token) {
   } catch (e) {
     console.warn('  [Bambu] fetchPrinters échec :', e.message);
     return [];
+  } finally {
+    clearTimeout(tid);
   }
 }
 
