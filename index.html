@@ -9565,6 +9565,10 @@
       const d = JSON.parse(e.data);
       printJobs = d.pending || [];
       _sseReady = true;
+      // On lit hasValidToken AVANT setBambuStatus pour que la première
+      // évaluation de la pill voie déjà le bon état du token et n'affiche
+      // pas un "Non connecté" transitoire.
+      if (typeof d.hasValidToken === 'boolean') _bambuHasValidToken = d.hasValidToken;
       setBambuStatus(d.bambuStatus);   // met à jour le pill maintenant que _sseReady=true
       updateBambuStatusPill(_bambuStatus); // force l'affichage (pill était caché avant SSE)
       updateBambuBadge();

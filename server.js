@@ -457,7 +457,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v19';
+const CACHE_VERSION = 'bs-v20';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1434,7 +1434,16 @@ http.createServer(async (req, res) => {
           'Connection':    'keep-alive',
         });
         const pending = db.prepare("SELECT * FROM print_jobs WHERE status='pending' AND user_id=? ORDER BY ts DESC").all(userId);
-        res.write(`event: init\ndata: ${JSON.stringify({ bambuStatus: getBambuStatus(userId), pending })}\n\n`);
+        // hasValidToken : indispensable dès l'init pour que la pill ne
+        // flashe pas "Non connecté" pendant la fraction de seconde avant
+        // le prochain événement bambu-status.
+        const _initTokRow = db.prepare('SELECT bambu_token FROM users WHERE id=?').get(userId);
+        const initData = {
+          bambuStatus:   getBambuStatus(userId),
+          hasValidToken: !!(_initTokRow?.bambu_token && !isTokenExpired(_initTokRow.bambu_token)),
+          pending,
+        };
+        res.write(`event: init\ndata: ${JSON.stringify(initData)}\n\n`);
         if (!sseByUser.has(userId)) sseByUser.set(userId, new Set());
         sseByUser.get(userId).add(res);
         const keepalive = setInterval(() => res.write(': ping\n\n'), 25_000);
