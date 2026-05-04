@@ -457,7 +457,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v18';
+const CACHE_VERSION = 'bs-v19';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2225,11 +2225,20 @@ http.createServer(async (req, res) => {
         const b = await parseBody(req);
         const variantsJson = JSON.stringify(b.variants || []);
         const tQty = totalQty(variantsJson);
-        const old = db.prepare('SELECT qty, name FROM items WHERE id = :id AND user_id = :uid').get({ id, uid: userId });
-        if (!old) { json(res, { error: 'Introuvable' }, 404); return; }
+        // Snapshot complet avant modif : permet l'undo et nourrit la ligne
+        // d'historique (stock avant / delta / stock après).
+        const before = snapshotItem(id);
+        if (!before || before.user_id !== userId) { json(res, { error: 'Introuvable' }, 404); return; }
         db.prepare('UPDATE items SET variants=:variants, qty=:qty, updatedAt=:updatedAt WHERE id=:id AND user_id=:uid')
           .run({ variants: variantsJson, qty: tQty, updatedAt: new Date().toISOString(), id, uid: userId });
-        if (old) logHistory(id, old.name, 'qty', { from: old.qty, to: tQty });
+        // On ne log que si la quantité a réellement bougé : un simple
+        // renommage de variante ou changement de couleur ne mérite pas une
+        // ligne "Stock X → X" dans l'historique.
+        if (tQty !== before.qty) {
+          logHistory(id, before.name, 'qty',
+            { from: before.qty, to: tQty, delta: tQty - before.qty },
+            before, userId);
+        }
         json(res, { ok: true });
         return;
       }

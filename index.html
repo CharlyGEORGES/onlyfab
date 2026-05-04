@@ -8095,7 +8095,14 @@
         const ic = icons[h.action] || icons.update;
         let desc = '';
         if (h.action === 'add' && detail) desc = `Qté initiale : ${detail.totalQty ?? detail.qty ?? 0}`;
-        if (h.action === 'qty' && detail) desc = `${detail.from} → ${detail.to}`;
+        if (h.action === 'qty' && detail) {
+          // Affichage : "Stock 5 · +2 · 7" pour une addition, "Stock 7 · -2 · 5"
+          // pour un retrait. Le delta calculé côté serveur peut manquer sur
+          // les anciennes entrées : on retombe sur to-from.
+          const delta = (detail.delta != null) ? detail.delta : ((detail.to ?? 0) - (detail.from ?? 0));
+          const sign  = delta > 0 ? `+${delta}` : `${delta}`;
+          desc = `Stock ${detail.from} · ${sign} · ${detail.to}`;
+        }
         if (h.action === 'update' && detail) desc = `Qté : ${detail.totalQty ?? '—'}`;
         if (h.action === 'assemble' && detail) desc = `${detail.delta > 0 ? '+' : ''}${detail.delta} assemblage(s)`;
         if (h.action === 'print-dismiss' && detail) {
@@ -8114,8 +8121,14 @@
           : '';
         // Bouton Annuler : visible uniquement si on a un before_state ou si
         // c'est un add (cas particulier où l'annulation = suppression).
-        const canUndo = (h.action === 'add' || h.action === 'update' || h.action === 'delete')
-          && !String(h.action).startsWith('undo-');
+        // qty depuis aujourd'hui dispose d'un before_state, mais les anciennes
+        // entrées qty n'en ont pas. On vérifie h.before_state pour ne pas
+        // afficher un bouton undo qui échouerait côté serveur.
+        const hasSnap = !!h.before_state;
+        const canUndo = !String(h.action).startsWith('undo-') && (
+          h.action === 'add' ||
+          ((h.action === 'update' || h.action === 'delete' || h.action === 'qty') && hasSnap)
+        );
         const undoBtn = canUndo
           ? `<button type="button" class="history-undo-btn" onclick="undoHistory(${h.id})" aria-label="Annuler cette modification" title="Annuler cette modification">↶</button>`
           : '';
