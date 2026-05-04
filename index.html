@@ -2271,7 +2271,14 @@
       font-size: 0.85rem; font-weight: 600;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .history-desc { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+    .history-desc { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .history-color-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.2);
+      flex-shrink: 0;
+    }
     .history-time { font-size: 0.7rem; color: var(--text-muted); margin-top: 3px; }
 
     .history-empty {
@@ -8091,7 +8098,20 @@
         if (h.action === 'qty' && detail) desc = `${detail.from} → ${detail.to}`;
         if (h.action === 'update' && detail) desc = `Qté : ${detail.totalQty ?? '—'}`;
         if (h.action === 'assemble' && detail) desc = `${detail.delta > 0 ? '+' : ''}${detail.delta} assemblage(s)`;
-        if (h.action === 'print-dismiss' && detail) desc = (detail.bulk ? 'Lot · ' : '') + (detail.printer || 'Imprimante inconnue');
+        if (h.action === 'print-dismiss' && detail) {
+          const bits = [];
+          if (detail.bulk) bits.push('Lot');
+          if (detail.printer) bits.push(detail.printer);
+          if (detail.filament_type) bits.push(detail.filament_type);
+          desc = bits.join(' · ') || 'Imprimante inconnue';
+        }
+        // Pastille couleur filament : sur les entrées qui en ont une
+        // (print-dismiss notamment), on l'affiche à gauche de la description
+        // pour que le user voit d'un coup d'œil quelle bobine était sur
+        // l'imprimante au moment du print.
+        const colorDot = (detail && detail.filament_color)
+          ? `<span class="history-color-dot" style="background:${escHtml(detail.filament_color)}" title="${escHtml(detail.filament_color)}"></span>`
+          : '';
         // Bouton Annuler : visible uniquement si on a un before_state ou si
         // c'est un add (cas particulier où l'annulation = suppression).
         const canUndo = (h.action === 'add' || h.action === 'update' || h.action === 'delete')
@@ -8104,7 +8124,7 @@
             <div class="history-icon ${ic.cls}">${ic.svg}</div>
             <div class="history-content">
               <div class="history-name">${escHtml(h.item_name)}</div>
-              <div class="history-desc">${labels[h.action] || h.action}${desc ? ' · ' + escHtml(desc) : ''}</div>
+              <div class="history-desc">${colorDot}${labels[h.action] || h.action}${desc ? ' · ' + escHtml(desc) : ''}</div>
               <div class="history-time">${timeAgo(h.ts)}</div>
             </div>
             ${undoBtn}

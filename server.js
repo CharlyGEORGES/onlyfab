@@ -1454,14 +1454,19 @@ http.createServer(async (req, res) => {
       if (req.method === 'DELETE' && url === '/api/print-jobs') {
         // Récupère les pending avant de tous les marquer dismissed pour
         // pouvoir tracer l'action dans l'historique (utile pour le user).
-        const rows = db.prepare("SELECT id, file_name, printer_name, printer_serial FROM print_jobs WHERE status='pending' AND user_id=?").all(userId);
+        const rows = db.prepare("SELECT id, file_name, printer_name, printer_serial, filament_color, filament_type FROM print_jobs WHERE status='pending' AND user_id=?").all(userId);
         db.prepare("UPDATE print_jobs SET status='dismissed' WHERE status='pending' AND user_id=?").run(userId);
         for (const row of rows) {
           logHistory(
             'print-' + row.id,
             row.file_name || 'Impression',
             'print-dismiss',
-            { printer: row.printer_name || row.printer_serial || null, bulk: true },
+            {
+              printer:        row.printer_name || row.printer_serial || null,
+              filament_color: row.filament_color || null,
+              filament_type:  row.filament_type  || null,
+              bulk:           true,
+            },
             null,
             userId,
           );
@@ -1470,14 +1475,19 @@ http.createServer(async (req, res) => {
         return;
       }
       if (req.method === 'DELETE' && parts[1] === 'print-jobs' && id) {
-        const row = db.prepare('SELECT file_name, printer_name, printer_serial, status FROM print_jobs WHERE id=:id AND user_id=:uid').get({ id, uid: userId });
+        const row = db.prepare('SELECT file_name, printer_name, printer_serial, status, filament_color, filament_type FROM print_jobs WHERE id=:id AND user_id=:uid').get({ id, uid: userId });
         db.prepare('UPDATE print_jobs SET status=:s WHERE id=:id AND user_id=:uid').run({ s: 'dismissed', id, uid: userId });
         if (row) {
           logHistory(
             'print-' + id,
             row.file_name || 'Impression',
             'print-dismiss',
-            { printer: row.printer_name || row.printer_serial || null, prevStatus: row.status },
+            {
+              printer:        row.printer_name || row.printer_serial || null,
+              filament_color: row.filament_color || null,
+              filament_type:  row.filament_type  || null,
+              prevStatus:     row.status,
+            },
             null,
             userId,
           );
