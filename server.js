@@ -695,10 +695,16 @@ function getBambuStatus(userId) {
 function onStateChange(userId, status) {
   bambuByUser.set(userId, { ...(bambuByUser.get(userId) || {}), status });
   const state = bambuByUser.get(userId) || {};
+  // On indique aussi si le token API est valide. La pill côté client
+  // doit pouvoir distinguer "MQTT down mais token OK" (= polling actif,
+  // tout va bien) de "vraiment déconnecté" (= token absent/expiré).
+  const u = db.prepare('SELECT bambu_token FROM users WHERE id=?').get(userId);
+  const hasValidToken = !!(u?.bambu_token && !isTokenExpired(u.bambu_token));
   broadcast(userId, 'bambu-status', {
     status,
     lastSyncAt: state.lastSyncAt || null,
     lastSyncCount: state.lastSyncCount ?? null,
+    hasValidToken,
   });
 }
 
@@ -904,10 +910,12 @@ async function pollBambuForUser(userId) {
   bambuByUser.set(userId, { ...(bambuByUser.get(userId) || {}), lastSyncAt: Date.now(), lastSyncCount: imported });
   // Re-broadcast pour que le pill côté client mette à jour "dernière sync".
   const state = bambuByUser.get(userId) || {};
+  // hasValidToken: si on a réussi le poll, le token est forcément valide.
   broadcast(userId, 'bambu-status', {
     status: state.status || 'connected',
     lastSyncAt: state.lastSyncAt,
     lastSyncCount: state.lastSyncCount,
+    hasValidToken: true,
   });
   if (imported > 0) console.log(`  [Bambu poll] User ${userId} : ${imported} print(s) importé(s) via fallback`);
   return { imported, error: null };
@@ -1366,7 +1374,17 @@ http.createServer(async (req, res) => {
       const user = getSessionUser(req);
       if (!user) { res.writeHead(401); res.end(); return; }
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-      res.write(`event: bambu-status\ndata: ${JSON.stringify({ status: getBambuStatus(user.id) })}\n\n`);
+      // État initial : status MQTT + validité du token API. La pill peut
+      // ainsi distinguer "MQTT en cours / token OK" (= polling actif) de
+      // "vraiment déconnecté" (= il faut se reconnecter).
+      const _initToken = db.prepare('SELECT bambu_token FROM users WHERE id=?').get(user.id);
+      const _initState = bambuByUser.get(user.id) || {};
+      res.write(`event: bambu-status\ndata: ${JSON.stringify({
+        status: getBambuStatus(user.id),
+        lastSyncAt: _initState.lastSyncAt || null,
+        lastSyncCount: _initState.lastSyncCount ?? null,
+        hasValidToken: !!(_initToken?.bambu_token && !isTokenExpired(_initToken.bambu_token)),
+      })}\n\n`);
       if (!sseByUser.has(user.id)) sseByUser.set(user.id, new Set());
       sseByUser.get(user.id).add(res);
       const keepalive = setInterval(() => res.write(': ping\n\n'), 25_000);

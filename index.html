@@ -8355,6 +8355,7 @@
 
   let _bambuStatus = 'disconnected';
   let _bambuLastSyncAt = null;
+  let _bambuHasValidToken = false;
 
   function _formatRelTime(ts) {
     if (!ts) return null;
@@ -8420,6 +8421,23 @@
           <div class="pill-text-sub">${escHtml(subSync)}</div>
         </div>
         <div class="pill-actions">
+          <button class="pill-connect-btn ghost" onclick="bambuReconfigure()">Reconfigurer</button>
+        </div>`;
+    } else if (_bambuHasValidToken) {
+      // Cas important : MQTT temporairement down (offline / error / close)
+      // mais le token API est encore valide. Le poll auto toutes les
+      // 10 min continue à fonctionner, et l'historique est accessible.
+      // On affiche "Connecté" (vert) avec un sous-titre qui indique le
+      // mode dégradé, plutôt que de paniquer le user avec "Non connecté".
+      pill.classList.add('is-ok');
+      pill.innerHTML = `
+        <div class="pill-icon is-ok"><span class="pill-dot"></span></div>
+        <div class="pill-text">
+          <div class="pill-text-title">Connecté à Bambu Lab</div>
+          <div class="pill-text-sub">Mode polling — sync auto toutes les 10 min · ${escHtml(subSync)}</div>
+        </div>
+        <div class="pill-actions">
+          <button class="pill-connect-btn ghost" onclick="bambuSyncNow()">Synchroniser</button>
           <button class="pill-connect-btn ghost" onclick="bambuReconfigure()">Reconfigurer</button>
         </div>`;
     } else {
@@ -9525,6 +9543,9 @@
     sse.addEventListener('bambu-status', e => {
       const d = JSON.parse(e.data);
       if (d.lastSyncAt) _bambuLastSyncAt = d.lastSyncAt;
+      // Stocke aussi la validité du token, utilisée par updateBambuStatusPill
+      // pour distinguer "MQTT down mais OK" de "vraiment déconnecté".
+      if (typeof d.hasValidToken === 'boolean') _bambuHasValidToken = d.hasValidToken;
       setBambuStatus(d.status);
     });
 
