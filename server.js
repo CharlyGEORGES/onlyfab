@@ -1506,7 +1506,6 @@ http.createServer(async (req, res) => {
         const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
         json(res, {
           version: process.env.APP_VERSION || pkg.version,
-          commit:  process.env.GIT_COMMIT  || 'dev',
         });
         return;
       }
