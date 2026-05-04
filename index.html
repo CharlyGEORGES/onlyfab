@@ -8376,6 +8376,10 @@
   let _bambuStatus = 'disconnected';
   let _bambuLastSyncAt = null;
   let _bambuHasValidToken = false;
+  // Cache du dernier rendu de la pill : évite les re-renders no-op qui
+  // provoquaient des "sauts" visibles toutes les 15s quand MQTT cyclait
+  // (error → reconnect → error). Le user n'a pas à voir ces transitions.
+  let _lastPillSignature = '';
 
   function _formatRelTime(ts) {
     if (!ts) return null;
@@ -8394,16 +8398,35 @@
     if (!_sseReady) { pill.style.display = 'none'; return; }
     pill.style.display = 'flex';
 
-    // "dernière sync" : on ne dit "jamais" que si on est connecté depuis
-    // un moment et qu'aucun poll n'a tourné. Au boot ou tout de suite après
-    // une connexion, on affiche un message neutre.
+    // Catégorisation : on aplatit les statuts MQTT volatils (error,
+    // reconnecting, offline, close, disconnected) sous un seul état
+    // "polling" tant que le token est valide. Sinon le user voit la
+    // pill alterner toutes les 15s entre "Reconnexion" et "Mode polling"
+    // pendant que MQTT cycle, ce qui fait peu pro.
+    let category;
+    if (status === 'token-expired')          category = 'expired';
+    else if (status === 'connected')         category = 'live';
+    else if (_bambuHasValidToken)            category = 'polling'; // tout le reste si token OK
+    else if (status === 'reconnecting' ||
+             status === 'connecting')        category = 'pending';
+    else                                     category = 'disconnected';
+
     const subSync = _bambuLastSyncAt
       ? `Dernière sync ${_formatRelTime(_bambuLastSyncAt)}`
       : 'Synchronisation auto activée';
 
+    // Skip le re-render si rien n'a changé visuellement. La signature
+    // inclut subSync : si seulement la sync timestamp bouge, le titre
+    // reste mais on met à jour le sous-titre (pas le HTML complet, pour
+    // éviter le saut visible quand le DOM est recréé).
+    const signature = category + '|' + subSync;
+    if (signature === _lastPillSignature) return;
+    const sameCategoryAsBefore = _lastPillSignature.split('|')[0] === category;
+    _lastPillSignature = signature;
+
     pill.classList.remove('is-ok', 'is-warn', 'is-pending');
 
-    if (status === 'token-expired') {
+    if (category === 'expired') {
       pill.classList.add('is-warn');
       pill.innerHTML = `
         <div class="pill-icon is-warn"><span class="pill-dot"></span></div>
@@ -8417,11 +8440,14 @@
       return;
     }
 
-    const isConnected = status === 'connected';
-    const isPending   = status === 'reconnecting' || status === 'connecting';
-
-    if (isConnected) {
+    if (category === 'live') {
       pill.classList.add('is-ok');
+      // Si on était déjà sur "live" et seul subSync a changé, on update
+      // juste le sous-titre — pas de re-création du DOM = aucun saut.
+      if (sameCategoryAsBefore) {
+        const sub = pill.querySelector('.pill-text-sub');
+        if (sub) { sub.textContent = subSync; return; }
+      }
       pill.innerHTML = `
         <div class="pill-icon is-ok"><span class="pill-dot"></span></div>
         <div class="pill-text">
@@ -8432,8 +8458,15 @@
           <button class="pill-connect-btn ghost" onclick="bambuSyncNow()">Synchroniser</button>
           <button class="pill-connect-btn ghost" onclick="bambuReconfigure()">Reconfigurer</button>
         </div>`;
-    } else if (isPending) {
+      return;
+    }
+
+    if (category === 'pending') {
       pill.classList.add('is-pending');
+      if (sameCategoryAsBefore) {
+        const sub = pill.querySelector('.pill-text-sub');
+        if (sub) { sub.textContent = subSync; return; }
+      }
       pill.innerHTML = `
         <div class="pill-icon is-pending"><span class="pill-dot"></span></div>
         <div class="pill-text">
@@ -8443,35 +8476,44 @@
         <div class="pill-actions">
           <button class="pill-connect-btn ghost" onclick="bambuReconfigure()">Reconfigurer</button>
         </div>`;
-    } else if (_bambuHasValidToken) {
+      return;
+    }
+
+    if (category === 'polling') {
       // Cas important : MQTT temporairement down (offline / error / close)
       // mais le token API est encore valide. Le poll auto toutes les
       // 10 min continue à fonctionner, et l'historique est accessible.
       // On affiche "Connecté" (vert) avec un sous-titre qui indique le
       // mode dégradé, plutôt que de paniquer le user avec "Non connecté".
       pill.classList.add('is-ok');
+      const sub = `Mode polling — sync auto toutes les 10 min · ${subSync}`;
+      if (sameCategoryAsBefore) {
+        const subEl = pill.querySelector('.pill-text-sub');
+        if (subEl) { subEl.textContent = sub; return; }
+      }
       pill.innerHTML = `
         <div class="pill-icon is-ok"><span class="pill-dot"></span></div>
         <div class="pill-text">
           <div class="pill-text-title">Connecté à Bambu Lab</div>
-          <div class="pill-text-sub">Mode polling — sync auto toutes les 10 min · ${escHtml(subSync)}</div>
+          <div class="pill-text-sub">${escHtml(sub)}</div>
         </div>
         <div class="pill-actions">
           <button class="pill-connect-btn ghost" onclick="bambuSyncNow()">Synchroniser</button>
           <button class="pill-connect-btn ghost" onclick="bambuReconfigure()">Reconfigurer</button>
         </div>`;
-    } else {
-      pill.classList.add('is-warn');
-      pill.innerHTML = `
-        <div class="pill-icon is-warn"><span class="pill-dot"></span></div>
-        <div class="pill-text">
-          <div class="pill-text-title">Non connecté à Bambu Lab</div>
-          <div class="pill-text-sub">Les impressions ne seront pas détectées automatiquement</div>
-        </div>
-        <div class="pill-actions">
-          <button class="pill-connect-btn" onclick="bambuReconfigure()">Connecter</button>
-        </div>`;
+      return;
     }
+
+    pill.classList.add('is-warn');
+    pill.innerHTML = `
+      <div class="pill-icon is-warn"><span class="pill-dot"></span></div>
+      <div class="pill-text">
+        <div class="pill-text-title">Non connecté à Bambu Lab</div>
+        <div class="pill-text-sub">Les impressions ne seront pas détectées automatiquement</div>
+      </div>
+      <div class="pill-actions">
+        <button class="pill-connect-btn" onclick="bambuReconfigure()">Connecter</button>
+      </div>`;
   }
 
   // Ouvre le modal Bambu directement sur la vue login (pour reconfigurer
