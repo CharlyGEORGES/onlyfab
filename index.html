@@ -3573,6 +3573,11 @@
         </div>
 
         <button type="submit" class="btn-primary" id="formSubmitBtn" data-i18n="form.save">Enregistrer</button>
+        <button type="button" id="formDeleteBtn" onclick="deleteFromForm()"
+                style="display:none;background:transparent;color:var(--danger);border:1px solid var(--danger);border-radius:10px;padding:10px 14px;font-size:0.85rem;font-weight:600;cursor:pointer;width:100%;margin-top:10px"
+                data-i18n="detail.deleteItem">
+          Supprimer l'article
+        </button>
       </form>
     </div>
   </div>
@@ -6965,8 +6970,8 @@
     const cardLabel = t('card.viewDetails') + ' : ' + (item.name || '');
     return `
       <div class="card" role="button" tabindex="0" aria-label="${escHtml(cardLabel)}"
-           onclick="openDetail('${item.id}')"
-           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openDetail('${item.id}');}">
+           onclick="openEdit('${item.id}')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openEdit('${item.id}');}">
         ${isLow ? `<div class="low-stock-badge">${t('card.lowStock')}</div>` : ''}
         ${item.photo
           ? `<img class="card-img" src="${item.photo}" alt="${escHtml(item.name)}" decoding="async">`
@@ -8182,6 +8187,7 @@
     setModalTags([]);
     document.getElementById('formModalTitle').textContent = t('form.title.new');
     document.getElementById('formSubmitBtn').textContent = t('form.save');
+    document.getElementById('formDeleteBtn').style.display = 'none';
     openModalA11y('formModal');
   }
 
@@ -8231,10 +8237,29 @@
     }
 
     document.getElementById('formModalTitle').textContent = t('form.title.edit');
-    document.getElementById('formSubmitBtn').textContent = t('profile.updatePassword');
+    document.getElementById('formSubmitBtn').textContent = t('form.save');
+    document.getElementById('formDeleteBtn').style.display = '';
     openModalA11y('formModal');
     closeDetailModal();
   }
+  window.openEdit = openEdit;
+
+  // Supprimer l'article actuellement édité depuis le form modal.
+  // Confirmation + appel opDelete + fermeture du modal.
+  async function deleteFromForm() {
+    if (!editingId) return;
+    if (!confirm(t('confirm.deleteItem') || 'Supprimer cet article ?')) return;
+    try {
+      await opDelete(editingId);
+      items = items.filter(i => i.id !== editingId);
+      closeFormModal();
+      render();
+      showToast(t('toast.deleted') || 'Article supprimé');
+    } catch (err) {
+      showToast('Erreur : ' + (err.message || ''), 'error');
+    }
+  }
+  window.deleteFromForm = deleteFromForm;
 
   function closeFormModal() { document.getElementById('formModal').classList.remove('open'); }
 
