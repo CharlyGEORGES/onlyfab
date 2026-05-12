@@ -4809,6 +4809,14 @@
           Envoyer
         </button>
       </div>
+
+      <!-- Historique des remontées de l'utilisateur, repliable -->
+      <details id="feedbackHistory" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+        <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--text);user-select:none">
+          📜 Mes remontées précédentes <span id="feedbackHistoryCount" style="font-weight:400;color:var(--text-muted)"></span>
+        </summary>
+        <div id="feedbackHistoryList" style="margin-top:10px;font-size:0.85rem;color:var(--text-muted)">Chargement…</div>
+      </details>
     </div>
   </div>
 </div>
@@ -6893,12 +6901,66 @@
     radios.forEach((r, i) => { r.checked = i === 0; });
     document.getElementById('feedbackModal').classList.add('open');
     setTimeout(() => document.getElementById('feedbackMessage').focus(), 50);
+    // Refresh de l'historique en arrière-plan : si l'user déplie il a la donnée à jour.
+    loadFeedbackHistory();
   }
   window.openFeedbackModal = openFeedbackModal;
   function closeFeedbackModal() {
     document.getElementById('feedbackModal').classList.remove('open');
   }
   window.closeFeedbackModal = closeFeedbackModal;
+
+  // Historique des remontées de l'utilisateur courant. Pas d'accès à la
+  // note privée admin — seulement le statut (LU/RÉSOLU) pour que l'user
+  // sache si on a pris en compte sa remontée.
+  async function loadFeedbackHistory() {
+    const listEl  = document.getElementById('feedbackHistoryList');
+    const countEl = document.getElementById('feedbackHistoryCount');
+    if (!listEl) return;
+    try {
+      const r = await fetch('/api/feedback/mine');
+      if (!r.ok) {
+        listEl.textContent = 'Impossible de charger l\'historique.';
+        return;
+      }
+      const d = await r.json();
+      const items = d.items || [];
+      if (countEl) countEl.textContent = items.length ? `(${items.length})` : '';
+      if (!items.length) {
+        listEl.innerHTML = '<div style="font-size:0.82rem;color:var(--text-muted);text-align:center;padding:10px">Aucune remontée envoyée pour l\'instant.</div>';
+        return;
+      }
+      const meta = {
+        bug:        { ic: '🐛', label: 'Bug',        color: 'var(--danger)' },
+        suggestion: { ic: '💡', label: 'Suggestion', color: 'var(--primary)' },
+        question:   { ic: '❓', label: 'Question',   color: 'var(--accent)' },
+        other:      { ic: '💬', label: 'Autre',      color: 'var(--text-muted)' },
+      };
+      listEl.innerHTML = items.map(f => {
+        const m = meta[f.type] || meta.other;
+        const statusBadge =
+          f.status === 'new'      ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.6rem;padding:1px 6px;border-radius:3px;border:1px solid var(--border)">EN ATTENTE</span>' :
+          f.status === 'resolved' ? '<span style="background:var(--accent);color:#000;font-size:0.6rem;padding:1px 6px;border-radius:3px">✓ RÉSOLU</span>' :
+          '<span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:1px 6px;border-radius:3px">EN COURS</span>';
+        const when = f.created_at ? _fmtRelTime(f.created_at) : '';
+        return `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;font-weight:600">
+                <span style="color:${m.color}">${m.ic} ${m.label}</span>
+                ${statusBadge}
+              </div>
+              <span style="font-size:0.7rem;color:var(--text-muted)">${when}</span>
+            </div>
+            <div style="font-size:0.82rem;color:var(--text);white-space:pre-wrap;line-height:1.45">${escHtml(f.message)}</div>
+          </div>`;
+      }).join('');
+    } catch (e) {
+      listEl.textContent = 'Erreur : ' + (e.message || e);
+    }
+  }
+  window.loadFeedbackHistory = loadFeedbackHistory;
+
   async function sendFeedback() {
     const btn  = document.getElementById('feedbackSendBtn');
     const errEl = document.getElementById('feedbackError');
@@ -6918,6 +6980,8 @@
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || 'Erreur');
       btn.textContent = '✓ Envoyé !';
+      // Refresh la liste pour que l'user voie immédiatement sa remontée.
+      loadFeedbackHistory();
       setTimeout(() => { closeFeedbackModal(); btn.disabled = false; btn.textContent = 'Envoyer'; }, 900);
     } catch (e) {
       errEl.textContent = e.message || 'Erreur réseau';
