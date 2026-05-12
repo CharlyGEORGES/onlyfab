@@ -7466,30 +7466,57 @@
         : '';
 
       // Panels par onglet — un seul visible à la fois (switchUserDetailTab).
+      // Date d'inscription en format court (sans heure pour la grille info,
+      // l'heure est en tooltip).
+      const createdShort = u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+      // Initiale pour l'avatar (1ère lettre du nom ou de l'email).
+      const initial = ((u.name || u.email || '?').trim()[0] || '?').toUpperCase();
+
       const panelProfil = `
         <div class="ud-tab-panel" data-ud-tab="profil">
-          <div style="margin-bottom:16px">
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-              <span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">${escHtml(u.plan || 'beta')}</span>
-              ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:2px 8px;border-radius:4px">ADMIN</span>' : ''}
-              ${u.is_influencer ? '<span style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:0.65rem;padding:2px 8px;border-radius:4px">★ Partenaire</span>' : ''}
-              ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.65rem;padding:2px 8px;border-radius:4px">BAMBU ✓</span>' : (u.bambu_email ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Bambu déconnecté</span>' : '')}
-              ${u.onboarding_completed ? '' : '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Onboarding incomplet</span>'}
-            </div>
-            <div style="font-size:0.78rem;color:var(--text-muted)">${escHtml(u.email)} · inscrit ${created}</div>
-            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px" title="${escAttr(seenAbs)}">
-              🟢 Dernière ouverture : <strong style="color:var(--text)">${seenStr}</strong>${seenAbs ? ` <span style="opacity:.6">· ${escHtml(seenAbs)}</span>` : ''}
+          <!-- Hero : avatar + nom/email + badges principaux -->
+          <div style="display:flex;gap:14px;align-items:center;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px">
+            <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:800;flex-shrink:0">${escHtml(initial)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:1rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.name || u.email)}</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(u.email)}</div>
+              <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
+                <span style="background:var(--surface);color:var(--text);font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--border);text-transform:uppercase;letter-spacing:0.04em">${escHtml(u.plan || 'beta')}</span>
+                ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:999px;letter-spacing:0.04em">ADMIN</span>' : ''}
+                ${u.is_influencer ? '<span style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:999px;letter-spacing:0.04em">★ PARTENAIRE</span>' : ''}
+                ${u.onboarding_completed ? '' : '<span style="background:transparent;border:1px solid var(--border);color:var(--text-muted);font-size:0.62rem;font-weight:600;padding:2px 8px;border-radius:999px;letter-spacing:0.04em">ONBOARDING INCOMPLET</span>'}
+              </div>
             </div>
           </div>
+
+          <!-- Grille d'infos clé -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px">
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+              <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:3px">Inscrit le</div>
+              <div style="font-size:0.88rem;font-weight:700;color:var(--text)" title="${escAttr(created)}">${escHtml(createdShort)}</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px" title="${escAttr(seenAbs)}">
+              <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:3px">🟢 Dernière ouverture</div>
+              <div style="font-size:0.88rem;font-weight:700;color:var(--text)">${escHtml(seenStr)}</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+              <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:3px">🖨 Bambu Lab</div>
+              <div style="font-size:0.88rem;font-weight:700;color:${u.bambu_connected === 'connected' ? 'var(--accent)' : u.bambu_email ? 'var(--text-muted)' : 'var(--text-muted)'}">
+                ${u.bambu_connected === 'connected' ? '✓ Connecté' : (u.bambu_email ? '⚠ Déconnecté' : '— Non configuré')}
+              </div>
+            </div>
+          </div>
+
           ${(provHtml || referredHtml) ? `
-            <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Provenance</h3>
-            <div style="margin-bottom:16px">
+            <h3 style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px;font-weight:700">Provenance</h3>
+            <div style="margin-bottom:14px">
               ${provHtml}
               ${referredHtml}
             </div>` : ''}
-          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Note privée admin</h3>
-          <textarea id="userDetailNote" rows="3" onblur="saveUserDetailNote()" placeholder="Contexte, rappel d'échange, signalement…"
-                    style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:0.82rem;font-family:inherit;resize:vertical;box-sizing:border-box">${escHtml(u.admin_note || '')}</textarea>
+
+          <h3 style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px;font-weight:700">Note privée admin</h3>
+          <textarea id="userDetailNote" rows="3" onblur="saveUserDetailNote()" placeholder="Contexte, rappel d'échange, signalement… (visible uniquement par toi)"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:0.85rem;font-family:inherit;resize:vertical;box-sizing:border-box">${escHtml(u.admin_note || '')}</textarea>
         </div>`;
 
       const panelActivite = `
@@ -7600,30 +7627,64 @@
           }).join('') : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--text-muted);font-size:0.85rem">Aucune remontée envoyée.</div>'}
         </div>`;
 
+      // Lignes d'action : chacune avec icône, titre, description, contrôle à droite.
+      // Pattern row-card pour un rendu visuel cohérent et lisible.
+      const actionRow = (icon, title, desc, control) => `
+        <div style="display:flex;align-items:center;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+          <div style="font-size:1.2rem;flex-shrink:0;width:28px;text-align:center">${icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:0.85rem;font-weight:600;color:var(--text)">${title}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:1px">${desc}</div>
+          </div>
+          <div style="flex-shrink:0">${control}</div>
+        </div>`;
+
       const panelActions = `
         <div class="ud-tab-panel" data-ud-tab="actions" hidden>
-          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Actions admin</h3>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer">
-              Plan
-              <select onchange="adminSetPlan('${escAttr(u.id)}', this.value).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:0.78rem">
+          <h3 style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 10px;font-weight:700">Actions admin</h3>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
+            ${actionRow(
+              '💎',
+              'Plan d\'abonnement',
+              'Niveau d\'accès aux fonctionnalités',
+              `<select onchange="adminSetPlan('${escAttr(u.id)}', this.value).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 8px;font-size:0.82rem;cursor:pointer;font-family:inherit">
                 <option value="beta"${u.plan==='beta'?' selected':''}>beta</option>
                 <option value="free"${u.plan==='free'?' selected':''}>free</option>
                 <option value="pro"${u.plan==='pro'?' selected':''}>pro</option>
                 <option value="studio"${u.plan==='studio'?' selected':''}>studio</option>
-              </select>
-            </label>
-            <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin}).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 12px;font-size:0.78rem;cursor:pointer">
-              ${u.is_admin ? '↓ Retirer admin' : '↑ Promouvoir admin'}
-            </button>
-            <button onclick="adminEditInfluencer('${escAttr(u.id)}', '${escAttr(u.referral_code || '')}').then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid ${u.referral_code ? 'var(--primary)' : 'var(--border)'};border-radius:6px;color:${u.referral_code ? 'var(--primary)' : 'var(--text)'};padding:6px 12px;font-size:0.78rem;cursor:pointer">
-              ${u.referral_code ? '★ Modifier code partenaire' : '+ Activer comme partenaire'}
+              </select>`
+            )}
+            ${actionRow(
+              '🛡',
+              u.is_admin ? 'Retirer le rôle admin' : 'Promouvoir admin',
+              u.is_admin ? 'L\'utilisateur perdra l\'accès au panneau d\'administration' : 'Donne accès complet au panneau d\'administration',
+              `<button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin}).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit">
+                ${u.is_admin ? '↓ Retirer' : '↑ Promouvoir'}
+              </button>`
+            )}
+            ${actionRow(
+              '★',
+              u.referral_code ? `Code partenaire : ${escHtml(u.referral_code)}` : 'Activer comme partenaire',
+              u.referral_code ? 'Modifier ou supprimer le code de parrainage' : 'Génère un code pour suivre les inscriptions parrainées',
+              `<button onclick="adminEditInfluencer('${escAttr(u.id)}', '${escAttr(u.referral_code || '')}').then(() => openUserDetail('${escAttr(u.id)}'))" style="background:${u.referral_code ? 'var(--primary)' : 'var(--surface)'};color:${u.referral_code ? '#fff' : 'var(--text)'};border:1px solid ${u.referral_code ? 'var(--primary)' : 'var(--border)'};border-radius:6px;padding:6px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit">
+                ${u.referral_code ? 'Modifier' : '+ Activer'}
+              </button>`
+            )}
+          </div>
+
+          <!-- Zone sensible : carte rouge tintée pour bien la distinguer -->
+          <div style="background:rgba(255,71,87,0.06);border:1px solid var(--danger);border-radius:10px;padding:14px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span style="font-size:1.1rem">⚠</span>
+              <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--danger);margin:0;font-weight:700">Zone sensible</h3>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 10px;line-height:1.45">
+              La suppression efface l'utilisateur et toutes ses données (articles, impressions, historique, sessions). Cette action est irréversible.
+            </p>
+            <button onclick="closeUserDetailModal();adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" style="background:var(--danger);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;font-family:inherit">
+              ✕ Supprimer ce compte
             </button>
           </div>
-          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--danger);margin:0 0 8px">Zone sensible</h3>
-          <button onclick="closeUserDetailModal();adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:8px 14px;font-size:0.82rem;cursor:pointer">
-            ✕ Supprimer ce compte
-          </button>
         </div>`;
 
       body.innerHTML = panelProfil + panelActivite + panelRemontees + panelActions;
