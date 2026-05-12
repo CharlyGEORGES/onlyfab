@@ -4111,7 +4111,11 @@
           <input type="number" id="calcElecRate" min="0" step="0.01" inputmode="decimal" oninput="recomputeCalc()">
         </div>
         <div class="form-group">
-          <label for="calcMarginPct">Marge cible (%)</label>
+          <label for="calcMaintenance">Entretien & usure (€/h)</label>
+          <input type="number" id="calcMaintenance" min="0" step="0.05" inputmode="decimal" oninput="recomputeCalc()" title="Coût horaire pour amortir la machine, les nozzles, courroies, etc.">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="calcMarginPct">Marge cible (%) <span style="color:var(--text-muted);font-weight:400">— appliquée sur filament + impression, pas sur main d'œuvre</span></label>
           <input type="number" id="calcMarginPct" min="0" step="5" inputmode="numeric" oninput="recomputeCalc()">
         </div>
         <div class="form-group" style="grid-column:1 / -1;margin-bottom:0">
@@ -4161,6 +4165,20 @@
 
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px">Exemple</h3>
       <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 10px">Simule le coût et la rentabilité d'une impression donnée.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        <button type="button" onclick="loadCalcPreset('mini')"
+                style="flex:1;min-width:90px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:0.75rem;font-weight:600;cursor:pointer">
+          Mini · 10 g · 30 min
+        </button>
+        <button type="button" onclick="loadCalcPreset('medium')"
+                style="flex:1;min-width:90px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:0.75rem;font-weight:600;cursor:pointer">
+          Moyen · 50 g · 3 h
+        </button>
+        <button type="button" onclick="loadCalcPreset('large')"
+                style="flex:1;min-width:90px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:0.75rem;font-weight:600;cursor:pointer">
+          Gros · 200 g · 12 h
+        </button>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="form-group">
           <label for="calcSelectFilament">Filament utilisé</label>
@@ -4190,6 +4208,9 @@
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
           <span>Électricité <span id="calcOutPrinterName" style="opacity:0.7"></span></span><span id="calcOutElec">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
+          <span>Entretien & usure</span><span id="calcOutWear">—</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:10px">
           <span>Main d'œuvre</span><span id="calcOutLabor">—</span>
@@ -5674,12 +5695,13 @@
     { name: 'Bambu A1',  powerW: 130 },
   ];
   let _calcState = {
-    electricityRatePerKwh: 0.20,
-    laborRatePerHour:      30,
-    laborEnabled:          false,
-    tvaEnabled:            false,
-    tvaPct:                20,
-    targetMarginPct:       50,
+    electricityRatePerKwh:  0.20,
+    laborRatePerHour:       30,
+    laborEnabled:           false,
+    maintenanceCostPerHour: 0.20, // amortissement machine + consommables
+    tvaEnabled:             false,
+    tvaPct:                 20,
+    targetMarginPct:        50,
     filaments: [..._calcDefaultFilaments],
     printers:  [..._calcDefaultPrinters],
   };
@@ -5699,12 +5721,13 @@
     try {
       const s = await api('GET', '/api/cost-settings');
       _calcState = {
-        electricityRatePerKwh: s.electricityRatePerKwh ?? 0.20,
-        laborRatePerHour:      s.laborRatePerHour      ?? 30,
-        laborEnabled:          s.laborEnabled === true,
-        tvaEnabled:            s.tvaEnabled === true,
-        tvaPct:                s.tvaPct                ?? 20,
-        targetMarginPct:       s.targetMarginPct       ?? 50,
+        electricityRatePerKwh:  s.electricityRatePerKwh ?? 0.20,
+        laborRatePerHour:       s.laborRatePerHour      ?? 30,
+        laborEnabled:           s.laborEnabled === true,
+        maintenanceCostPerHour: s.maintenanceCostPerHour ?? 0.20,
+        tvaEnabled:             s.tvaEnabled === true,
+        tvaPct:                 s.tvaPct                ?? 20,
+        targetMarginPct:        s.targetMarginPct       ?? 50,
         filaments: Array.isArray(s.filaments) && s.filaments.length
                    ? s.filaments : [..._calcDefaultFilaments],
         printers:  Array.isArray(s.printers) && s.printers.length
@@ -5716,13 +5739,14 @@
     document.getElementById('calcElecRate').value       = _calcState.electricityRatePerKwh;
     document.getElementById('calcLaborRate').value      = _calcState.laborRatePerHour;
     document.getElementById('calcLaborEnabled').checked = _calcState.laborEnabled;
+    document.getElementById('calcMaintenance').value    = _calcState.maintenanceCostPerHour;
     document.getElementById('calcTvaEnabled').checked   = _calcState.tvaEnabled;
     document.getElementById('calcTvaPct').value         = _calcState.tvaPct;
     document.getElementById('calcMarginPct').value      = _calcState.targetMarginPct;
     // Branche l'auto-save sur les champs settings une seule fois ici :
     // les oninput="recomputeCalc()" déjà présents n'enclenchent pas le
     // save, on ajoute un listener dédié qui appelle scheduleAutoSave().
-    ['calcElecRate','calcLaborRate','calcMarginPct','calcTvaPct'].forEach(id => {
+    ['calcElecRate','calcLaborRate','calcMaintenance','calcMarginPct','calcTvaPct'].forEach(id => {
       const el = document.getElementById(id);
       if (el && !el.dataset.autoSaveBound) {
         el.addEventListener('input', scheduleAutoSave);
@@ -5883,12 +5907,13 @@
   }
 
   async function saveCostSettings() {
-    _calcState.electricityRatePerKwh = parseFloat(document.getElementById('calcElecRate').value)  || 0;
-    _calcState.laborRatePerHour      = parseFloat(document.getElementById('calcLaborRate').value) || 0;
-    _calcState.laborEnabled          = document.getElementById('calcLaborEnabled').checked;
-    _calcState.tvaEnabled            = document.getElementById('calcTvaEnabled').checked;
-    _calcState.tvaPct                = parseFloat(document.getElementById('calcTvaPct').value)    || 0;
-    _calcState.targetMarginPct       = parseFloat(document.getElementById('calcMarginPct').value) || 0;
+    _calcState.electricityRatePerKwh   = parseFloat(document.getElementById('calcElecRate').value)    || 0;
+    _calcState.laborRatePerHour        = parseFloat(document.getElementById('calcLaborRate').value)   || 0;
+    _calcState.laborEnabled            = document.getElementById('calcLaborEnabled').checked;
+    _calcState.maintenanceCostPerHour  = parseFloat(document.getElementById('calcMaintenance').value) || 0;
+    _calcState.tvaEnabled              = document.getElementById('calcTvaEnabled').checked;
+    _calcState.tvaPct                  = parseFloat(document.getElementById('calcTvaPct').value)      || 0;
+    _calcState.targetMarginPct         = parseFloat(document.getElementById('calcMarginPct').value)   || 0;
     try {
       await api('PATCH', '/api/cost-settings', _calcState);
       setCalcSaveStatus('saved');
@@ -5979,22 +6004,41 @@
   }
   window.syncBambuPrinters = syncBambuPrinters;
 
-  // Recalcul live : tire le prix du filament sélectionné et la puissance
-  // de l'imprimante sélectionnée, applique élec + main d'œuvre + marge
-  // + TVA optionnelle.
-  // Important : le temps de main d'œuvre est INDÉPENDANT du temps
-  // d'impression (un print de 10h ne demande pas 10h de manipulation).
+  // Pre-fill rapide des champs poids/temps d'un exemple typique.
+  function loadCalcPreset(kind) {
+    const presets = {
+      mini:   { weight: 10,  hours: 0.5 },
+      medium: { weight: 50,  hours: 3   },
+      large:  { weight: 200, hours: 12  },
+    };
+    const p = presets[kind]; if (!p) return;
+    document.getElementById('calcWeight').value = p.weight;
+    document.getElementById('calcHours').value  = p.hours;
+    recomputeCalc();
+  }
+  window.loadCalcPreset = loadCalcPreset;
+
+  // Recalcul live. Formule :
+  //   base   = filament + électricité + entretien
+  //   priceHT = base × (1 + marge/100) + main d'œuvre   ← marge NE
+  //                                                       s'applique
+  //                                                       PAS sur la
+  //                                                       main d'œuvre
+  //   priceTTC = priceHT × (1 + TVA/100)
+  // Le temps de main d'œuvre est indépendant du temps d'impression
+  // (un print de 10h ne demande pas 10h de manipulation).
   function recomputeCalc() {
     const fmt = n => isFinite(n) ? n.toFixed(2) + ' €' : '—';
-    const elecRate    = parseFloat(document.getElementById('calcElecRate').value)    || 0;
-    const laborRate   = parseFloat(document.getElementById('calcLaborRate').value)   || 0;
-    const laborOn     = document.getElementById('calcLaborEnabled').checked;
-    const laborMin    = parseFloat(document.getElementById('calcLaborMinutes').value) || 0;
-    const tvaOn       = document.getElementById('calcTvaEnabled').checked;
-    const tvaPct      = parseFloat(document.getElementById('calcTvaPct').value)      || 0;
-    const margin      = parseFloat(document.getElementById('calcMarginPct').value)   || 0;
-    const weight      = parseFloat(document.getElementById('calcWeight').value)      || 0;
-    const hours       = parseFloat(document.getElementById('calcHours').value)       || 0;
+    const elecRate  = parseFloat(document.getElementById('calcElecRate').value)    || 0;
+    const wearRate  = parseFloat(document.getElementById('calcMaintenance').value) || 0;
+    const laborRate = parseFloat(document.getElementById('calcLaborRate').value)   || 0;
+    const laborOn   = document.getElementById('calcLaborEnabled').checked;
+    const laborMin  = parseFloat(document.getElementById('calcLaborMinutes').value) || 0;
+    const tvaOn     = document.getElementById('calcTvaEnabled').checked;
+    const tvaPct    = parseFloat(document.getElementById('calcTvaPct').value)      || 0;
+    const margin    = parseFloat(document.getElementById('calcMarginPct').value)   || 0;
+    const weight    = parseFloat(document.getElementById('calcWeight').value)      || 0;
+    const hours     = parseFloat(document.getElementById('calcHours').value)       || 0;
 
     const filIdx = parseInt(document.getElementById('calcSelectFilament').value, 10);
     const prnIdx = parseInt(document.getElementById('calcSelectPrinter').value, 10);
@@ -6005,25 +6049,31 @@
 
     const filCost   = (weight / 1000) * filPrice;        // g → kg
     const elecCost  = (power / 1000) * hours * elecRate; // W → kW
+    const wearCost  = wearRate * hours;
     const laborCost = laborOn ? (laborMin / 60) * laborRate : 0;
-    const total     = filCost + elecCost + laborCost;
-    const priceHt   = total * (1 + margin / 100);
-    const tvaAmount = tvaOn ? priceHt * (tvaPct / 100) : 0;
-    const priceTtc  = priceHt + tvaAmount;
-    const profit    = priceHt - total;
+
+    // Marge appliquée seulement sur ce qui est "marquable" (matière,
+    // élec, usure). Main d'œuvre passe au coût coûtant (c'est ton temps).
+    const baseForMargin = filCost + elecCost + wearCost;
+    const totalCost     = baseForMargin + laborCost;
+    const priceHt       = baseForMargin * (1 + margin / 100) + laborCost;
+    const tvaAmount     = tvaOn ? priceHt * (tvaPct / 100) : 0;
+    const priceTtc      = priceHt + tvaAmount;
+    const profit        = priceHt - totalCost;
 
     document.getElementById('calcOutFilament').textContent    = fmt(filCost);
     document.getElementById('calcOutElec').textContent        = fmt(elecCost);
+    document.getElementById('calcOutWear').textContent        = wearRate > 0 ? fmt(wearCost) : 'ignoré';
     document.getElementById('calcOutLabor').textContent       = laborOn ? fmt(laborCost) : 'désactivé';
-    document.getElementById('calcOutTotal').textContent       = fmt(total);
+    document.getElementById('calcOutTotal').textContent       = fmt(totalCost);
     document.getElementById('calcOutFilName').textContent     = fil ? `· ${fil.name || '—'}` : '';
     document.getElementById('calcOutPrinterName').textContent = prn ? `· ${prn.name || '—'}` : '';
 
     // Détails coût / gramme et coût / heure : utile pour comparer les
     // prints entre eux. On affiche "—" si pas de poids / pas de temps
     // pour éviter une division par zéro absurde.
-    document.getElementById('calcOutPerGram').textContent = weight > 0 ? (total / weight).toFixed(3) + ' €/g' : '—';
-    document.getElementById('calcOutPerHour').textContent = hours  > 0 ? (total / hours).toFixed(2)  + ' €/h' : '—';
+    document.getElementById('calcOutPerGram').textContent = weight > 0 ? (totalCost / weight).toFixed(3) + ' €/g' : '—';
+    document.getElementById('calcOutPerHour').textContent = hours  > 0 ? (totalCost / hours).toFixed(2)  + ' €/h' : '—';
 
     document.getElementById('calcOutMarginPct').textContent = `(marge ${margin}%)`;
     document.getElementById('calcOutPriceHt').textContent   = fmt(priceHt);

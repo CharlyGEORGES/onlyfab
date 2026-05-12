@@ -462,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v28';
+const CACHE_VERSION = 'bs-v29';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2334,13 +2334,14 @@ http.createServer(async (req, res) => {
           .map(p => ({ name: cleanStr(p?.name), powerW: num(p?.powerW, 0, 5000) ?? 0 }))
           .filter(p => p.name) : [];
         const clean = {
-          electricityRatePerKwh: num(b.electricityRatePerKwh, 0, 100) ?? 0,
-          laborRatePerHour:      num(b.laborRatePerHour, 0, 10000) ?? 0,
-          laborEnabled:          b.laborEnabled === true,
-          tvaEnabled:            b.tvaEnabled === true,
-          tvaPct:                num(b.tvaPct, 0, 100) ?? 20,
-          targetMarginPct:       num(b.targetMarginPct, 0, 10000) ?? 50,
-          currency:              (typeof b.currency === 'string' && b.currency.length <= 5) ? b.currency : 'EUR',
+          electricityRatePerKwh:   num(b.electricityRatePerKwh, 0, 100) ?? 0,
+          laborRatePerHour:        num(b.laborRatePerHour, 0, 10000) ?? 0,
+          laborEnabled:            b.laborEnabled === true,
+          maintenanceCostPerHour:  num(b.maintenanceCostPerHour, 0, 100) ?? 0,
+          tvaEnabled:              b.tvaEnabled === true,
+          tvaPct:                  num(b.tvaPct, 0, 100) ?? 20,
+          targetMarginPct:         num(b.targetMarginPct, 0, 10000) ?? 50,
+          currency:                (typeof b.currency === 'string' && b.currency.length <= 5) ? b.currency : 'EUR',
           filaments,
           printers,
         };
