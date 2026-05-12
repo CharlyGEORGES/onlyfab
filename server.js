@@ -462,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v21';
+const CACHE_VERSION = 'bs-v22';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2322,13 +2322,24 @@ http.createServer(async (req, res) => {
           if (!isFinite(n)) return null;
           return Math.max(min, Math.min(max, n));
         };
+        const cleanStr = (v, maxLen = 40) =>
+          (typeof v === 'string' ? v.trim().slice(0, maxLen) : '');
+        // Listes filaments / imprimantes : on garde les entrées valides
+        // (nom non vide + valeur numérique sensée). Cap à 50 entrées pour
+        // éviter qu'un client malicieux pollue la base.
+        const filaments = Array.isArray(b.filaments) ? b.filaments.slice(0, 50)
+          .map(f => ({ name: cleanStr(f?.name), pricePerKg: num(f?.pricePerKg, 0, 10000) ?? 0 }))
+          .filter(f => f.name) : [];
+        const printers = Array.isArray(b.printers) ? b.printers.slice(0, 50)
+          .map(p => ({ name: cleanStr(p?.name), powerW: num(p?.powerW, 0, 5000) ?? 0 }))
+          .filter(p => p.name) : [];
         const clean = {
-          filamentPricePerKg:    num(b.filamentPricePerKg, 0, 10000) ?? 0,
           electricityRatePerKwh: num(b.electricityRatePerKwh, 0, 100) ?? 0,
-          printerPowerW:         num(b.printerPowerW, 0, 5000) ?? 0,
           laborRatePerHour:      num(b.laborRatePerHour, 0, 10000) ?? 0,
           targetMarginPct:       num(b.targetMarginPct, 0, 10000) ?? 50,
           currency:              (typeof b.currency === 'string' && b.currency.length <= 5) ? b.currency : 'EUR',
+          filaments,
+          printers,
         };
         db.prepare('UPDATE users SET cost_settings=? WHERE id=?')
           .run(JSON.stringify(clean), userId);
