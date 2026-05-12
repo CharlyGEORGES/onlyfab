@@ -5844,23 +5844,38 @@
         showToast('Aucune imprimante détectée sur ton compte Bambu', 'error');
         return;
       }
-      // Merge : on n'écrase pas une imprimante existante (par nom). On
-      // ajoute uniquement celles qui ne sont pas encore dans la liste.
-      const existingNames = new Set(_calcState.printers.map(p => (p.name || '').toLowerCase().trim()));
+      // Merge : on ajoute les nouvelles imprimantes et on met à jour la
+      // puissance des existantes (matching par nom). Comme la puissance
+      // vient d'une heuristique côté serveur basée sur le modèle, on la
+      // considère comme la source de vérité — si l'user veut une valeur
+      // custom, il l'ajuste après le sync.
+      const byName = new Map(_calcState.printers.map((p, i) => [(p.name || '').toLowerCase().trim(), i]));
       let added = 0;
+      let updated = 0;
       for (const p of fetched) {
         const key = (p.name || '').toLowerCase().trim();
-        if (key && !existingNames.has(key)) {
+        if (!key) continue;
+        if (byName.has(key)) {
+          const idx = byName.get(key);
+          if (_calcState.printers[idx].powerW !== p.powerW) {
+            _calcState.printers[idx].powerW = p.powerW;
+            updated++;
+          }
+        } else {
           _calcState.printers.push({ name: p.name, powerW: p.powerW });
-          existingNames.add(key);
+          byName.set(key, _calcState.printers.length - 1);
           added++;
         }
       }
       renderCalcPrinterList();
       renderCalcSelects();
       recomputeCalc();
-      if (added > 0) showToast(`${added} imprimante(s) ajoutée(s) — pense à enregistrer`);
-      else           showToast('Tes imprimantes Bambu sont déjà dans la liste');
+      const parts = [];
+      if (added)   parts.push(`${added} ajoutée(s)`);
+      if (updated) parts.push(`${updated} mise(s) à jour`);
+      showToast(parts.length
+        ? `${parts.join(' · ')} — pense à enregistrer`
+        : 'Tes imprimantes Bambu sont déjà à jour');
     } catch (err) {
       showToast('Échec sync Bambu : ' + (err.message || ''), 'error');
     }
