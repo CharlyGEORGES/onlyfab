@@ -1186,6 +1186,21 @@
     .feedback-filter-btn:hover { color: var(--text); }
     .feedback-filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
+    /* Modal admin : hauteur fixe + flex column pour que les tabs ne
+       sautent pas en changeant d'onglet, et que le footer (version)
+       reste collé en bas. Sur mobile, la règle @media max-width:480px
+       reprend la main et étire à plein écran. */
+    #adminModal .modal {
+      height: min(85vh, 760px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* le scroll est confié au modal-body, pas au modal */
+    }
+    #adminModal .modal-header { flex-shrink: 0; }
+    #adminModal > .modal > [role="tablist"] { flex-shrink: 0; position: static; }
+    #adminModal .modal-body { flex: 1; overflow-y: auto; min-height: 0; }
+    #adminModal #adminFooter { flex-shrink: 0; }
+
     /* Onglets admin */
     .admin-tab-btn {
       background: transparent; border: none; color: var(--text-muted);
@@ -2888,7 +2903,7 @@
       .btn-icon-header svg { width: 16px; height: 16px; }
       /* Le label du menu user est masqué sur mobile (icône seule) via .user-menu-trigger above */
       /* Version reste visible sur mobile pour faciliter le debug à distance. */
-      #appVersion { font-size: 0.55rem !important; padding: 0 6px !important; opacity: 0.6 !important; }
+      #appVersion { font-size: 0.65rem !important; padding: 0 6px !important; opacity: 0.85 !important; }
       .main-inner { padding: 16px 12px; }
       .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
       .filters { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
@@ -3509,7 +3524,7 @@
     <span class="tab-badge" id="tabBadge" aria-label="Impressions à valider">0</span>
   </button>
   <div class="tab-spacer"></div>
-  <span id="appVersion" style="font-size:0.6rem;color:var(--text-muted);padding:0 8px;align-self:center;opacity:0.5;user-select:none;"></span>
+  <span id="appVersion" style="font-size:0.72rem;color:var(--text-muted);padding:0 10px;align-self:center;opacity:0.9;user-select:none;font-family:ui-monospace,monospace" title="Version actuelle de l'app"></span>
 </nav>
 
 <!-- MAIN -->
@@ -4728,6 +4743,11 @@
         </div>
         <div id="adminFeedbackList" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
+    </div>
+    <!-- Footer admin : version + uptime serveur, toujours visible -->
+    <div id="adminFooter" style="border-top:1px solid var(--border);padding:8px 16px;font-size:0.7rem;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface)">
+      <span style="font-family:ui-monospace,monospace" id="adminFooterVersion">v—</span>
+      <span id="adminFooterUptime"></span>
     </div>
   </div>
 </div>
@@ -6978,6 +6998,12 @@
       const stats = await statsR.json();
       const users = await usersR.json();
       const activity = actR.ok ? await actR.json().catch(() => []) : [];
+
+      // Footer admin : version + uptime, persistants en bas du modal.
+      const vEl = document.getElementById('adminFooterVersion');
+      const uEl = document.getElementById('adminFooterUptime');
+      if (vEl) vEl.textContent = 'v' + (stats.version || '?');
+      if (uEl) uEl.textContent = 'Uptime serveur : ' + fmtUptime(stats.uptime_seconds || 0);
 
       // Section 1 : capacité bêta + onboarding funnel
       const cap = stats.users_capacity || 0;
