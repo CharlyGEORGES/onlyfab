@@ -241,6 +241,10 @@ addColumnIfMissing('referral_visits', 'user_agent', 'TEXT');
 addColumnIfMissing('users', 'referral_note',           'TEXT');
 addColumnIfMissing('users', 'referral_commission_pct', 'REAL DEFAULT 0');
 
+// Note privée admin générique sur n'importe quel utilisateur (contexte,
+// rappel d'échange, signalement). Visible uniquement dans la fiche admin.
+addColumnIfMissing('users', 'admin_note', 'TEXT');
+
 // ── TRAÇABILITÉ DE LA PROVENANCE ─────────────────────────────────────────
 // referred_by_code reste la source originale (le code exact tapé), mais
 // c'est fragile : si on régénère le code du partenaire, on perd le lien.
@@ -586,7 +590,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v43';
+const CACHE_VERSION = 'bs-v44';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2833,7 +2837,7 @@ http.createServer(async (req, res) => {
           const rows = db.prepare(`
             SELECT u.id, u.email, u.name, u.plan, u.is_admin, u.bambu_email,
                    u.created_at, u.last_login, u.last_seen,
-                   u.is_influencer, u.referral_code,
+                   u.is_influencer, u.referral_code, u.referred_by_user_id,
                    (SELECT COUNT(*) FROM items      WHERE user_id=u.id) AS items_count,
                    (SELECT COUNT(*) FROM print_jobs WHERE user_id=u.id) AS prints_count,
                    (SELECT COUNT(*) FROM sessions   WHERE user_id=u.id AND expires_at>datetime('now')) AS active_sessions
@@ -2845,6 +2849,81 @@ http.createServer(async (req, res) => {
             is_influencer:   !!r.is_influencer,
             bambu_connected: getBambuStatus(r.id),
           })));
+          return;
+        }
+
+        // GET /api/admin/users/:id → fiche détaillée pour le modal admin :
+        // user complet + stats 30j/total + provenance (partenaire qui l'a
+        // ramené si applicable) + sessions actives + impressions récentes.
+        if (req.method === 'GET' && parts[2] === 'users' && parts[3] && !parts[4]) {
+          const targetId = parts[3];
+          const u = db.prepare(`
+            SELECT id, email, name, plan, is_admin, is_influencer,
+                   referral_code, referred_by_code, referred_by_user_id,
+                   referral_note, referral_commission_pct, admin_note,
+                   bambu_email, created_at, last_login, last_seen,
+                   onboarding_completed
+            FROM users WHERE id=?
+          `).get(targetId);
+          if (!u) { json(res, { error: 'Utilisateur introuvable' }, 404); return; }
+
+          const stats = {
+            items_count:      db.prepare('SELECT COUNT(*) AS c FROM items WHERE user_id=?').get(targetId).c,
+            prints_total:     db.prepare('SELECT COUNT(*) AS c FROM print_jobs WHERE user_id=?').get(targetId).c,
+            prints_30d:       db.prepare(`SELECT COUNT(*) AS c FROM print_jobs WHERE user_id=? AND ts > datetime('now','-30 days')`).get(targetId).c,
+            prints_7d:        db.prepare(`SELECT COUNT(*) AS c FROM print_jobs WHERE user_id=? AND ts > datetime('now','-7 days')`).get(targetId).c,
+            categories_count: db.prepare('SELECT COUNT(*) AS c FROM categories WHERE user_id=?').get(targetId).c,
+            active_sessions:  db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE user_id=? AND expires_at>datetime('now')`).get(targetId).c,
+          };
+
+          // Provenance : si filleul, on remonte les infos du partenaire.
+          let provenance = null;
+          if (u.referred_by_user_id) {
+            const p = db.prepare('SELECT id, name, email, referral_code FROM users WHERE id=?').get(u.referred_by_user_id);
+            if (p) {
+              provenance = {
+                partner_id:    p.id,
+                partner_name:  p.name,
+                partner_email: p.email,
+                partner_code:  p.referral_code,
+                signup_code:   u.referred_by_code,
+              };
+            }
+          } else if (u.referred_by_code) {
+            // Cas exotique : code en base mais pas de user_id résolu
+            provenance = { partner_id: null, partner_name: null, partner_email: null, partner_code: null, signup_code: u.referred_by_code };
+          }
+
+          // Si ce user est lui-même partenaire, on remonte ses filleuls (compte)
+          const referredCount = db.prepare('SELECT COUNT(*) AS c FROM users WHERE referred_by_user_id=?').get(targetId).c;
+
+          // Dernières impressions (10) pour avoir une idée de l'activité
+          const recentPrints = db.prepare(`
+            SELECT id, file_name AS label, status, ts AS started_at, printer_name AS printer
+            FROM print_jobs WHERE user_id=?
+            ORDER BY ts DESC LIMIT 10
+          `).all(targetId);
+
+          json(res, {
+            user: {
+              id: u.id, email: u.email, name: u.name, plan: u.plan,
+              is_admin: !!u.is_admin, is_influencer: !!u.is_influencer,
+              referral_code: u.referral_code,
+              referral_note: u.referral_note || '',
+              referral_commission_pct: u.referral_commission_pct || 0,
+              admin_note: u.admin_note || '',
+              bambu_email: u.bambu_email,
+              bambu_connected: getBambuStatus(u.id),
+              created_at: u.created_at,
+              last_login: u.last_login,
+              last_seen:  u.last_seen,
+              onboarding_completed: !!u.onboarding_completed,
+            },
+            stats,
+            provenance,
+            referred_count: referredCount,
+            recent_prints:  recentPrints,
+          });
           return;
         }
 
@@ -2889,6 +2968,9 @@ http.createServer(async (req, res) => {
               json(res, { error: 'Commission entre 0 et 100' }, 400); return;
             }
             updates.push('referral_commission_pct=:rcp'); params.rcp = n;
+          }
+          if (typeof b.admin_note === 'string') {
+            updates.push('admin_note=:an'); params.an = b.admin_note.slice(0, 4000);
           }
           if (!updates.length) { json(res, { ok: true }); return; }
           params.id = targetId;

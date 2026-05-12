@@ -1166,6 +1166,16 @@
     }
     .feedback-type-radio input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
 
+    /* Filtres utilisateurs */
+    .user-filter-chip {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+      padding: 4px 10px; font-size: 0.74rem; font-weight: 500;
+      border-radius: 999px; cursor: pointer; font-family: inherit;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    .user-filter-chip:hover { color: var(--text); }
+    .user-filter-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
     /* Filtres feedback */
     .feedback-filter-btn {
       background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
@@ -4648,6 +4658,36 @@
 
       <!-- Onglet Utilisateurs -->
       <div id="adminTabUsers" class="admin-tab-panel" role="tabpanel" aria-labelledby="adminTabUsersBtn" hidden>
+        <!-- Toolbar : recherche + tri (filtre client-side, refresh instantané) -->
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+          <div style="position:relative;flex:1;min-width:180px">
+            <input type="search" id="adminUsersSearch" placeholder="🔍 Email, nom, code…" oninput="renderAdminUsersList()"
+                   style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px 7px 10px;color:var(--text);font-size:0.85rem;box-sizing:border-box">
+          </div>
+          <select id="adminUsersSort" onchange="renderAdminUsersList()" title="Tri"
+                  style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 8px;font-size:0.78rem;cursor:pointer">
+            <option value="recent">Plus récents</option>
+            <option value="oldest">Plus anciens</option>
+            <option value="lastseen">Activité récente</option>
+            <option value="prints">Plus d'impressions</option>
+            <option value="items">Plus d'articles</option>
+            <option value="name">Nom (A→Z)</option>
+          </select>
+          <div id="adminUsersStats" style="font-size:0.72rem;color:var(--text-muted);font-family:ui-monospace,monospace;margin-left:auto"></div>
+        </div>
+        <!-- Filtres : chips multi-non-exclusives -->
+        <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+          <button type="button" class="user-filter-chip active" data-filter="all"     onclick="setUserFilter('all')">Tous</button>
+          <button type="button" class="user-filter-chip"        data-filter="admin"   onclick="setUserFilter('admin')">🛡 Admins</button>
+          <button type="button" class="user-filter-chip"        data-filter="partner" onclick="setUserFilter('partner')">★ Partenaires</button>
+          <button type="button" class="user-filter-chip"        data-filter="bambu"   onclick="setUserFilter('bambu')">🖨 Bambu</button>
+          <button type="button" class="user-filter-chip"        data-filter="recent"  onclick="setUserFilter('recent')">🆕 Nouveaux 7j</button>
+          <button type="button" class="user-filter-chip"        data-filter="active"  onclick="setUserFilter('active')">🟢 Actifs 7j</button>
+          <button type="button" class="user-filter-chip"        data-filter="dormant" onclick="setUserFilter('dormant')">💤 Inactifs &gt;30j</button>
+        </div>
+        <!-- Activité récente (rendu par refreshAdminPanel) -->
+        <div id="adminUsersActivity"></div>
+        <!-- Liste -->
         <div id="adminUsers" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
 
@@ -4689,6 +4729,21 @@
         </div>
         <div id="adminFeedbackList" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN USER DETAIL MODAL -->
+<div class="modal-overlay" id="userDetailModal" role="dialog" aria-modal="true" aria-labelledby="userDetailTitle" aria-hidden="true">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <div class="modal-title" id="userDetailTitle">Détail utilisateur</div>
+      <button class="close-btn" onclick="closeUserDetailModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="userDetailBody">
+      <div style="text-align:center;color:var(--text-muted);padding:30px">Chargement…</div>
     </div>
   </div>
 </div>
@@ -6999,8 +7054,9 @@
           </div>`).join('')}
       `;
 
-      // Section activité récente
-      let activityHtml = '<div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin:18px 0 8px">Activité récente</div>';
+      // Section activité récente — rendue dans un conteneur dédié au-dessus
+      // de la liste utilisateurs (pas dans #adminUsers, sinon le filtre la balaye).
+      let activityHtml = '<div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin:0 0 8px">Activité récente</div>';
       if (Array.isArray(activity) && activity.length) {
         activityHtml += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px">';
         activityHtml += activity.map(a => {
@@ -7019,52 +7075,11 @@
         }).join('');
         activityHtml += '</div>';
       }
-      // Insère l'activité avant la liste utilisateurs
-      const usersEl = document.getElementById('adminUsers');
-      if (!Array.isArray(users) || !users.length) {
-        usersEl.innerHTML = activityHtml + '<div style="text-align:center;color:var(--text-muted);padding:24px">Aucun utilisateur</div>';
-        return;
-      }
-      usersEl.innerHTML = activityHtml +
-        '<div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px">Tous les utilisateurs</div>' +
-        users.map(u => {
-        const created = u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '—';
-        // "vu" = dernière fois où l'app a été ouverte (last_seen, mis à jour
-        // sur chaque requête authentifiée). Fallback sur last_login pour les
-        // anciens comptes qui n'ont pas encore de last_seen.
-        const seenTs  = u.last_seen || u.last_login;
-        const seenStr = seenTs ? new Date(seenTs).toLocaleDateString('fr-FR') : 'jamais';
-        const loginStr = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR') : 'jamais';
-        return `
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
-          <div style="flex:1;min-width:180px">
-            <div style="font-weight:700;font-size:0.92rem;display:flex;align-items:center;gap:6px">
-              ${escHtml(u.name || u.email)}
-              ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px;letter-spacing:0.04em">ADMIN</span>' : ''}
-              ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.6rem;padding:2px 6px;border-radius:4px">BAMBU</span>' : ''}
-            </div>
-            <div style="font-size:0.75rem;color:var(--text-muted)">${escHtml(u.email)}</div>
-            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px" title="vu : dernière ouverture de l'app · login : dernière saisie email/mdp">
-              ${u.items_count} articles · ${u.prints_count} impressions · inscrit ${created} · vu ${seenStr} · login ${loginStr}
-            </div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <select onchange="adminSetPlan('${escAttr(u.id)}', this.value)" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 6px;font-size:0.75rem">
-              <option value="beta"${u.plan==='beta'?' selected':''}>beta</option>
-              <option value="free"${u.plan==='free'?' selected':''}>free</option>
-              <option value="pro"${u.plan==='pro'?' selected':''}>pro</option>
-              <option value="studio"${u.plan==='studio'?' selected':''}>studio</option>
-            </select>
-            <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin})" title="${u.is_admin?'Retirer admin':'Promouvoir admin'}" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:0.72rem;cursor:pointer">
-              ${u.is_admin ? '↓ user' : '↑ admin'}
-            </button>
-            <button onclick="adminEditInfluencer('${escAttr(u.id)}', '${escAttr(u.referral_code || '')}')" title="${u.referral_code ? 'Code partenaire : ' + u.referral_code : 'Activer comme partenaire'}" style="background:transparent;border:1px solid ${u.referral_code ? 'var(--primary)' : 'var(--border)'};border-radius:6px;color:${u.referral_code ? 'var(--primary)' : 'var(--text)'};padding:4px 8px;font-size:0.72rem;cursor:pointer">
-              ${u.referral_code ? '★ ' + escHtml(u.referral_code) : '+ partenaire'}
-            </button>
-            <button onclick="adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" title="Supprimer" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:4px 8px;font-size:0.72rem;cursor:pointer">✕</button>
-          </div>
-        </div>`;
-      }).join('');
+      document.getElementById('adminUsersActivity').innerHTML = activityHtml;
+
+      // Cache les users + render via la fonction filtrable.
+      _adminUsersCache = Array.isArray(users) ? users : [];
+      renderAdminUsersList();
     } catch (e) {
       document.getElementById('adminUsers').innerHTML =
         '<div style="color:var(--danger);padding:12px">Erreur de chargement : ' + (e.message || e) + '</div>';
@@ -7072,6 +7087,262 @@
     // Rafraîchit aussi la section partenaires dans la foulée (fire-and-forget).
     refreshAdminPartners();
   }
+
+  // ── ADMIN : LISTE UTILISATEURS (filtre + tri client-side) ─────────────────
+  let _adminUsersCache  = [];
+  let _adminUsersFilter = 'all';
+
+  function setUserFilter(f) {
+    _adminUsersFilter = f;
+    document.querySelectorAll('.user-filter-chip').forEach(b => {
+      b.classList.toggle('active', b.dataset.filter === f);
+    });
+    renderAdminUsersList();
+  }
+  window.setUserFilter = setUserFilter;
+
+  function _userMatchesFilter(u, filter) {
+    const now = Date.now();
+    const seenTs = u.last_seen || u.last_login;
+    const seenAgeDays  = seenTs ? (now - new Date(seenTs).getTime()) / 86400000 : Infinity;
+    const createdAgeDays = u.created_at ? (now - new Date(u.created_at).getTime()) / 86400000 : Infinity;
+    switch (filter) {
+      case 'admin':   return !!u.is_admin;
+      case 'partner': return !!u.referral_code;
+      case 'bambu':   return u.bambu_connected === 'connected';
+      case 'recent':  return createdAgeDays < 7;
+      case 'active':  return seenAgeDays  < 7;
+      case 'dormant': return seenAgeDays  > 30;
+      default:        return true;
+    }
+  }
+
+  function _userMatchesSearch(u, q) {
+    if (!q) return true;
+    const needle = q.toLowerCase();
+    return (
+      (u.email          || '').toLowerCase().includes(needle) ||
+      (u.name           || '').toLowerCase().includes(needle) ||
+      (u.referral_code  || '').toLowerCase().includes(needle)
+    );
+  }
+
+  function _userSortCompare(a, b, key) {
+    switch (key) {
+      case 'oldest':   return new Date(a.created_at) - new Date(b.created_at);
+      case 'lastseen': return new Date(b.last_seen || b.last_login || 0) - new Date(a.last_seen || a.last_login || 0);
+      case 'prints':   return (b.prints_count || 0) - (a.prints_count || 0);
+      case 'items':    return (b.items_count  || 0) - (a.items_count  || 0);
+      case 'name':     return (a.name || a.email || '').localeCompare(b.name || b.email || '');
+      case 'recent':
+      default:         return new Date(b.created_at) - new Date(a.created_at);
+    }
+  }
+
+  function renderAdminUsersList() {
+    const usersEl = document.getElementById('adminUsers');
+    if (!usersEl) return;
+    const q   = (document.getElementById('adminUsersSearch')?.value || '').trim();
+    const key = document.getElementById('adminUsersSort')?.value || 'recent';
+    const all = _adminUsersCache || [];
+    const filtered = all
+      .filter(u => _userMatchesFilter(u, _adminUsersFilter) && _userMatchesSearch(u, q))
+      .sort((a, b) => _userSortCompare(a, b, key));
+
+    const statsEl = document.getElementById('adminUsersStats');
+    if (statsEl) statsEl.textContent = filtered.length + ' / ' + all.length;
+
+    if (!filtered.length) {
+      usersEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;font-size:0.88rem">Aucun utilisateur ne correspond à ce filtre.</div>';
+      return;
+    }
+
+    usersEl.innerHTML = filtered.map(u => {
+      const created = u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '—';
+      const seenTs  = u.last_seen || u.last_login;
+      const seenStr = seenTs ? new Date(seenTs).toLocaleDateString('fr-FR') : 'jamais';
+      const loginStr = u.last_login ? new Date(u.last_login).toLocaleDateString('fr-FR') : 'jamais';
+      return `
+      <div onclick="openUserDetail('${escAttr(u.id)}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .15s,background .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="flex:1;min-width:180px">
+          <div style="font-weight:700;font-size:0.92rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${escHtml(u.name || u.email)}
+            ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px;letter-spacing:0.04em">ADMIN</span>' : ''}
+            ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.6rem;padding:2px 6px;border-radius:4px">BAMBU</span>' : ''}
+            ${u.referral_code ? `<span style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:0.6rem;padding:1px 6px;border-radius:4px;font-family:ui-monospace,monospace">★ ${escHtml(u.referral_code)}</span>` : ''}
+            <span style="background:var(--surface);color:var(--text-muted);font-size:0.6rem;padding:2px 6px;border-radius:4px;border:1px solid var(--border)">${escHtml(u.plan || 'beta')}</span>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted)">${escHtml(u.email)}</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px" title="vu : dernière ouverture · login : dernière saisie email/mdp">
+            ${u.items_count} articles · ${u.prints_count} impressions · inscrit ${created} · vu ${seenStr} · login ${loginStr}
+          </div>
+        </div>
+        <div onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <select onchange="adminSetPlan('${escAttr(u.id)}', this.value)" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 6px;font-size:0.75rem">
+            <option value="beta"${u.plan==='beta'?' selected':''}>beta</option>
+            <option value="free"${u.plan==='free'?' selected':''}>free</option>
+            <option value="pro"${u.plan==='pro'?' selected':''}>pro</option>
+            <option value="studio"${u.plan==='studio'?' selected':''}>studio</option>
+          </select>
+          <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin})" title="${u.is_admin?'Retirer admin':'Promouvoir admin'}" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:0.72rem;cursor:pointer">
+            ${u.is_admin ? '↓' : '↑'}
+          </button>
+          <button onclick="adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" title="Supprimer" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:4px 8px;font-size:0.72rem;cursor:pointer">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  window.renderAdminUsersList = renderAdminUsersList;
+
+  // ── ADMIN : FICHE DÉTAILLÉE UTILISATEUR ──────────────────────────────────
+  let _currentUserDetailId = null;
+  async function openUserDetail(uid) {
+    _currentUserDetailId = uid;
+    const modal = document.getElementById('userDetailModal');
+    const body  = document.getElementById('userDetailBody');
+    document.getElementById('userDetailTitle').textContent = 'Détail utilisateur';
+    body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px">Chargement…</div>';
+    modal.classList.add('open');
+    try {
+      const r = await fetch('/api/admin/users/' + encodeURIComponent(uid));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const u = d.user;
+      document.getElementById('userDetailTitle').textContent = u.name || u.email;
+
+      const seenTs = u.last_seen || u.last_login;
+      const created = u.created_at ? new Date(u.created_at).toLocaleString('fr-FR', { dateStyle:'medium', timeStyle:'short' }) : '—';
+
+      const provHtml = d.provenance ? (
+        d.provenance.partner_id
+          ? `<div onclick="closeUserDetailModal();openPartnerDetail('${escAttr(d.provenance.partner_id)}')" style="cursor:pointer;background:var(--surface);border:1px solid var(--primary);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:2px">Inscrit via</div>
+                <div style="font-weight:700;font-size:0.88rem">★ ${escHtml(d.provenance.partner_name || d.provenance.partner_email)}</div>
+                <div style="font-size:0.7rem;color:var(--text-muted)">${escHtml(d.provenance.partner_email)} · code utilisé : <span style="font-family:ui-monospace,monospace;color:var(--text)">${escHtml(d.provenance.signup_code || '—')}</span></div>
+              </div>
+              <span style="color:var(--primary);font-size:0.85rem">Voir partenaire →</span>
+            </div>`
+          : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:2px">Inscrit avec code</div>
+              <div style="font-family:ui-monospace,monospace;font-size:0.85rem">${escHtml(d.provenance.signup_code)}</div>
+              <div style="font-size:0.7rem;color:var(--danger);margin-top:2px">⚠ Partenaire introuvable (compte supprimé)</div>
+            </div>`
+      ) : '';
+
+      const referredHtml = d.referred_count > 0
+        ? `<div style="background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;margin-top:8px">
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:2px">Est lui-même partenaire</div>
+            <div style="font-weight:700;font-size:0.88rem;color:var(--accent)">${d.referred_count} filleul${d.referred_count > 1 ? 's' : ''}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px">Code : <span style="font-family:ui-monospace,monospace;color:var(--text)">${escHtml(u.referral_code || '—')}</span></div>
+          </div>`
+        : '';
+
+      body.innerHTML = `
+        <div style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+            <span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">${escHtml(u.plan || 'beta')}</span>
+            ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:2px 8px;border-radius:4px">ADMIN</span>' : ''}
+            ${u.is_influencer ? '<span style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:0.65rem;padding:2px 8px;border-radius:4px">★ Partenaire</span>' : ''}
+            ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.65rem;padding:2px 8px;border-radius:4px">BAMBU ✓</span>' : (u.bambu_email ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Bambu déconnecté</span>' : '')}
+            ${u.onboarding_completed ? '' : '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Onboarding incomplet</span>'}
+          </div>
+          <div style="font-size:0.78rem;color:var(--text-muted)">${escHtml(u.email)} · inscrit ${created}</div>
+        </div>
+
+        <!-- Stats grid -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:6px;margin-bottom:18px">
+          ${[
+            ['Articles',       d.stats.items_count,      'var(--text)'],
+            ['Catégories',     d.stats.categories_count, 'var(--text-muted)'],
+            ['Prints (tot)',   d.stats.prints_total,     'var(--text)'],
+            ['Prints 30j',     d.stats.prints_30d,       'var(--accent)'],
+            ['Prints 7j',      d.stats.prints_7d,        'var(--accent)'],
+            ['Sessions',       d.stats.active_sessions,  'var(--primary)'],
+          ].map(([l, v, color]) => `
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 6px;text-align:center">
+              <div style="font-size:1.1rem;font-weight:800;color:${color}">${v ?? 0}</div>
+              <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">${l}</div>
+            </div>`).join('')}
+        </div>
+
+        <!-- Provenance -->
+        ${(provHtml || referredHtml) ? `
+          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Provenance</h3>
+          <div style="margin-bottom:16px">
+            ${provHtml}
+            ${referredHtml}
+          </div>` : ''}
+
+        <!-- Note privée admin -->
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Note privée admin</h3>
+        <textarea id="userDetailNote" rows="3" onblur="saveUserDetailNote()" placeholder="Contexte, rappel d'échange, signalement…"
+                  style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:0.82rem;font-family:inherit;resize:vertical;box-sizing:border-box;margin-bottom:18px">${escHtml(u.admin_note || '')}</textarea>
+
+        <!-- Activité d'impression -->
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Dernières impressions</h3>
+        ${d.recent_prints && d.recent_prints.length ? `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:18px">
+            ${d.recent_prints.map((p, i) => {
+              const when = p.started_at ? _fmtRelTime(p.started_at) : '—';
+              const statusIc = p.status === 'done' ? '✅' : p.status === 'pending' ? '⏳' : '🗑';
+              return `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;${i ? 'border-top:1px solid var(--border)' : ''};gap:10px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:0.82rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${statusIc} ${escHtml(p.label || 'Impression')}</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted)">${escHtml(p.printer || '—')}</div>
+                  </div>
+                  <div style="font-size:0.72rem;color:var(--text-muted);flex-shrink:0">${when}</div>
+                </div>`;
+            }).join('')}
+          </div>
+        ` : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;color:var(--text-muted);font-size:0.8rem;margin-bottom:18px">Aucune impression enregistrée.</div>'}
+
+        <!-- Actions admin -->
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Actions</h3>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer">
+            Plan
+            <select onchange="adminSetPlan('${escAttr(u.id)}', this.value).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:0.78rem">
+              <option value="beta"${u.plan==='beta'?' selected':''}>beta</option>
+              <option value="free"${u.plan==='free'?' selected':''}>free</option>
+              <option value="pro"${u.plan==='pro'?' selected':''}>pro</option>
+              <option value="studio"${u.plan==='studio'?' selected':''}>studio</option>
+            </select>
+          </label>
+          <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin}).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 12px;font-size:0.78rem;cursor:pointer">
+            ${u.is_admin ? '↓ Retirer admin' : '↑ Promouvoir admin'}
+          </button>
+          <button onclick="adminEditInfluencer('${escAttr(u.id)}', '${escAttr(u.referral_code || '')}').then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid ${u.referral_code ? 'var(--primary)' : 'var(--border)'};border-radius:6px;color:${u.referral_code ? 'var(--primary)' : 'var(--text)'};padding:6px 12px;font-size:0.78rem;cursor:pointer">
+            ${u.referral_code ? '★ Modifier code partenaire' : '+ Activer comme partenaire'}
+          </button>
+          <button onclick="closeUserDetailModal();adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:6px 12px;font-size:0.78rem;cursor:pointer;margin-left:auto">
+            ✕ Supprimer
+          </button>
+        </div>
+      `;
+    } catch (e) {
+      body.innerHTML = '<div style="color:var(--danger);padding:18px">Erreur : ' + (e.message || e) + '</div>';
+    }
+  }
+  window.openUserDetail = openUserDetail;
+
+  function closeUserDetailModal() {
+    document.getElementById('userDetailModal').classList.remove('open');
+    _currentUserDetailId = null;
+  }
+  window.closeUserDetailModal = closeUserDetailModal;
+
+  async function saveUserDetailNote() {
+    if (!_currentUserDetailId) return;
+    const note = document.getElementById('userDetailNote')?.value ?? '';
+    await fetch('/api/admin/users/' + encodeURIComponent(_currentUserDetailId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_note: note }),
+    }).catch(() => {});
+  }
+  window.saveUserDetailNote = saveUserDetailNote;
 
   // ── ADMIN : SECTION PARTENAIRES ───────────────────────────────────────────
   // Charge les stats globales + la liste de tous les partenaires actifs.
