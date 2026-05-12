@@ -3188,6 +3188,71 @@
       width: 16px;
       height: 16px;
     }
+    /* En-tête de colonnes au-dessus des listes filament/imprimante :
+       même grid que les .calc-row pour aligner les libellés "Puissance",
+       "Entretien & usure"… Évite que l'user se demande à quoi correspond
+       la 3e colonne d'un input ano­nyme. */
+    .calc-list-header {
+      display: grid;
+      gap: 8px;
+      align-items: center;
+      font-size: 0.66rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0 4px 4px;
+    }
+    .calc-list-header.for-filament { grid-template-columns: 1fr 100px 32px; }
+    .calc-list-header.for-printer  { grid-template-columns: 1fr 78px 78px 32px; }
+    .calc-list-header > span:not(:first-child):not(:last-child) {
+      text-align: center;
+    }
+    @media (max-width: 480px) {
+      .calc-list-header.for-printer { grid-template-columns: 1fr 60px 60px 28px; gap: 6px; }
+    }
+    /* Sections "main d'œuvre" et "TVA" : visuellement groupées dans
+       une carte douce, le toggle dessus, l'input qui apparaît dessous.
+       Indique clairement la relation entre le check et le champ. */
+    .calc-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .calc-section-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: normal;
+      margin: 0;
+    }
+    .calc-section-toggle input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+      flex-shrink: 0;
+    }
+    .calc-section-body {
+      margin-top: 10px;
+    }
+    .calc-section-body .form-group {
+      margin-bottom: 0;
+    }
+    .calc-hint {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin: 4px 0 0;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: normal;
+    }
     .calc-save-status {
       display: inline-flex;
       align-items: center;
@@ -4116,45 +4181,59 @@
     </div>
     <div class="modal-body">
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Paramètres généraux</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
-        <div class="form-group">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="form-group" style="margin-bottom:0">
           <label for="calcElecRate">Électricité (€/kWh)</label>
           <input type="number" id="calcElecRate" min="0" step="0.01" inputmode="decimal" oninput="recomputeCalc()">
         </div>
-        <div class="form-group" style="grid-column:1 / -1">
-          <label for="calcMarginPct">Marge cible (%) <span style="color:var(--text-muted);font-weight:400">— appliquée sur filament + impression, pas sur main d'œuvre</span></label>
+        <div class="form-group" style="margin-bottom:0">
+          <label for="calcMarginPct">Marge cible (%)</label>
           <input type="number" id="calcMarginPct" min="0" step="5" inputmode="numeric" oninput="recomputeCalc()">
-        </div>
-        <div class="form-group" style="grid-column:1 / -1;margin-bottom:0">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
-            <input type="checkbox" id="calcLaborEnabled" onchange="onLaborToggle()" style="width:auto;margin:0">
-            <span>Inclure la main d'œuvre dans le calcul</span>
-          </label>
-        </div>
-        <div class="form-group" id="calcLaborRateGroup" style="grid-column:1 / -1;display:none">
-          <label for="calcLaborRate">Taux main d'œuvre (€/h)</label>
-          <input type="number" id="calcLaborRate" min="0" step="1" inputmode="decimal" oninput="recomputeCalc()">
-        </div>
-        <div class="form-group" style="grid-column:1 / -1;margin-bottom:0">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
-            <input type="checkbox" id="calcTvaEnabled" onchange="onTvaToggle()" style="width:auto;margin:0">
-            <span>Appliquer la TVA au prix conseillé</span>
-          </label>
-        </div>
-        <div class="form-group" id="calcTvaPctGroup" style="grid-column:1 / -1;display:none">
-          <label for="calcTvaPct">Taux de TVA (%)</label>
-          <input type="number" id="calcTvaPct" min="0" max="100" step="0.5" inputmode="decimal" oninput="recomputeCalc()">
+          <p class="calc-hint">Appliquée sur filament + impression, pas sur main d'œuvre.</p>
         </div>
       </div>
 
-      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:14px 0 8px">Filaments (prix par kg)</h3>
+      <!-- Section main d'œuvre : toggle + champ qui apparaît si activé -->
+      <div class="calc-section">
+        <label class="calc-section-toggle">
+          <input type="checkbox" id="calcLaborEnabled" onchange="onLaborToggle()">
+          <span>Inclure la main d'œuvre</span>
+        </label>
+        <div class="calc-section-body" id="calcLaborRateGroup" style="display:none">
+          <div class="form-group">
+            <label for="calcLaborRate">Taux main d'œuvre (€/h)</label>
+            <input type="number" id="calcLaborRate" min="0" step="1" inputmode="decimal" oninput="recomputeCalc()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Section TVA : toggle + taux -->
+      <div class="calc-section">
+        <label class="calc-section-toggle">
+          <input type="checkbox" id="calcTvaEnabled" onchange="onTvaToggle()">
+          <span>Appliquer la TVA au prix conseillé</span>
+        </label>
+        <div class="calc-section-body" id="calcTvaPctGroup" style="display:none">
+          <div class="form-group">
+            <label for="calcTvaPct">Taux de TVA (%)</label>
+            <input type="number" id="calcTvaPct" min="0" max="100" step="0.5" inputmode="decimal" oninput="recomputeCalc()">
+          </div>
+        </div>
+      </div>
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:14px 0 8px">Filaments</h3>
+      <div class="calc-list-header for-filament">
+        <span>Nom</span>
+        <span>Prix au kg</span>
+        <span></span>
+      </div>
       <div id="calcFilamentList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       <button type="button" onclick="addCalcFilament()" style="background:transparent;color:var(--primary);border:1px dashed var(--primary);border-radius:8px;padding:7px 10px;font-size:0.8rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:6px">
         + Ajouter un filament
       </button>
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px;gap:8px">
-        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0">Imprimantes (puissance en W)</h3>
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0">Imprimantes</h3>
         <button type="button" onclick="syncBambuPrinters()" title="Importer les imprimantes liées à votre compte Bambu Lab"
                 style="background:var(--surface2);color:var(--primary);border:1px solid var(--border);border-radius:6px;padding:4px 9px;font-size:0.72rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12" aria-hidden="true">
@@ -4162,6 +4241,12 @@
           </svg>
           Sync Bambu
         </button>
+      </div>
+      <div class="calc-list-header for-printer">
+        <span>Nom</span>
+        <span title="Puissance moyenne pendant un print">Puissance</span>
+        <span title="Coût horaire d'amortissement et de consommables">Entretien & usure</span>
+        <span></span>
       </div>
       <div id="calcPrinterList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       <button type="button" onclick="addCalcPrinter()" style="background:transparent;color:var(--primary);border:1px dashed var(--primary);border-radius:8px;padding:7px 10px;font-size:0.8rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:14px">
