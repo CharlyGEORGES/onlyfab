@@ -462,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v22';
+const CACHE_VERSION = 'bs-v23';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2336,6 +2336,7 @@ http.createServer(async (req, res) => {
         const clean = {
           electricityRatePerKwh: num(b.electricityRatePerKwh, 0, 100) ?? 0,
           laborRatePerHour:      num(b.laborRatePerHour, 0, 10000) ?? 0,
+          laborEnabled:          b.laborEnabled === true,
           targetMarginPct:       num(b.targetMarginPct, 0, 10000) ?? 50,
           currency:              (typeof b.currency === 'string' && b.currency.length <= 5) ? b.currency : 'EUR',
           filaments,
@@ -2344,6 +2345,35 @@ http.createServer(async (req, res) => {
         db.prepare('UPDATE users SET cost_settings=? WHERE id=?')
           .run(JSON.stringify(clean), userId);
         json(res, { ok: true, settings: clean });
+        return;
+      }
+
+      // GET /api/bambu/printers → liste des imprimantes Bambu liées au
+      // compte, avec puissance déduite du modèle (heuristique). Utilisé
+      // par le calculateur pour pré-remplir la liste d'imprimantes.
+      // Renvoie { configured: bool, printers: [...] }.
+      if (req.method === 'GET' && url === '/api/bambu/printers') {
+        const u = db.prepare('SELECT bambu_token, bambu_printers FROM users WHERE id=?').get(userId);
+        const configured = !!u?.bambu_token;
+        const stored = u?.bambu_printers ? safeParseJson(u.bambu_printers, []) : [];
+        // Heuristique puissance d'après le modèle ou le nom : valeurs
+        // approximatives qui couvrent la gamme Bambu actuelle. L'user
+        // peut ajuster manuellement après.
+        const inferPowerW = (name = '', model = '') => {
+          const s = (name + ' ' + model).toUpperCase();
+          if (s.includes('A1') && s.includes('MINI')) return 100;
+          if (s.includes('A1'))                       return 150;
+          if (s.includes('X1'))                       return 350;
+          if (s.includes('P1'))                       return 200;
+          return 150;
+        };
+        const out = stored.map(p => ({
+          name:   p.name || p.serial,
+          serial: p.serial,
+          model:  p.model || null,
+          powerW: inferPowerW(p.name, p.model),
+        }));
+        json(res, { configured, printers: out });
         return;
       }
 
