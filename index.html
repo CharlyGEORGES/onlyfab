@@ -6146,7 +6146,12 @@
       } else {
         list.innerHTML = d.recentSignups.map(r => {
           const dt = new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-          return `<div style="padding:4px 0;border-bottom:1px solid var(--border)">Nouvelle inscription · ${dt} · plan ${escHtml(r.plan || 'beta')}</div>`;
+          const email = r.email_masked ? `<span style="font-family:ui-monospace,monospace;color:var(--text-muted)">${escHtml(r.email_masked)}</span>` : '';
+          return `<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+            <span style="color:var(--accent);font-weight:600">✓ Nouvelle inscription</span>
+            ${email}
+            <span style="color:var(--text-muted);font-size:0.72rem">${dt} · ${escHtml(r.plan || 'beta')}</span>
+          </div>`;
         }).join('');
       }
     } catch (err) {
@@ -6910,19 +6915,27 @@
         const conv  = p.visits_total ? ((p.signups_total / p.visits_total) * 100).toFixed(1) + '%' : '—';
         const lastV = _fmtRelTime(p.last_visit_at);
         const lastS = _fmtRelTime(p.last_signup_at);
+        const disabled = !p.is_influencer;
+        const commission = p.referral_commission_pct
+          ? `<span style="background:var(--accent);color:#000;font-size:0.6rem;padding:2px 6px;border-radius:4px;letter-spacing:0.04em">${p.referral_commission_pct}%</span>`
+          : '';
         return `
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px${disabled ? ';opacity:.55' : ''}">
           <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap;margin-bottom:10px">
             <div style="flex:1;min-width:160px">
-              <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:0.92rem">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:0.92rem;flex-wrap:wrap">
                 ${escHtml(p.name || p.email)}
                 <span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px;letter-spacing:0.04em;font-family:ui-monospace,monospace">${escHtml(p.referral_code)}</span>
+                ${commission}
+                ${disabled ? '<span style="background:var(--text-muted);color:#000;font-size:0.6rem;padding:2px 6px;border-radius:4px;letter-spacing:0.04em">DÉSACTIVÉ</span>' : ''}
               </div>
               <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">${escHtml(p.email)}</div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button onclick="openPartnerDetail('${escAttr(p.id)}')" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">Détail →</button>
-              <button onclick="adminEditInfluencer('${escAttr(p.id)}', '${escAttr(p.referral_code || '')}')" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 10px;font-size:0.72rem;cursor:pointer">Modifier</button>
+              <button onclick="adminTogglePartnerActive('${escAttr(p.id)}', ${!disabled})" title="${disabled ? 'Réactiver' : 'Désactiver temporairement'}" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 10px;font-size:0.72rem;cursor:pointer">
+                ${disabled ? '▶ Activer' : '⏸ Désactiver'}
+              </button>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(82px,1fr));gap:6px;font-size:0.72rem">
@@ -6952,9 +6965,12 @@
   }
   window.refreshAdminPartners = refreshAdminPartners;
 
-  // Modal détail : graph 30j + liste complète des inscriptions attribuées
-  // au partenaire. Réutilise le rendu de barres _renderSparkline().
+  // Modal détail : actions admin + commission + note + graph 30j +
+  // top referers + répartition device + liste complète des inscriptions
+  // attribuées (avec statut Bambu).
+  let _currentPartnerId = null;
   async function openPartnerDetail(userId) {
+    _currentPartnerId = userId;
     const modal = document.getElementById('partnerDetailModal');
     const body  = document.getElementById('partnerDetailBody');
     document.getElementById('partnerDetailTitle').textContent = 'Détail partenaire';
@@ -6968,12 +6984,48 @@
         (d.user.name || d.user.email) + ' · ' + d.user.referral_code;
       const totalVisits  = (d.visits_daily  || []).reduce((s, x) => s + x.c, 0);
       const totalSignups = (d.signups_daily || []).reduce((s, x) => s + x.c, 0);
+      const topRef       = (d.top_referers || []).filter(r => r.host && r.host !== '(direct)');
+      const directCount  = (d.top_referers || []).find(r => r.host === '(direct)')?.c || 0;
+      const dev          = d.devices || {};
+      const devTotal     = (dev.mobile || 0) + (dev.desktop || 0) + (dev.bot || 0) + (dev.unknown || 0);
+
       body.innerHTML = `
-        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 16px">
+        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 14px">
           ${escHtml(d.user.email)} · code <strong style="color:var(--text);font-family:ui-monospace,monospace">${escHtml(d.user.referral_code)}</strong>
           · inscrit le ${new Date(d.user.created_at).toLocaleDateString('fr-FR')}
+          ${d.user.is_influencer ? '' : '<span style="background:var(--text-muted);color:#000;font-size:0.6rem;padding:2px 6px;border-radius:4px;margin-left:6px">DÉSACTIVÉ</span>'}
         </p>
 
+        <!-- Actions admin -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">
+          <button onclick="adminRegenerateCode('${escAttr(d.user.id)}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--primary);padding:6px 10px;font-size:0.75rem;font-weight:600;cursor:pointer">
+            ♻ Régénérer le code
+          </button>
+          <button onclick="adminTogglePartnerActive('${escAttr(d.user.id)}', ${!!d.user.is_influencer})" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:0.75rem;cursor:pointer">
+            ${d.user.is_influencer ? '⏸ Désactiver' : '▶ Activer'}
+          </button>
+          <a href="/api/admin/influencers/${encodeURIComponent(d.user.id)}?format=csv" download
+             style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:0.75rem;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center">
+            ⬇ Export CSV
+          </a>
+        </div>
+
+        <!-- Note privée + commission -->
+        <div style="display:grid;grid-template-columns:1fr 130px;gap:10px;margin-bottom:18px">
+          <div>
+            <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:4px">Note privée admin</label>
+            <textarea id="partnerNote" rows="2" onblur="savePartnerNote()" placeholder="Contrat négocié, contacts, particularités…"
+                      style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:0.82rem;font-family:inherit;resize:vertical;box-sizing:border-box">${escHtml(d.user.referral_note || '')}</textarea>
+          </div>
+          <div>
+            <label style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:4px">Commission (%)</label>
+            <input type="number" id="partnerCommission" min="0" max="100" step="1" value="${d.user.referral_commission_pct || 0}" onblur="savePartnerCommission()"
+                   style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:0.92rem;font-weight:700;box-sizing:border-box">
+            <div style="font-size:0.65rem;color:var(--text-muted);margin-top:4px">${totalSignups} inscriptions × X% = à payer</div>
+          </div>
+        </div>
+
+        <!-- Graphique 30j -->
         <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Activité 30 derniers jours</h3>
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:18px">
           ${_renderDualSparkline(d.visits_daily, d.signups_daily, 30)}
@@ -6983,22 +7035,62 @@
           </div>
         </div>
 
+        <!-- Source des clics -->
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Source des clics</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:6px;font-weight:600">Top referers</div>
+            ${topRef.length ? topRef.map(r => `
+              <div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:3px 0">
+                <span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escHtml(r.host)}</span>
+                <span style="color:var(--text-muted);font-family:ui-monospace,monospace">${r.c}</span>
+              </div>`).join('') :
+              '<div style="font-size:0.75rem;color:var(--text-muted);padding:6px 0">Aucun referer (encore).</div>'}
+            ${directCount ? `<div style="display:flex;justify-content:space-between;font-size:0.7rem;padding:3px 0;color:var(--text-muted);border-top:1px dashed var(--border);margin-top:4px;padding-top:6px"><span>Lien direct / aucun referer</span><span style="font-family:ui-monospace,monospace">${directCount}</span></div>` : ''}
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:6px;font-weight:600">Devices</div>
+            ${devTotal ? [
+              ['📱 Mobile',  dev.mobile  || 0],
+              ['🖥 Desktop', dev.desktop || 0],
+              ['🤖 Bots',    dev.bot     || 0],
+              ['❓ Inconnu', dev.unknown || 0],
+            ].map(([l, v]) => `
+              <div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:3px 0">
+                <span style="color:var(--text)">${l}</span>
+                <span style="color:var(--text-muted);font-family:ui-monospace,monospace">${v} <span style="opacity:.6">(${devTotal ? Math.round(v/devTotal*100) : 0}%)</span></span>
+              </div>`).join('') :
+              '<div style="font-size:0.75rem;color:var(--text-muted);padding:6px 0">Aucune donnée.</div>'}
+          </div>
+        </div>
+
+        <!-- Liste des inscriptions -->
         <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">
           Inscriptions attribuées (${d.signups.length})
         </h3>
         ${d.signups.length ? `
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
-            ${d.signups.map((s, i) => `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;${i ? 'border-top:1px solid var(--border)' : ''}">
-                <div>
-                  <div style="font-size:0.85rem;font-weight:600">${escHtml(s.name || s.email)}</div>
-                  <div style="font-size:0.7rem;color:var(--text-muted)">${escHtml(s.email)} · plan ${escHtml(s.plan || 'beta')}</div>
-                </div>
-                <div style="font-size:0.72rem;color:var(--text-muted);text-align:right">
-                  ${new Date(s.created_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })}<br>
-                  <span style="opacity:.7">${new Date(s.created_at).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}</span>
-                </div>
-              </div>`).join('')}
+            ${d.signups.map((s, i) => {
+              const bambuBadge = s.bambu_connected === 'connected'
+                ? '<span style="background:var(--accent);color:#000;font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;margin-left:4px">BAMBU ✓</span>'
+                : (s.bambu_email ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;margin-left:4px;border:1px solid var(--border)">BAMBU déconnecté</span>' : '');
+              const lastLog = s.last_login ? `· dernier login ${_fmtRelTime(s.last_login)}` : '· jamais loggé';
+              return `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;${i ? 'border-top:1px solid var(--border)' : ''};gap:10px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:0.85rem;font-weight:600;display:flex;align-items:center;flex-wrap:wrap">
+                      ${escHtml(s.name || s.email)}${bambuBadge}
+                    </div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      ${escHtml(s.email)} · plan ${escHtml(s.plan || 'beta')} ${lastLog}
+                    </div>
+                  </div>
+                  <div style="font-size:0.72rem;color:var(--text-muted);text-align:right;flex-shrink:0">
+                    ${new Date(s.created_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })}<br>
+                    <span style="opacity:.7">${new Date(s.created_at).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}</span>
+                  </div>
+                </div>`;
+            }).join('')}
           </div>
         ` : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--text-muted);font-size:0.82rem">Aucune inscription attribuée pour l\'instant.</div>'}
       `;
@@ -7007,6 +7099,55 @@
     }
   }
   window.openPartnerDetail = openPartnerDetail;
+
+  // Helpers admin actions
+  async function adminTogglePartnerActive(uid, currentlyActive) {
+    const r = await fetch('/api/admin/users/' + encodeURIComponent(uid), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_influencer: !currentlyActive }),
+    });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error || 'Erreur'); return; }
+    if (_currentPartnerId === uid) await openPartnerDetail(uid);
+    await refreshAdminPartners();
+  }
+  window.adminTogglePartnerActive = adminTogglePartnerActive;
+
+  async function adminRegenerateCode(uid) {
+    if (!confirm('Régénérer un nouveau code aléatoire ?\n\nL\'ancien code reste comptabilisé dans l\'historique mais les nouveaux liens devront utiliser le nouveau.')) return;
+    const r = await fetch('/api/admin/influencers/' + encodeURIComponent(uid) + '/regenerate', { method: 'POST' });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error || 'Erreur'); return; }
+    const d = await r.json();
+    alert('Nouveau code : ' + d.code);
+    if (_currentPartnerId === uid) await openPartnerDetail(uid);
+    await refreshAdminPartners();
+  }
+  window.adminRegenerateCode = adminRegenerateCode;
+
+  async function savePartnerNote() {
+    if (!_currentPartnerId) return;
+    const note = document.getElementById('partnerNote')?.value ?? '';
+    await fetch('/api/admin/users/' + encodeURIComponent(_currentPartnerId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ referral_note: note }),
+    }).catch(() => {});
+  }
+  window.savePartnerNote = savePartnerNote;
+
+  async function savePartnerCommission() {
+    if (!_currentPartnerId) return;
+    const v = parseFloat(document.getElementById('partnerCommission')?.value);
+    if (!isFinite(v) || v < 0 || v > 100) return;
+    const r = await fetch('/api/admin/users/' + encodeURIComponent(_currentPartnerId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ referral_commission_pct: v }),
+    });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error || 'Erreur'); return; }
+    await refreshAdminPartners();
+  }
+  window.savePartnerCommission = savePartnerCommission;
   function closePartnerDetailModal() {
     document.getElementById('partnerDetailModal').classList.remove('open');
   }

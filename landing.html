@@ -1722,7 +1722,7 @@
       fetch('/api/ref/visit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: ref }),
+        body: JSON.stringify({ code: ref, referer: document.referrer || '' }),
       }).catch(() => {});
     } catch {}
   })();
