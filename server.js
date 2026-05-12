@@ -462,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v24';
+const CACHE_VERSION = 'bs-v25';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2359,14 +2359,18 @@ http.createServer(async (req, res) => {
         const configured = !!u?.bambu_token;
         const stored = u?.bambu_printers ? safeParseJson(u.bambu_printers, []) : [];
         // Heuristique puissance d'après le modèle ou le nom : valeurs
-        // approximatives qui couvrent la gamme Bambu actuelle. L'user
-        // peut ajuster manuellement après.
+        // approximatives qui couvrent la gamme Bambu actuelle. Ordre du
+        // plus spécifique au plus général pour éviter qu'un match large
+        // attrape les modèles plus pointus (ex. H2D avant un éventuel H).
+        // L'user peut ajuster manuellement après.
         const inferPowerW = (name = '', model = '') => {
           const s = (name + ' ' + model).toUpperCase();
+          if (s.includes('H2D'))                      return 500; // dual extruder, grande chambre
           if (s.includes('A1') && s.includes('MINI')) return 100;
           if (s.includes('A1'))                       return 150;
-          if (s.includes('X1'))                       return 350;
-          if (s.includes('P1'))                       return 200;
+          if (s.includes('X1'))                       return 350; // X1, X1C, X1E
+          if (s.includes('P2S') || s.includes('P2P')) return 250; // gamme P2
+          if (s.includes('P1'))                       return 200; // P1P, P1S
           return 150;
         };
         const out = stored.map(p => ({
