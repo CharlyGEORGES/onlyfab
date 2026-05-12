@@ -241,6 +241,35 @@ addColumnIfMissing('referral_visits', 'user_agent', 'TEXT');
 addColumnIfMissing('users', 'referral_note',           'TEXT');
 addColumnIfMissing('users', 'referral_commission_pct', 'REAL DEFAULT 0');
 
+// Feedbacks utilisateurs : bug, suggestion, question. Champ status pour
+// le tri admin (new → read → resolved). Le user_id peut être NULL si
+// jamais on accepte du feedback anonyme un jour (pas le cas pour l'instant).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS feedback (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT,
+    type        TEXT NOT NULL DEFAULT 'bug',
+    message     TEXT NOT NULL,
+    page_url    TEXT,
+    user_agent  TEXT,
+    status      TEXT NOT NULL DEFAULT 'new',
+    admin_note  TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_feedback_status     ON feedback(status);
+  CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
+`);
+
+// Réglages globaux app (clé/valeur). Pour l'instant : webhook Discord
+// utilisé pour notifier les nouvelles remontées en direct.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  );
+`);
+
 // Flag onboarding : 0 = jamais terminé le wizard d'accueil (Bambu →
 // coûts → tour) ; 1 = déjà passé. On l'utilise pour ouvrir le modal
 // automatiquement au premier login.
@@ -507,7 +536,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v41';
+const CACHE_VERSION = 'bs-v42';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1166,6 +1195,43 @@ async function runBackup() {
 setTimeout(runBackup, 30_000);
 setInterval(runBackup, BACKUP_INTERVAL_HOURS * 60 * 60 * 1000);
 
+// ── APP SETTINGS / DISCORD WEBHOOK ───────────────────────────────────────
+function getSetting(key) {
+  return db.prepare('SELECT value FROM app_settings WHERE key=?').get(key)?.value || '';
+}
+function setSetting(key, value) {
+  db.prepare(`INSERT INTO app_settings (key, value) VALUES (?,?)
+              ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(key, value || '');
+}
+
+// Notifie Discord en fire-and-forget (n'attend pas la réponse). On ignore
+// les erreurs réseau pour ne pas bloquer la création du feedback côté DB.
+function notifyDiscord(feedback, user) {
+  const url = getSetting('discord_webhook_url');
+  if (!url || !/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(url)) return;
+  const colors = { bug: 0xff4757, suggestion: 0x4d8cff, question: 0xffa726, other: 0x9e9e9e };
+  const titlePrefix = { bug: '🐛 Bug', suggestion: '💡 Suggestion', question: '❓ Question', other: '💬 Feedback' };
+  const payload = {
+    embeds: [{
+      title: (titlePrefix[feedback.type] || '💬 Feedback') + ' — ' + (user?.name || user?.email || 'Anonyme'),
+      description: (feedback.message || '').slice(0, 1900),
+      color: colors[feedback.type] || 0x9e9e9e,
+      fields: [
+        { name: 'Email', value: user?.email || 'inconnu', inline: true },
+        { name: 'Plan',  value: user?.plan  || 'beta',    inline: true },
+        ...(feedback.page_url ? [{ name: 'Page', value: feedback.page_url.slice(0, 200) }] : []),
+      ],
+      footer: { text: 'OnlyFab · feedback #' + feedback.id },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch(err => console.warn('[discord] webhook failed:', err.message));
+}
+
 // ── SERVEUR ───────────────────────────────────────────────────────────────
 http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1306,6 +1372,28 @@ http.createServer(async (req, res) => {
           .run(code, host || null, ua || null);
       } catch { /* ignore */ }
       json(res, { ok: true });
+      return;
+    }
+
+    // POST /api/feedback (auth requise) : remontée bug / suggestion / question
+    // depuis l'app. On notifie Discord en fire-and-forget.
+    if (req.method === 'POST' && url === '/api/feedback') {
+      const user = getSessionUser(req);
+      if (!user) { json(res, { error: 'Connexion requise' }, 401); return; }
+      const b = await parseBody(req);
+      const validTypes = ['bug', 'suggestion', 'question', 'other'];
+      const type = validTypes.includes(b.type) ? b.type : 'bug';
+      const message = (b.message || '').toString().trim();
+      if (message.length < 3)    { json(res, { error: 'Message trop court' }, 400); return; }
+      if (message.length > 5000) { json(res, { error: 'Message trop long (max 5000)' }, 400); return; }
+      const pageUrl = (b.page_url || '').toString().slice(0, 500);
+      const ua      = (req.headers['user-agent'] || '').slice(0, 240);
+      const info = db.prepare(`
+        INSERT INTO feedback (user_id, type, message, page_url, user_agent)
+        VALUES (?,?,?,?,?)
+      `).run(user.id, type, message, pageUrl || null, ua || null);
+      notifyDiscord({ id: info.lastInsertRowid, type, message, page_url: pageUrl }, user);
+      json(res, { ok: true, id: info.lastInsertRowid });
       return;
     }
 
@@ -2875,6 +2963,122 @@ http.createServer(async (req, res) => {
           });
           tx();
           json(res, { ok: true });
+          return;
+        }
+
+        // ── FEEDBACK ADMIN ─────────────────────────────────────────────
+        // GET /api/admin/feedback?status=new|read|resolved|all (default: all)
+        // → liste des remontées + compteurs par statut.
+        if (req.method === 'GET' && url === '/api/admin/feedback') {
+          const qs = new URLSearchParams((req.url.split('?')[1] || ''));
+          const status = qs.get('status') || 'all';
+          const where = status === 'all' ? '' : 'WHERE f.status=?';
+          const rows = db.prepare(`
+            SELECT f.id, f.user_id, f.type, f.message, f.page_url, f.user_agent,
+                   f.status, f.admin_note, f.created_at, f.resolved_at,
+                   u.email AS user_email, u.name AS user_name, u.plan AS user_plan
+            FROM feedback f
+            LEFT JOIN users u ON u.id = f.user_id
+            ${where}
+            ORDER BY f.created_at DESC
+            LIMIT 500
+          `).all(...(status === 'all' ? [] : [status]));
+          const counts = db.prepare(`
+            SELECT status, COUNT(*) AS c FROM feedback GROUP BY status
+          `).all().reduce((acc, r) => (acc[r.status] = r.c, acc), {});
+          json(res, {
+            items: rows,
+            counts: { new: counts.new || 0, read: counts.read || 0, resolved: counts.resolved || 0 },
+          });
+          return;
+        }
+
+        // GET /api/admin/feedback/unread_count → utilisé par le polling SSE-light
+        // depuis l'app (badge sur l'icône admin) pour savoir s'il y a du nouveau.
+        if (req.method === 'GET' && url === '/api/admin/feedback/unread_count') {
+          const c = db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE status=?').get('new').c;
+          json(res, { count: c });
+          return;
+        }
+
+        // PATCH /api/admin/feedback/:id { status?, admin_note? }
+        if (req.method === 'PATCH' && parts[2] === 'feedback' && parts[3]) {
+          const id = parts[3];
+          const b  = await parseBody(req);
+          const updates = []; const params = {};
+          if (typeof b.status === 'string' && ['new','read','resolved'].includes(b.status)) {
+            updates.push('status=:s'); params.s = b.status;
+            if (b.status === 'resolved') updates.push("resolved_at=CURRENT_TIMESTAMP");
+            else                         updates.push('resolved_at=NULL');
+          }
+          if (typeof b.admin_note === 'string') {
+            updates.push('admin_note=:n'); params.n = b.admin_note.slice(0, 4000);
+          }
+          if (!updates.length) { json(res, { ok: true }); return; }
+          params.id = id;
+          db.prepare(`UPDATE feedback SET ${updates.join(', ')} WHERE id=:id`).run(params);
+          json(res, { ok: true });
+          return;
+        }
+
+        // DELETE /api/admin/feedback/:id
+        if (req.method === 'DELETE' && parts[2] === 'feedback' && parts[3]) {
+          db.prepare('DELETE FROM feedback WHERE id=?').run(parts[3]);
+          json(res, { ok: true });
+          return;
+        }
+
+        // GET /api/admin/settings → renvoie les réglages globaux (ne renvoie
+        // pas le webhook complet pour ne pas l'exposer en clair, juste un
+        // booléen has_discord_webhook + un masque).
+        if (req.method === 'GET' && url === '/api/admin/settings') {
+          const wh = getSetting('discord_webhook_url');
+          const masked = wh ? wh.slice(0, 38) + '…' + wh.slice(-6) : '';
+          json(res, {
+            discord_webhook_set: !!wh,
+            discord_webhook_masked: masked,
+          });
+          return;
+        }
+
+        // PATCH /api/admin/settings { discord_webhook_url? } — vide pour
+        // supprimer. On valide le format Discord.
+        if (req.method === 'PATCH' && url === '/api/admin/settings') {
+          const b = await parseBody(req);
+          if (typeof b.discord_webhook_url === 'string') {
+            const v = b.discord_webhook_url.trim();
+            if (v && !/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(v)) {
+              json(res, { error: 'URL Discord webhook invalide' }, 400); return;
+            }
+            setSetting('discord_webhook_url', v);
+          }
+          json(res, { ok: true });
+          return;
+        }
+
+        // POST /api/admin/settings/test_discord → envoie un message test
+        // pour vérifier que le webhook configuré marche.
+        if (req.method === 'POST' && url === '/api/admin/settings/test_discord') {
+          const wh = getSetting('discord_webhook_url');
+          if (!wh) { json(res, { error: 'Aucun webhook configuré' }, 400); return; }
+          try {
+            const r = await fetch(wh, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                embeds: [{
+                  title: '✅ Test webhook OnlyFab',
+                  description: 'Si tu vois ce message, le webhook est bien configuré ! Tu recevras les remontées utilisateurs ici.',
+                  color: 0x4caf50,
+                  timestamp: new Date().toISOString(),
+                }],
+              }),
+            });
+            if (!r.ok) { json(res, { error: 'Discord a refusé : HTTP ' + r.status }, 400); return; }
+            json(res, { ok: true });
+          } catch (e) {
+            json(res, { error: 'Erreur réseau : ' + (e.message || e) }, 500);
+          }
           return;
         }
 

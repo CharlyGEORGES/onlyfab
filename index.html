@@ -1152,6 +1152,30 @@
 
     .modal-body { padding: 20px 24px 24px; }
 
+    /* Radios "type de feedback" — pilule cliquable */
+    .feedback-type-radio { cursor: pointer; }
+    .feedback-type-radio input { position: absolute; opacity: 0; pointer-events: none; }
+    .feedback-type-radio span {
+      display: inline-block; padding: 6px 12px; font-size: 0.82rem;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
+      color: var(--text); transition: background .15s, border-color .15s, color .15s;
+    }
+    .feedback-type-radio:hover span { border-color: var(--primary); }
+    .feedback-type-radio input:checked + span {
+      background: var(--primary); color: #fff; border-color: var(--primary);
+    }
+    .feedback-type-radio input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+    /* Filtres feedback */
+    .feedback-filter-btn {
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted);
+      padding: 4px 10px; font-size: 0.74rem; font-weight: 500;
+      border-radius: 999px; cursor: pointer; font-family: inherit;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    .feedback-filter-btn:hover { color: var(--text); }
+    .feedback-filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
     /* Onglets admin */
     .admin-tab-btn {
       background: transparent; border: none; color: var(--text-muted);
@@ -3391,6 +3415,12 @@
           </svg>
           <span>Programme partenaire</span>
         </button>
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();openFeedbackModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Signaler un bug · suggestion</span>
+        </button>
 
         <div class="user-menu-divider" role="separator"></div>
 
@@ -3431,6 +3461,7 @@
             <path d="M9 12l2 2 4-4"/>
           </svg>
           <span data-i18n="header.admin">Administration</span>
+          <span id="adminUnreadBadge" style="display:none;background:var(--danger);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:auto">0</span>
         </button>
 
         <div class="user-menu-divider" role="separator"></div>
@@ -4601,10 +4632,13 @@
     <!-- Onglets : Stats / Utilisateurs / Partenaires. L'onglet actif est
          persisté dans localStorage(adminTab) pour rouvrir au même endroit. -->
     <div role="tablist" aria-label="Sections admin"
-         style="display:flex;gap:4px;padding:0 18px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:1">
+         style="display:flex;gap:4px;padding:0 18px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:1;overflow-x:auto">
       <button type="button" role="tab" id="adminTabStatsBtn"     class="admin-tab-btn" data-tab="stats"     onclick="switchAdminTab('stats')">📊 Stats</button>
       <button type="button" role="tab" id="adminTabUsersBtn"     class="admin-tab-btn" data-tab="users"     onclick="switchAdminTab('users')">👥 Utilisateurs</button>
       <button type="button" role="tab" id="adminTabPartnersBtn"  class="admin-tab-btn" data-tab="partners"  onclick="switchAdminTab('partners')">🤝 Partenaires</button>
+      <button type="button" role="tab" id="adminTabFeedbackBtn"  class="admin-tab-btn" data-tab="feedback" onclick="switchAdminTab('feedback')">
+        💬 Remontées <span id="adminTabFeedbackBadge" style="display:none;background:var(--danger);color:#fff;font-size:0.6rem;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:4px;vertical-align:middle">0</span>
+      </button>
     </div>
     <div class="modal-body">
       <!-- Onglet Stats -->
@@ -4628,6 +4662,78 @@
         </div>
         <div id="adminPartnersTotals" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px"></div>
         <div id="adminPartners" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <!-- Onglet Remontées (feedback) -->
+      <div id="adminTabFeedback" class="admin-tab-panel" role="tabpanel" aria-labelledby="adminTabFeedbackBtn" hidden>
+        <!-- Réglage Discord webhook (collapse) -->
+        <details style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px">
+          <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--text)">⚙ Webhook Discord <span id="adminWebhookStatus" style="margin-left:6px;font-weight:400;color:var(--text-muted);font-size:0.75rem"></span></summary>
+          <div style="margin-top:10px;font-size:0.8rem;color:var(--text-muted);line-height:1.5">
+            Crée un webhook Discord (Paramètres du salon → Intégrations → Webhooks → Nouveau webhook → Copier l'URL) et colle-la ici. Tu recevras chaque nouvelle remontée en temps réel.
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+            <input type="url" id="adminWebhookInput" placeholder="https://discord.com/api/webhooks/..." style="flex:1;min-width:240px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:0.82rem;font-family:ui-monospace,monospace;box-sizing:border-box">
+            <button type="button" onclick="adminSaveWebhook()" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:0.78rem;font-weight:600;cursor:pointer">Sauvegarder</button>
+            <button type="button" onclick="adminTestWebhook()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 14px;font-size:0.78rem;cursor:pointer">Tester</button>
+          </div>
+        </details>
+
+        <!-- Filtres + compteurs -->
+        <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="feedback-filter-btn" data-status="all"      onclick="filterFeedback('all')">Toutes <span id="fbCountAll" style="opacity:.6">·0</span></button>
+          <button type="button" class="feedback-filter-btn" data-status="new"      onclick="filterFeedback('new')">🔴 Nouvelles <span id="fbCountNew" style="opacity:.6">·0</span></button>
+          <button type="button" class="feedback-filter-btn" data-status="read"     onclick="filterFeedback('read')">👁 Lues <span id="fbCountRead" style="opacity:.6">·0</span></button>
+          <button type="button" class="feedback-filter-btn" data-status="resolved" onclick="filterFeedback('resolved')">✅ Résolues <span id="fbCountResolved" style="opacity:.6">·0</span></button>
+          <button type="button" onclick="refreshAdminFeedback()" style="margin-left:auto;background:var(--surface2);color:var(--primary);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">⟳ Rafraîchir</button>
+        </div>
+        <div id="adminFeedbackList" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FEEDBACK USER MODAL -->
+<div class="modal-overlay" id="feedbackModal" role="dialog" aria-modal="true" aria-labelledby="feedbackModalTitle" aria-hidden="true">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <div class="modal-title" id="feedbackModalTitle">💬 Une remontée à faire ?</div>
+      <button class="close-btn" onclick="closeFeedbackModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 14px">
+        Bug, idée, question — dis-nous tout. On reçoit chaque message en direct et on revient vers toi si besoin.
+      </p>
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+        <label class="feedback-type-radio">
+          <input type="radio" name="feedbackType" value="bug" checked>
+          <span>🐛 Bug</span>
+        </label>
+        <label class="feedback-type-radio">
+          <input type="radio" name="feedbackType" value="suggestion">
+          <span>💡 Suggestion</span>
+        </label>
+        <label class="feedback-type-radio">
+          <input type="radio" name="feedbackType" value="question">
+          <span>❓ Question</span>
+        </label>
+        <label class="feedback-type-radio">
+          <input type="radio" name="feedbackType" value="other">
+          <span>💬 Autre</span>
+        </label>
+      </div>
+      <textarea id="feedbackMessage" rows="6" maxlength="5000"
+                placeholder="Décris le bug ou ton idée. Pour un bug : qu'est-ce que tu faisais ? Quel était le résultat attendu vs constaté ?"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.9rem;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
+      <div id="feedbackError" style="color:var(--danger);font-size:0.78rem;margin-top:8px;display:none"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px">
+        <span style="font-size:0.7rem;color:var(--text-muted)">La page actuelle et ton navigateur sont joints automatiquement.</span>
+        <button id="feedbackSendBtn" onclick="sendFeedback()"
+                style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:0.88rem;font-weight:600;cursor:pointer">
+          Envoyer
+        </button>
       </div>
     </div>
   </div>
@@ -6705,6 +6811,48 @@
   window.recomputeCalc = recomputeCalc;
 
   // ── ADMIN PANEL ───────────────────────────────────────────────────────────
+  // ── FEEDBACK USER ────────────────────────────────────────────────────
+  function openFeedbackModal() {
+    document.getElementById('feedbackMessage').value = '';
+    document.getElementById('feedbackError').style.display = 'none';
+    const radios = document.querySelectorAll('input[name="feedbackType"]');
+    radios.forEach((r, i) => { r.checked = i === 0; });
+    document.getElementById('feedbackModal').classList.add('open');
+    setTimeout(() => document.getElementById('feedbackMessage').focus(), 50);
+  }
+  window.openFeedbackModal = openFeedbackModal;
+  function closeFeedbackModal() {
+    document.getElementById('feedbackModal').classList.remove('open');
+  }
+  window.closeFeedbackModal = closeFeedbackModal;
+  async function sendFeedback() {
+    const btn  = document.getElementById('feedbackSendBtn');
+    const errEl = document.getElementById('feedbackError');
+    const msg  = document.getElementById('feedbackMessage').value.trim();
+    const type = document.querySelector('input[name="feedbackType"]:checked')?.value || 'bug';
+    errEl.style.display = 'none';
+    if (msg.length < 3) {
+      errEl.textContent = 'Le message est trop court.'; errEl.style.display = 'block'; return;
+    }
+    btn.disabled = true; btn.textContent = 'Envoi…';
+    try {
+      const r = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, message: msg, page_url: location.href }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Erreur');
+      btn.textContent = '✓ Envoyé !';
+      setTimeout(() => { closeFeedbackModal(); btn.disabled = false; btn.textContent = 'Envoyer'; }, 900);
+    } catch (e) {
+      errEl.textContent = e.message || 'Erreur réseau';
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Envoyer';
+    }
+  }
+  window.sendFeedback = sendFeedback;
+
   async function openAdminModal() {
     document.getElementById('adminModal').classList.add('open');
     // Restaure l'onglet précédemment sélectionné (par défaut: stats)
@@ -6720,7 +6868,7 @@
   // où l'utilisateur ouvre le modal directement sur Stats puis va sur
   // Partenaires sans avoir attendu refreshAdminPanel).
   function switchAdminTab(tab, skipPersist) {
-    const tabs = ['stats', 'users', 'partners'];
+    const tabs = ['stats', 'users', 'partners', 'feedback'];
     if (!tabs.includes(tab)) tab = 'stats';
     for (const t of tabs) {
       const btn   = document.getElementById('adminTab' + t[0].toUpperCase() + t.slice(1) + 'Btn');
@@ -6735,6 +6883,10 @@
     }
     if (tab === 'partners' && !document.getElementById('adminPartners')?.children?.length) {
       refreshAdminPartners();
+    }
+    if (tab === 'feedback') {
+      refreshAdminFeedback();
+      loadAdminSettings();
     }
   }
   window.switchAdminTab = switchAdminTab;
@@ -7203,6 +7355,171 @@
     await refreshAdminPartners();
   }
   window.savePartnerCommission = savePartnerCommission;
+
+  // ── ADMIN FEEDBACK ──────────────────────────────────────────────────
+  let _feedbackFilter = 'all';
+  async function refreshAdminFeedback() {
+    const list = document.getElementById('adminFeedbackList');
+    if (!list) return;
+    list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:0.85rem">Chargement…</div>';
+    try {
+      const r = await fetch('/api/admin/feedback?status=' + encodeURIComponent(_feedbackFilter));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const c = d.counts || {};
+      const all = (c.new || 0) + (c.read || 0) + (c.resolved || 0);
+      document.getElementById('fbCountAll').textContent      = '·' + all;
+      document.getElementById('fbCountNew').textContent      = '·' + (c.new || 0);
+      document.getElementById('fbCountRead').textContent     = '·' + (c.read || 0);
+      document.getElementById('fbCountResolved').textContent = '·' + (c.resolved || 0);
+      // Badges (onglet admin + entrée menu user)
+      const newCount = c.new || 0;
+      const tabBadge = document.getElementById('adminTabFeedbackBadge');
+      if (tabBadge) {
+        tabBadge.textContent = newCount;
+        tabBadge.style.display = newCount > 0 ? 'inline-block' : 'none';
+      }
+      const menuBadge = document.getElementById('adminUnreadBadge');
+      if (menuBadge) {
+        menuBadge.textContent = newCount;
+        menuBadge.style.display = newCount > 0 ? 'inline-block' : 'none';
+      }
+      // Mark filter as active
+      document.querySelectorAll('.feedback-filter-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.status === _feedbackFilter);
+      });
+      if (!d.items.length) {
+        list.innerHTML = '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--text-muted);font-size:0.85rem">Aucune remontée pour ce filtre.</div>';
+        return;
+      }
+      const typeMeta = {
+        bug:        { ic: '🐛', label: 'Bug',        color: 'var(--danger)' },
+        suggestion: { ic: '💡', label: 'Suggestion', color: 'var(--primary)' },
+        question:   { ic: '❓', label: 'Question',   color: 'var(--accent)' },
+        other:      { ic: '💬', label: 'Autre',      color: 'var(--text-muted)' },
+      };
+      list.innerHTML = d.items.map(f => {
+        const t = typeMeta[f.type] || typeMeta.other;
+        const isNew = f.status === 'new';
+        const ago   = _fmtRelTime(f.created_at);
+        const dt    = new Date(f.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+        const statusBadge =
+          f.status === 'new'      ? '<span style="background:var(--danger);color:#fff;font-size:0.55rem;padding:1px 6px;border-radius:3px">NOUVEAU</span>' :
+          f.status === 'resolved' ? '<span style="background:var(--accent);color:#000;font-size:0.55rem;padding:1px 6px;border-radius:3px">RÉSOLU</span>'  :
+          '<span style="background:var(--surface);color:var(--text-muted);font-size:0.55rem;padding:1px 6px;border-radius:3px;border:1px solid var(--border)">LU</span>';
+        return `
+          <div style="background:var(--surface2);border:1px solid ${isNew ? t.color : 'var(--border)'};border-radius:10px;padding:12px 14px${isNew ? ';box-shadow:0 0 0 1px ' + t.color + '33' : ''}">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;font-weight:700">
+                <span style="color:${t.color}">${t.ic} ${t.label}</span>
+                ${statusBadge}
+              </div>
+              <div style="font-size:0.7rem;color:var(--text-muted)" title="${dt}">${ago}</div>
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px">
+              <strong style="color:var(--text)">${escHtml(f.user_name || f.user_email || 'Utilisateur supprimé')}</strong>
+              ${f.user_email ? ' · ' + escHtml(f.user_email) : ''}
+              ${f.user_plan ? ' · ' + escHtml(f.user_plan) : ''}
+              ${f.page_url ? ' · <span title="' + escAttr(f.page_url) + '">📍 ' + escHtml((f.page_url || '').split('/').slice(3).join('/').slice(0, 40) || '/') + '</span>' : ''}
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:0.85rem;white-space:pre-wrap;color:var(--text);line-height:1.5">${escHtml(f.message)}</div>
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+              ${f.status !== 'read' ? `<button onclick="setFeedbackStatus(${f.id},'read')" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 10px;font-size:0.72rem;cursor:pointer">👁 Marquer lu</button>` : ''}
+              ${f.status !== 'resolved' ? `<button onclick="setFeedbackStatus(${f.id},'resolved')" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">✅ Résoudre</button>` : `<button onclick="setFeedbackStatus(${f.id},'new')" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 10px;font-size:0.72rem;cursor:pointer">↺ Rouvrir</button>`}
+              <button onclick="deleteFeedback(${f.id})" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--danger);padding:4px 10px;font-size:0.72rem;cursor:pointer;margin-left:auto">Supprimer</button>
+            </div>
+          </div>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = '<div style="color:var(--danger);padding:12px;font-size:0.85rem">Erreur : ' + (e.message || e) + '</div>';
+    }
+  }
+  window.refreshAdminFeedback = refreshAdminFeedback;
+
+  function filterFeedback(status) {
+    _feedbackFilter = status;
+    refreshAdminFeedback();
+  }
+  window.filterFeedback = filterFeedback;
+
+  async function setFeedbackStatus(id, status) {
+    const r = await fetch('/api/admin/feedback/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!r.ok) { alert('Erreur'); return; }
+    await refreshAdminFeedback();
+  }
+  window.setFeedbackStatus = setFeedbackStatus;
+
+  async function deleteFeedback(id) {
+    if (!confirm('Supprimer définitivement cette remontée ?')) return;
+    const r = await fetch('/api/admin/feedback/' + id, { method: 'DELETE' });
+    if (!r.ok) { alert('Erreur'); return; }
+    await refreshAdminFeedback();
+  }
+  window.deleteFeedback = deleteFeedback;
+
+  // Discord webhook config
+  async function loadAdminSettings() {
+    try {
+      const r = await fetch('/api/admin/settings');
+      if (!r.ok) return;
+      const d = await r.json();
+      const status = document.getElementById('adminWebhookStatus');
+      const input  = document.getElementById('adminWebhookInput');
+      if (status) status.textContent = d.discord_webhook_set ? '· configuré (' + d.discord_webhook_masked + ')' : '· non configuré';
+      if (input)  input.value = '';
+    } catch {}
+  }
+  async function adminSaveWebhook() {
+    const v = (document.getElementById('adminWebhookInput')?.value || '').trim();
+    const r = await fetch('/api/admin/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ discord_webhook_url: v }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(d.error || 'Erreur'); return; }
+    alert(v ? 'Webhook sauvegardé. Clique sur Tester pour vérifier.' : 'Webhook supprimé.');
+    await loadAdminSettings();
+  }
+  window.adminSaveWebhook = adminSaveWebhook;
+  async function adminTestWebhook() {
+    const r = await fetch('/api/admin/settings/test_discord', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(d.error || 'Erreur'); return; }
+    alert('✅ Message test envoyé sur Discord !');
+  }
+  window.adminTestWebhook = adminTestWebhook;
+
+  // Polling badge unread (toutes les 60s, seulement si l'utilisateur est admin)
+  async function refreshAdminUnreadBadge() {
+    const adminBtn = document.getElementById('adminBtn');
+    if (!adminBtn || adminBtn.style.display === 'none') return;
+    try {
+      const r = await fetch('/api/admin/feedback/unread_count');
+      if (!r.ok) return;
+      const d = await r.json();
+      const badge = document.getElementById('adminUnreadBadge');
+      const tabBadge = document.getElementById('adminTabFeedbackBadge');
+      const n = d.count || 0;
+      if (badge) {
+        badge.textContent = n;
+        badge.style.display = n > 0 ? 'inline-block' : 'none';
+      }
+      if (tabBadge) {
+        tabBadge.textContent = n;
+        tabBadge.style.display = n > 0 ? 'inline-block' : 'none';
+      }
+    } catch {}
+  }
+  window.refreshAdminUnreadBadge = refreshAdminUnreadBadge;
+  // Premier check + polling 60s
+  setTimeout(refreshAdminUnreadBadge, 3000);
+  setInterval(refreshAdminUnreadBadge, 60_000);
+
   function closePartnerDetailModal() {
     document.getElementById('partnerDetailModal').classList.remove('open');
   }
