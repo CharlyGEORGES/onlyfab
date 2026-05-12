@@ -3174,8 +3174,8 @@
       color: var(--danger);
     }
     .calc-remove-btn svg {
-      width: 14px;
-      height: 14px;
+      width: 16px;
+      height: 16px;
     }
     .calc-save-status {
       display: inline-flex;
@@ -5661,10 +5661,12 @@
     { name: 'PETG', pricePerKg: 25 },
     { name: 'ABS',  pricePerKg: 22 },
   ];
+  // Puissance moyenne par modèle, en W, sur un print en régime établi.
+  // Basé sur mesures wattmètre communautaires (pas les pics de chauffe).
   const _calcDefaultPrinters = [
-    { name: 'Bambu X1C', powerW: 350 },
-    { name: 'Bambu P1S', powerW: 200 },
-    { name: 'Bambu A1',  powerW: 150 },
+    { name: 'Bambu X1C', powerW: 170 },
+    { name: 'Bambu P1S', powerW: 140 },
+    { name: 'Bambu A1',  powerW: 130 },
   ];
   let _calcState = {
     electricityRatePerKwh: 0.20,
@@ -5738,8 +5740,9 @@
   }
   window.closeCalculatorModal = closeCalculatorModal;
 
-  // Icône poubelle réutilisable pour les boutons "supprimer".
-  const _calcTrashSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+  // Icône X réutilisable pour les boutons "retirer". Plus universel
+  // qu'une poubelle (qui peut suggérer "delete définitif").
+  const _calcTrashSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
   // Liste éditable des filaments. Chaque row a un input name + price.
   function renderCalcFilamentList() {
