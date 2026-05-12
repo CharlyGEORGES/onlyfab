@@ -77,6 +77,11 @@ const PORT     = process.env.PORT || 3000;
 const DATA_DIR = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : __dirname;
 const DB_FILE  = process.env.DB_PATH || path.join(__dirname, 'stock.db');
 const MAX_BETA_USERS = parseInt(process.env.BETA_MAX_USERS || '20', 10);
+// Faux compteur pour créer un sentiment de rareté sur la landing.
+// 0 = désactivé (vrai remaining). N > 0 = on cape l'affichage public à
+// N places restantes maximum, sans toucher au vrai plafond MAX_BETA_USERS
+// (les inscriptions continuent de fonctionner jusqu'au vrai plafond).
+const FAKE_BETA_REMAINING = parseInt(process.env.BETA_FAKE_REMAINING || '7', 10);
 const HTML_FILE     = path.join(__dirname, 'index.html');
 const LANDING_FILE  = path.join(__dirname, 'landing.html');
 
@@ -646,7 +651,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v62';
+const CACHE_VERSION = 'bs-v63';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1492,11 +1497,21 @@ http.createServer(async (req, res) => {
       return;
     }
 
-    // GET /api/auth/seats → nombre de comptes restants pendant la bêta
+    // GET /api/auth/seats → nombre de comptes restants pendant la bêta.
+    // Si FAKE_BETA_REMAINING > 0, on cape l'affichage public pour créer
+    // un sentiment de rareté. Le max retourné est recalculé (used +
+    // remaining) pour rester cohérent. Le vrai plafond MAX_BETA_USERS
+    // n'est pas affecté côté inscription.
     if (req.method === 'GET' && url === '/api/auth/seats') {
       const used = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
-      const max = MAX_BETA_USERS;
-      json(res, { used, max, remaining: Math.max(0, max - used) });
+      const realRemaining = Math.max(0, MAX_BETA_USERS - used);
+      let remaining = realRemaining;
+      let max = MAX_BETA_USERS;
+      if (FAKE_BETA_REMAINING > 0 && realRemaining > FAKE_BETA_REMAINING) {
+        remaining = FAKE_BETA_REMAINING;
+        max = used + remaining;
+      }
+      json(res, { used, max, remaining });
       return;
     }
 
