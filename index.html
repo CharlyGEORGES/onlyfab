@@ -3101,6 +3101,82 @@
     /* Pas d'animation d'apparition sur les cards : la virtualisation
        réinjecte les cards à chaque scroll, ce qui re-déclenchait l'animation
        et provoquait un flash visible à chaque rangée traversée. */
+
+    /* ─── CALCULATEUR ──────────────────────────────────────────────────── */
+    /* Les lignes filament / imprimante avaient les spinners natifs du
+       navigateur qui rendent très moche (flèches grises tronquées). On les
+       cache et on stylise un bouton de suppression rond avec un vrai SVG. */
+    .calc-row {
+      display: grid;
+      grid-template-columns: 1fr 100px 32px;
+      gap: 8px;
+      align-items: center;
+    }
+    .calc-row input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--text);
+      font-size: 0.85rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .calc-row input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(108, 71, 255, 0.15);
+    }
+    .calc-row input[type="number"] {
+      text-align: right;
+      /* Cache les spinners natifs : Chrome/Safari/Firefox. */
+      -webkit-appearance: none;
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .calc-row input[type="number"]::-webkit-outer-spin-button,
+    .calc-row input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .calc-row-suffix {
+      position: relative;
+    }
+    .calc-row-suffix input {
+      padding-right: 32px;
+    }
+    .calc-row-suffix::after {
+      content: attr(data-suffix);
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      pointer-events: none;
+    }
+    .calc-remove-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .calc-remove-btn:hover {
+      background: rgba(255, 71, 87, 0.1);
+      border-color: rgba(255, 71, 87, 0.3);
+      color: var(--danger);
+    }
+    .calc-remove-btn svg {
+      width: 14px;
+      height: 14px;
+    }
   </style>
 </head>
 <body>
@@ -4019,6 +4095,16 @@
           <label for="calcLaborRate">Taux main d'œuvre (€/h)</label>
           <input type="number" id="calcLaborRate" min="0" step="1" inputmode="decimal" oninput="recomputeCalc()">
         </div>
+        <div class="form-group" style="grid-column:1 / -1;margin-bottom:0">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="calcTvaEnabled" onchange="onTvaToggle()" style="width:auto;margin:0">
+            <span>Appliquer la TVA au prix conseillé</span>
+          </label>
+        </div>
+        <div class="form-group" id="calcTvaPctGroup" style="grid-column:1 / -1;display:none">
+          <label for="calcTvaPct">Taux de TVA (%)</label>
+          <input type="number" id="calcTvaPct" min="0" max="100" step="0.5" inputmode="decimal" oninput="recomputeCalc()">
+        </div>
       </div>
 
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:14px 0 8px">Filaments (prix par kg)</h3>
@@ -4048,7 +4134,8 @@
 
       <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 18px">
 
-      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Cette impression</h3>
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px">Exemple</h3>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 10px">Simule le coût et la rentabilité d'une impression donnée.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="form-group">
           <label for="calcSelectFilament">Filament utilisé</label>
@@ -4083,15 +4170,38 @@
           <span>Main d'œuvre</span><span id="calcOutLabor">—</span>
         </div>
         <hr style="border:none;border-top:1px solid var(--border);margin:8px 0">
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:1rem;font-weight:800;color:var(--text);margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:1rem;font-weight:800;color:var(--text);margin-bottom:8px">
           <span>Coût total</span><span id="calcOutTotal">—</span>
         </div>
-        <div style="background:var(--surface);border-radius:10px;padding:10px 12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
-            <span>Prix conseillé <span id="calcOutMarginPct" style="color:var(--primary);font-weight:700"></span></span>
-            <span id="calcOutPrice" style="font-size:1.15rem;font-weight:800;color:var(--accent)">—</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+          <div style="background:var(--surface);border-radius:8px;padding:8px 10px;text-align:center">
+            <div style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Coût / gramme</div>
+            <div id="calcOutPerGram" style="font-size:0.9rem;font-weight:700;color:var(--text)">—</div>
           </div>
-          <div style="font-size:0.72rem;color:var(--text-muted)" id="calcOutProfit">Saisis le poids et le temps pour démarrer.</div>
+          <div style="background:var(--surface);border-radius:8px;padding:8px 10px;text-align:center">
+            <div style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Coût / heure</div>
+            <div id="calcOutPerHour" style="font-size:0.9rem;font-weight:700;color:var(--text)">—</div>
+          </div>
+        </div>
+
+        <div style="background:var(--surface);border-radius:10px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">
+            <span>Prix HT <span id="calcOutMarginPct" style="color:var(--primary);font-weight:700"></span></span>
+            <span id="calcOutPriceHt" style="font-size:1rem;font-weight:700;color:var(--text)">—</span>
+          </div>
+          <div id="calcOutTvaRow" style="display:none;justify-content:space-between;align-items:center;font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">
+            <span>TVA <span id="calcOutTvaPct" style="opacity:0.8"></span></span>
+            <span id="calcOutTvaAmount" style="font-weight:600;color:var(--text)">—</span>
+          </div>
+          <div id="calcOutTtcRow" style="display:none;justify-content:space-between;align-items:center;padding-top:8px;margin-top:6px;border-top:1px dashed var(--border)">
+            <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600">Prix TTC</span>
+            <span id="calcOutPriceTtc" style="font-size:1.2rem;font-weight:800;color:var(--accent)">—</span>
+          </div>
+          <div id="calcOutPriceSingleRow" style="display:flex;justify-content:space-between;align-items:center;padding-top:8px;margin-top:6px;border-top:1px dashed var(--border)">
+            <span style="font-size:0.82rem;color:var(--text-muted);font-weight:600">Prix conseillé</span>
+            <span id="calcOutPriceSingle" style="font-size:1.2rem;font-weight:800;color:var(--accent)">—</span>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:8px" id="calcOutProfit">Saisis le poids et le temps pour démarrer.</div>
         </div>
       </div>
     </div>
@@ -5540,6 +5650,8 @@
     electricityRatePerKwh: 0.20,
     laborRatePerHour:      30,
     laborEnabled:          false,
+    tvaEnabled:            false,
+    tvaPct:                20,
     targetMarginPct:       50,
     filaments: [..._calcDefaultFilaments],
     printers:  [..._calcDefaultPrinters],
@@ -5553,6 +5665,8 @@
         electricityRatePerKwh: s.electricityRatePerKwh ?? 0.20,
         laborRatePerHour:      s.laborRatePerHour      ?? 30,
         laborEnabled:          s.laborEnabled === true,
+        tvaEnabled:            s.tvaEnabled === true,
+        tvaPct:                s.tvaPct                ?? 20,
         targetMarginPct:       s.targetMarginPct       ?? 50,
         filaments: Array.isArray(s.filaments) && s.filaments.length
                    ? s.filaments : [..._calcDefaultFilaments],
@@ -5562,11 +5676,14 @@
     } catch {
       // hors-ligne : on garde les defaults
     }
-    document.getElementById('calcElecRate').value      = _calcState.electricityRatePerKwh;
-    document.getElementById('calcLaborRate').value     = _calcState.laborRatePerHour;
+    document.getElementById('calcElecRate').value       = _calcState.electricityRatePerKwh;
+    document.getElementById('calcLaborRate').value      = _calcState.laborRatePerHour;
     document.getElementById('calcLaborEnabled').checked = _calcState.laborEnabled;
-    document.getElementById('calcMarginPct').value     = _calcState.targetMarginPct;
-    onLaborToggle(); // applique la visibilité initiale des champs labor
+    document.getElementById('calcTvaEnabled').checked   = _calcState.tvaEnabled;
+    document.getElementById('calcTvaPct').value         = _calcState.tvaPct;
+    document.getElementById('calcMarginPct').value      = _calcState.targetMarginPct;
+    onLaborToggle();
+    onTvaToggle();
     renderCalcFilamentList();
     renderCalcPrinterList();
     renderCalcSelects();
@@ -5579,19 +5696,21 @@
   }
   window.closeCalculatorModal = closeCalculatorModal;
 
+  // Icône poubelle réutilisable pour les boutons "supprimer".
+  const _calcTrashSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+
   // Liste éditable des filaments. Chaque row a un input name + price.
   function renderCalcFilamentList() {
     const list = document.getElementById('calcFilamentList');
     list.innerHTML = _calcState.filaments.map((f, i) => `
-      <div style="display:grid;grid-template-columns:1fr 110px 32px;gap:6px;align-items:center">
+      <div class="calc-row">
         <input type="text" value="${escHtml(f.name)}" placeholder="Nom"
-               oninput="updateCalcFilament(${i},'name',this.value)"
-               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem">
-        <input type="number" value="${f.pricePerKg}" min="0" step="0.5" inputmode="decimal" placeholder="€/kg"
-               oninput="updateCalcFilament(${i},'pricePerKg',this.value)"
-               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem;text-align:right">
-        <button type="button" onclick="removeCalcFilament(${i})" aria-label="Supprimer"
-                style="background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:1.2rem;line-height:1;padding:4px">×</button>
+               oninput="updateCalcFilament(${i},'name',this.value)">
+        <div class="calc-row-suffix" data-suffix="€/kg">
+          <input type="number" value="${f.pricePerKg}" min="0" step="0.5" inputmode="decimal"
+                 oninput="updateCalcFilament(${i},'pricePerKg',this.value)">
+        </div>
+        <button type="button" class="calc-remove-btn" onclick="removeCalcFilament(${i})" aria-label="Supprimer le filament">${_calcTrashSvg}</button>
       </div>
     `).join('');
   }
@@ -5621,15 +5740,14 @@
   function renderCalcPrinterList() {
     const list = document.getElementById('calcPrinterList');
     list.innerHTML = _calcState.printers.map((p, i) => `
-      <div style="display:grid;grid-template-columns:1fr 110px 32px;gap:6px;align-items:center">
+      <div class="calc-row">
         <input type="text" value="${escHtml(p.name)}" placeholder="Nom"
-               oninput="updateCalcPrinter(${i},'name',this.value)"
-               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem">
-        <input type="number" value="${p.powerW}" min="0" step="10" inputmode="numeric" placeholder="W"
-               oninput="updateCalcPrinter(${i},'powerW',this.value)"
-               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem;text-align:right">
-        <button type="button" onclick="removeCalcPrinter(${i})" aria-label="Supprimer"
-                style="background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:1.2rem;line-height:1;padding:4px">×</button>
+               oninput="updateCalcPrinter(${i},'name',this.value)">
+        <div class="calc-row-suffix" data-suffix="W">
+          <input type="number" value="${p.powerW}" min="0" step="10" inputmode="numeric"
+                 oninput="updateCalcPrinter(${i},'powerW',this.value)">
+        </div>
+        <button type="button" class="calc-remove-btn" onclick="removeCalcPrinter(${i})" aria-label="Supprimer l'imprimante">${_calcTrashSvg}</button>
       </div>
     `).join('');
   }
@@ -5675,6 +5793,8 @@
     _calcState.electricityRatePerKwh = parseFloat(document.getElementById('calcElecRate').value)  || 0;
     _calcState.laborRatePerHour      = parseFloat(document.getElementById('calcLaborRate').value) || 0;
     _calcState.laborEnabled          = document.getElementById('calcLaborEnabled').checked;
+    _calcState.tvaEnabled            = document.getElementById('calcTvaEnabled').checked;
+    _calcState.tvaPct                = parseFloat(document.getElementById('calcTvaPct').value)    || 0;
     _calcState.targetMarginPct       = parseFloat(document.getElementById('calcMarginPct').value) || 0;
     try {
       await api('PATCH', '/api/cost-settings', _calcState);
@@ -5695,6 +5815,15 @@
     recomputeCalc();
   }
   window.onLaborToggle = onLaborToggle;
+
+  // Toggle TVA : montre / cache le taux et le détail HT/TVA/TTC dans
+  // le résultat. Désactivé = on affiche juste "Prix conseillé".
+  function onTvaToggle() {
+    const enabled = document.getElementById('calcTvaEnabled').checked;
+    document.getElementById('calcTvaPctGroup').style.display = enabled ? '' : 'none';
+    recomputeCalc();
+  }
+  window.onTvaToggle = onTvaToggle;
 
   // Sync depuis Bambu : récupère les imprimantes liées au compte, infère
   // leur puissance d'après le modèle, et les ajoute à la liste sans
@@ -5739,7 +5868,8 @@
   window.syncBambuPrinters = syncBambuPrinters;
 
   // Recalcul live : tire le prix du filament sélectionné et la puissance
-  // de l'imprimante sélectionnée, applique élec + main d'œuvre + marge.
+  // de l'imprimante sélectionnée, applique élec + main d'œuvre + marge
+  // + TVA optionnelle.
   // Important : le temps de main d'œuvre est INDÉPENDANT du temps
   // d'impression (un print de 10h ne demande pas 10h de manipulation).
   function recomputeCalc() {
@@ -5748,6 +5878,8 @@
     const laborRate   = parseFloat(document.getElementById('calcLaborRate').value)   || 0;
     const laborOn     = document.getElementById('calcLaborEnabled').checked;
     const laborMin    = parseFloat(document.getElementById('calcLaborMinutes').value) || 0;
+    const tvaOn       = document.getElementById('calcTvaEnabled').checked;
+    const tvaPct      = parseFloat(document.getElementById('calcTvaPct').value)      || 0;
     const margin      = parseFloat(document.getElementById('calcMarginPct').value)   || 0;
     const weight      = parseFloat(document.getElementById('calcWeight').value)      || 0;
     const hours       = parseFloat(document.getElementById('calcHours').value)       || 0;
@@ -5763,17 +5895,46 @@
     const elecCost  = (power / 1000) * hours * elecRate; // W → kW
     const laborCost = laborOn ? (laborMin / 60) * laborRate : 0;
     const total     = filCost + elecCost + laborCost;
-    const price     = total * (1 + margin / 100);
-    const profit    = price - total;
+    const priceHt   = total * (1 + margin / 100);
+    const tvaAmount = tvaOn ? priceHt * (tvaPct / 100) : 0;
+    const priceTtc  = priceHt + tvaAmount;
+    const profit    = priceHt - total;
 
     document.getElementById('calcOutFilament').textContent    = fmt(filCost);
     document.getElementById('calcOutElec').textContent        = fmt(elecCost);
     document.getElementById('calcOutLabor').textContent       = laborOn ? fmt(laborCost) : 'désactivé';
     document.getElementById('calcOutTotal').textContent       = fmt(total);
-    document.getElementById('calcOutMarginPct').textContent   = `(marge ${margin}%)`;
-    document.getElementById('calcOutPrice').textContent       = fmt(price);
     document.getElementById('calcOutFilName').textContent     = fil ? `· ${fil.name || '—'}` : '';
     document.getElementById('calcOutPrinterName').textContent = prn ? `· ${prn.name || '—'}` : '';
+
+    // Détails coût / gramme et coût / heure : utile pour comparer les
+    // prints entre eux. On affiche "—" si pas de poids / pas de temps
+    // pour éviter une division par zéro absurde.
+    document.getElementById('calcOutPerGram').textContent = weight > 0 ? (total / weight).toFixed(3) + ' €/g' : '—';
+    document.getElementById('calcOutPerHour').textContent = hours  > 0 ? (total / hours).toFixed(2)  + ' €/h' : '—';
+
+    document.getElementById('calcOutMarginPct').textContent = `(marge ${margin}%)`;
+    document.getElementById('calcOutPriceHt').textContent   = fmt(priceHt);
+
+    // Selon la TVA, on affiche soit le détail HT/TVA/TTC, soit un seul
+    // "Prix conseillé" pour ne pas charger inutilement quand pas pertinent.
+    const tvaRow    = document.getElementById('calcOutTvaRow');
+    const ttcRow    = document.getElementById('calcOutTtcRow');
+    const singleRow = document.getElementById('calcOutPriceSingleRow');
+    if (tvaOn) {
+      tvaRow.style.display    = 'flex';
+      ttcRow.style.display    = 'flex';
+      singleRow.style.display = 'none';
+      document.getElementById('calcOutTvaPct').textContent    = `(${tvaPct}%)`;
+      document.getElementById('calcOutTvaAmount').textContent = fmt(tvaAmount);
+      document.getElementById('calcOutPriceTtc').textContent  = fmt(priceTtc);
+    } else {
+      tvaRow.style.display    = 'none';
+      ttcRow.style.display    = 'none';
+      singleRow.style.display = 'flex';
+      document.getElementById('calcOutPriceSingle').textContent = fmt(priceHt);
+    }
+
     const profEl = document.getElementById('calcOutProfit');
     if (weight > 0 || hours > 0) {
       profEl.textContent = `Profit estimé : ${fmt(profit)} par impression`;

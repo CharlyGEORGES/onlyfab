@@ -462,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v23';
+const CACHE_VERSION = 'bs-v24';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2337,6 +2337,8 @@ http.createServer(async (req, res) => {
           electricityRatePerKwh: num(b.electricityRatePerKwh, 0, 100) ?? 0,
           laborRatePerHour:      num(b.laborRatePerHour, 0, 10000) ?? 0,
           laborEnabled:          b.laborEnabled === true,
+          tvaEnabled:            b.tvaEnabled === true,
+          tvaPct:                num(b.tvaPct, 0, 100) ?? 20,
           targetMarginPct:       num(b.targetMarginPct, 0, 10000) ?? 50,
           currency:              (typeof b.currency === 'string' && b.currency.length <= 5) ? b.currency : 'EUR',
           filaments,
