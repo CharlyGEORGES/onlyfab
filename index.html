@@ -20,14 +20,28 @@
     // cas par défaut (dark). Cette IIFE bascule en light si l'utilisateur
     // l'a choisi, AVANT le 1er paint pour eux aussi.
     (function () {
+      // Boot theme : applique le thème sauvé AVANT le premier paint pour
+      // éviter un flash de la palette par défaut (midnight) vers la
+      // palette choisie (ocean, forest…).
       try {
         var saved = localStorage.getItem('onlyfab.theme');
-        if (saved === 'light') {
-          document.documentElement.setAttribute('data-theme', 'light');
-          document.documentElement.style.background = '#f6f6fb';
-          document.documentElement.style.colorScheme = 'light';
+        // bg/scheme par thème — gardés en dur ici pour éviter l'éval
+        // d'un objet JS (ce script tourne avant tout le code).
+        var BG = {
+          dark:    ['#0f0f13', 'dark'],
+          ocean:   ['#0a0f1c', 'dark'],
+          forest:  ['#0a1410', 'dark'],
+          sunset:  ['#1a0f08', 'dark'],
+          crimson: ['#150a0c', 'dark'],
+          slate:   ['#0a0c10', 'dark'],
+          light:   ['#f6f6fb', 'light'],
+        };
+        if (saved && BG[saved]) {
+          document.documentElement.setAttribute('data-theme', saved);
+          document.documentElement.style.background = BG[saved][0];
+          document.documentElement.style.colorScheme = BG[saved][1];
           var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', '#f6f6fb');
+          if (meta) meta.setAttribute('content', BG[saved][0]);
         }
       } catch (e) {}
     })();
@@ -65,6 +79,90 @@
       --text-muted: #5e6080;
       --shadow: 0 4px 24px rgba(20,20,40,0.08);
       --focus-ring: 0 0 0 3px rgba(85,53,212,0.35);
+    }
+
+    /* ── PALETTES DARK ALTERNATIVES ─────────────────────────────────────
+       Le défaut (sans data-theme ou data-theme="midnight") est défini
+       dans :root plus haut. Ces variantes le surchargent. */
+
+    /* Ocean — bleu profond + cyan */
+    html[data-theme="ocean"] {
+      --primary: #3b82f6;
+      --primary-dark: #2563eb;
+      --primary-light: #60a5fa;
+      --accent: #06b6d4;
+      --danger: #f43f5e;
+      --bg: #0a0f1c;
+      --surface: #131b2e;
+      --surface2: #1d2740;
+      --border: #2a3450;
+      --text: #e8eef8;
+      --text-muted: #6f80a8;
+      --focus-ring: 0 0 0 3px rgba(59,130,246,0.45);
+    }
+
+    /* Forest — vert sombre + lime */
+    html[data-theme="forest"] {
+      --primary: #10b981;
+      --primary-dark: #059669;
+      --primary-light: #34d399;
+      --accent: #a3e635;
+      --danger: #ef4444;
+      --bg: #0a1410;
+      --surface: #131e18;
+      --surface2: #1c2a23;
+      --border: #2a3d33;
+      --text: #e8f0eb;
+      --text-muted: #6a8a78;
+      --focus-ring: 0 0 0 3px rgba(16,185,129,0.45);
+    }
+
+    /* Sunset — orange + rose */
+    html[data-theme="sunset"] {
+      --primary: #f97316;
+      --primary-dark: #ea580c;
+      --primary-light: #fb923c;
+      --accent: #ec4899;
+      --danger: #dc2626;
+      --bg: #1a0f08;
+      --surface: #2a1a14;
+      --surface2: #3a2620;
+      --border: #4a342c;
+      --text: #f5ede4;
+      --text-muted: #a08878;
+      --focus-ring: 0 0 0 3px rgba(249,115,22,0.45);
+    }
+
+    /* Crimson — rouge + or */
+    html[data-theme="crimson"] {
+      --primary: #dc2626;
+      --primary-dark: #b91c1c;
+      --primary-light: #ef4444;
+      --accent: #fbbf24;
+      --danger: #f87171;
+      --bg: #150a0c;
+      --surface: #241418;
+      --surface2: #321e22;
+      --border: #432930;
+      --text: #f0e2e4;
+      --text-muted: #a07880;
+      --focus-ring: 0 0 0 3px rgba(220,38,38,0.45);
+    }
+
+    /* Slate — minimal gris bleuté */
+    html[data-theme="slate"] {
+      --primary: #94a3b8;
+      --primary-dark: #64748b;
+      --primary-light: #cbd5e1;
+      --accent: #38bdf8;
+      --danger: #f43f5e;
+      --bg: #0a0c10;
+      --surface: #14171d;
+      --surface2: #1d2129;
+      --border: #2a2f3a;
+      --text: #e8ebf0;
+      --text-muted: #6f7686;
+      --focus-ring: 0 0 0 3px rgba(148,163,184,0.45);
     }
 
     /* Couleur de fond brut HTML synchronisée pour éviter le flash blanc/noir
@@ -1202,6 +1300,40 @@
       background: var(--primary); color: #fff; border-color: var(--primary);
     }
     .feedback-type-radio input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+    /* Theme picker — cards avec swatches */
+    .theme-card {
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      cursor: pointer;
+      transition: border-color .15s, transform .15s;
+      font-family: inherit;
+      text-align: left;
+      color: inherit;
+    }
+    .theme-card:hover { border-color: var(--primary); transform: translateY(-1px); }
+    .theme-card.active {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(108,71,255,0.18);
+    }
+    .theme-card-swatches {
+      display: flex; gap: 4px; height: 36px; margin-bottom: 8px;
+      border-radius: 8px; overflow: hidden;
+    }
+    .theme-card-swatches > div { flex: 1; }
+    .theme-card-name {
+      font-size: 0.85rem; font-weight: 700; color: var(--text);
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .theme-card-kind {
+      font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase;
+      letter-spacing: 0.04em; font-weight: 600;
+    }
+    .theme-card.active .theme-card-name::after {
+      content: '✓'; color: var(--primary); margin-left: auto;
+    }
 
     /* Filtres utilisateurs */
     .user-filter-chip {
@@ -3496,15 +3628,17 @@
 
         <div class="user-menu-divider" role="separator"></div>
 
-        <button class="user-menu-item" role="menuitem" id="userMenuTheme" onclick="cycleTheme()">
-          <svg id="themeIconDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        <button class="user-menu-item" role="menuitem" id="userMenuTheme" onclick="closeUserMenu();openThemePicker()">
+          <!-- Icône palette : cohérente avec le fait qu'on a maintenant
+               plusieurs choix de thème dark, pas juste un toggle. -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="13.5" cy="6.5" r="1.5"/>
+            <circle cx="17.5" cy="10.5" r="1.5"/>
+            <circle cx="8.5" cy="7.5" r="1.5"/>
+            <circle cx="6.5" cy="12.5" r="1.5"/>
+            <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.96-4.5-9-10-9z"/>
           </svg>
-          <svg id="themeIconLight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none">
-            <circle cx="12" cy="12" r="4"/>
-            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-          </svg>
-          <span id="userMenuThemeLabel" data-i18n="header.theme">Changer de thème</span>
+          <span>Palette de thème</span>
         </button>
 
         <div class="user-menu-divider" role="separator"></div>
@@ -4235,11 +4369,11 @@
         </select>
       </div>
       <div class="form-group">
-        <label for="profileTheme" data-i18n="profile.theme">Thème</label>
-        <select id="profileTheme" onchange="setTheme(this.value)">
-          <option value="dark" data-i18n="profile.themeDark">Sombre</option>
-          <option value="light" data-i18n="profile.themeLight">Clair</option>
-        </select>
+        <label data-i18n="profile.theme">Thème</label>
+        <button type="button" onclick="openThemePicker()"
+                style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:0.88rem;cursor:pointer;font-family:inherit;text-align:left;display:flex;align-items:center;gap:8px;width:100%">
+          🎨 <span>Choisir une palette…</span>
+        </button>
       </div>
 
       <hr style="border:none;border-top:1px solid var(--border);margin:22px 0">
@@ -4806,6 +4940,24 @@
   </div>
 </div>
 
+<!-- THEME PICKER MODAL -->
+<div class="modal-overlay" id="themePickerModal" role="dialog" aria-modal="true" aria-labelledby="themePickerTitle" aria-hidden="true">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title" id="themePickerTitle">🎨 Palette de thème</div>
+      <button class="close-btn" onclick="closeThemePicker()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 14px">
+        Clique sur une palette pour l'appliquer immédiatement. Le choix est mémorisé.
+      </p>
+      <div id="themePickerGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN USER DETAIL MODAL -->
 <div class="modal-overlay" id="userDetailModal" role="dialog" aria-modal="true" aria-labelledby="userDetailTitle" aria-hidden="true">
   <div class="modal" style="max-width:680px">
@@ -5212,26 +5364,73 @@
   })();
 
   function updateThemeMeta(theme) {
-    const color = theme === 'light' ? '#f6f6fb' : '#0f0f13';
+    // theme-color du navigateur = bg du thème actif (1er swatch).
+    const t = (typeof THEMES !== 'undefined') ? THEMES.find(x => x.id === theme) : null;
+    const color = t ? t.swatches[0] : (theme === 'light' ? '#f6f6fb' : '#0f0f13');
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', color);
   }
 
+  // Catalogue des thèmes disponibles. Chaque entrée a un id (= valeur
+  // data-theme), un nom affiché, et 4 swatches pour le picker visuel
+  // (bg, surface, primary, accent).
+  const THEMES = [
+    { id: 'dark',    name: 'Midnight',  kind: 'dark',  swatches: ['#0f0f13', '#1a1a24', '#6c47ff', '#00d4aa'] },
+    { id: 'ocean',   name: 'Ocean',     kind: 'dark',  swatches: ['#0a0f1c', '#131b2e', '#3b82f6', '#06b6d4'] },
+    { id: 'forest',  name: 'Forest',    kind: 'dark',  swatches: ['#0a1410', '#131e18', '#10b981', '#a3e635'] },
+    { id: 'sunset',  name: 'Sunset',    kind: 'dark',  swatches: ['#1a0f08', '#2a1a14', '#f97316', '#ec4899'] },
+    { id: 'crimson', name: 'Crimson',   kind: 'dark',  swatches: ['#150a0c', '#241418', '#dc2626', '#fbbf24'] },
+    { id: 'slate',   name: 'Slate',     kind: 'dark',  swatches: ['#0a0c10', '#14171d', '#94a3b8', '#38bdf8'] },
+    { id: 'light',   name: 'Light',     kind: 'light', swatches: ['#f6f6fb', '#ffffff', '#5535d4', '#00a37e'] },
+  ];
+  const THEME_IDS = THEMES.map(t => t.id);
+  window.THEMES = THEMES;
+
   function setTheme(theme) {
-    if (theme !== 'light' && theme !== 'dark') theme = 'dark';
+    if (!THEME_IDS.includes(theme)) theme = 'dark';
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem('onlyfab.theme', theme); } catch {}
     updateThemeMeta(theme);
     updateThemeToggleIcon();
     const sel = document.getElementById('profileTheme');
     if (sel) sel.value = theme;
+    // Refresh des selections du picker si ouvert
+    document.querySelectorAll('.theme-card').forEach(el => {
+      el.classList.toggle('active', el.dataset.theme === theme);
+    });
   }
 
-  // Toggle simple : sombre ↔ clair.
+  // Cycle simple sombre → clair (gardé pour compat). Le menu utilise
+  // openThemePicker() pour la sélection riche.
   function cycleTheme() {
     const cur = document.documentElement.getAttribute('data-theme');
     setTheme(cur === 'light' ? 'dark' : 'light');
   }
+
+  // Ouvre le picker de palette : grille de cards avec swatches.
+  function openThemePicker() {
+    const grid = document.getElementById('themePickerGrid');
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    if (grid) {
+      grid.innerHTML = THEMES.map(t => `
+        <button type="button" class="theme-card${t.id === current ? ' active' : ''}" data-theme="${t.id}" onclick="setTheme('${t.id}')">
+          <div class="theme-card-swatches" style="background:${t.swatches[0]}">
+            ${t.swatches.map(c => `<div style="background:${c}"></div>`).join('')}
+          </div>
+          <div class="theme-card-name">
+            ${t.name}
+          </div>
+          <div class="theme-card-kind">${t.kind}</div>
+        </button>
+      `).join('');
+    }
+    document.getElementById('themePickerModal').classList.add('open');
+  }
+  window.openThemePicker = openThemePicker;
+  function closeThemePicker() {
+    document.getElementById('themePickerModal').classList.remove('open');
+  }
+  window.closeThemePicker = closeThemePicker;
 
   function updateThemeToggleIcon() {
     const t = document.documentElement.getAttribute('data-theme');
