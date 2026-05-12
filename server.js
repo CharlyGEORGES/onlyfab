@@ -241,6 +241,56 @@ addColumnIfMissing('referral_visits', 'user_agent', 'TEXT');
 addColumnIfMissing('users', 'referral_note',           'TEXT');
 addColumnIfMissing('users', 'referral_commission_pct', 'REAL DEFAULT 0');
 
+// ── TRAÇABILITÉ DE LA PROVENANCE ─────────────────────────────────────────
+// referred_by_code reste la source originale (le code exact tapé), mais
+// c'est fragile : si on régénère le code du partenaire, on perd le lien.
+// On ajoute donc referred_by_user_id (FK stable vers users.id) capturé au
+// moment de l'inscription, et une table d'historique des codes pour
+// pouvoir retrouver "qui possédait CE code à CETTE date".
+addColumnIfMissing('users', 'referred_by_user_id', 'TEXT');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS referral_code_history (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ended_at   TIMESTAMP,
+    reason     TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_ref_code_hist_code ON referral_code_history(code);
+  CREATE INDEX IF NOT EXISTS idx_ref_code_hist_user ON referral_code_history(user_id);
+`);
+
+// Backfill 1 : pour chaque user avec referred_by_code mais pas de
+// referred_by_user_id, on retrouve le partenaire via son code actuel.
+// (Au premier démarrage après migration, l'historique est vide donc on
+// ne peut résoudre que via le code courant — c'est volontaire et OK :
+// les codes existants n'ont pas encore été régénérés.)
+const backfillReferrals = db.prepare(`
+  UPDATE users
+  SET referred_by_user_id = (
+    SELECT id FROM users p WHERE p.referral_code = users.referred_by_code LIMIT 1
+  )
+  WHERE referred_by_code IS NOT NULL AND referred_by_user_id IS NULL
+`);
+backfillReferrals.run();
+
+// Backfill 2 : pour chaque partenaire actuel ayant un code, on insère
+// une ligne d'historique active (ended_at NULL) si pas déjà présente.
+// Cela permet à toute future régénération de "fermer" cette ligne
+// proprement avec ended_at.
+db.prepare(`
+  INSERT INTO referral_code_history (user_id, code, started_at, ended_at, reason)
+  SELECT u.id, u.referral_code, COALESCE(u.created_at, CURRENT_TIMESTAMP), NULL, 'initial'
+  FROM users u
+  WHERE u.referral_code IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM referral_code_history h
+      WHERE h.user_id = u.id AND h.code = u.referral_code
+    )
+`).run();
+
 // Feedbacks utilisateurs : bug, suggestion, question. Champ status pour
 // le tri admin (new → read → resolved). Le user_id peut être NULL si
 // jamais on accepte du feedback anonyme un jour (pas le cas pour l'instant).
@@ -536,7 +586,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v42';
+const CACHE_VERSION = 'bs-v43';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1195,6 +1245,43 @@ async function runBackup() {
 setTimeout(runBackup, 30_000);
 setInterval(runBackup, BACKUP_INTERVAL_HOURS * 60 * 60 * 1000);
 
+// ── TRAÇABILITÉ PARTENAIRES ──────────────────────────────────────────────
+// Résout un code (actuel ou historique) vers l'ID du partenaire qui le
+// possédait. Utilisé à l'inscription pour capturer un user_id stable
+// même si le partenaire a régénéré son code depuis.
+function resolvePartnerByCode(code) {
+  const c = (code || '').trim().toUpperCase();
+  if (!c) return null;
+  const active = db.prepare('SELECT id FROM users WHERE referral_code=?').get(c);
+  if (active) return active.id;
+  // Fallback historique : on prend la dernière période ayant porté ce code
+  const hist = db.prepare(`
+    SELECT user_id FROM referral_code_history
+    WHERE code=? ORDER BY started_at DESC LIMIT 1
+  `).get(c);
+  return hist?.user_id || null;
+}
+
+// Enregistre un changement de code : ferme la période active du
+// partenaire dans l'historique et ouvre la nouvelle. Si newCode est
+// vide/null, on ferme juste la précédente (suppression du code).
+function recordCodeChange(userId, newCode, reason) {
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE referral_code_history
+      SET ended_at = CURRENT_TIMESTAMP, reason = COALESCE(reason, ?)
+      WHERE user_id=? AND ended_at IS NULL
+    `).run(reason || 'changed', userId);
+    if (newCode) {
+      db.prepare(`
+        INSERT INTO referral_code_history (user_id, code, reason)
+        VALUES (?,?,?)
+      `).run(userId, newCode, reason || 'new');
+    }
+  });
+  tx();
+}
+
 // ── APP SETTINGS / DISCORD WEBHOOK ───────────────────────────────────────
 function getSetting(key) {
   return db.prepare('SELECT value FROM app_settings WHERE key=?').get(key)?.value || '';
@@ -1418,15 +1505,26 @@ http.createServer(async (req, res) => {
       const isAdmin = userCount === 0 ? 1 : 0;
       // Code influencer associé à l'inscription (si l'user est arrivé via un
       // lien ?ref=CODE et qu'on a stocké le code en localStorage côté client).
-      // On valide juste que le code correspond à un compte influencer actif.
-      let refByCode = null;
+      // On résout vers l'ID du partenaire — y compris pour les codes anciens
+      // déjà régénérés (consultés dans referral_code_history). On stocke à
+      // la fois le code (trace exacte) et le user_id (lien stable).
+      let refByCode   = null;
+      let refByUserId = null;
       if (typeof b.referredByCode === 'string' && b.referredByCode.trim()) {
         const candidate = b.referredByCode.trim().toUpperCase().slice(0, 40);
-        const refOwner = db.prepare('SELECT id FROM users WHERE referral_code=? AND is_influencer=1').get(candidate);
-        if (refOwner) refByCode = candidate;
+        const partnerId = resolvePartnerByCode(candidate);
+        if (partnerId) {
+          // On ne contraint plus is_influencer=1 ici : si le partenaire a
+          // été désactivé temporairement, on conserve quand même la
+          // traçabilité pour pouvoir réactiver et payer la commission.
+          refByCode   = candidate;
+          refByUserId = partnerId;
+        }
       }
-      db.prepare('INSERT INTO users (id,email,password_hash,name,is_admin,created_at,referred_by_code) VALUES (?,?,?,?,?,?,?)')
-        .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString(), refByCode);
+      db.prepare(`INSERT INTO users
+        (id, email, password_hash, name, is_admin, created_at, referred_by_code, referred_by_user_id)
+        VALUES (?,?,?,?,?,?,?,?)`)
+        .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString(), refByCode, refByUserId);
       // Assigner items existants sans user_id au premier utilisateur
       const orphans = db.prepare('SELECT COUNT(*) as c FROM items WHERE user_id IS NULL').get().c;
       if (orphans > 0) {
@@ -2543,6 +2641,11 @@ http.createServer(async (req, res) => {
       // Renvoie un payload enrichi pour le dashboard partenaire :
       // { isInfluencer, code, link, stats, daily, last, best, recentSignups }.
       // Si l'user n'est pas un influencer, isInfluencer=false et le reste null.
+      //
+      // Les visites sont agrégées sur TOUS les codes ayant appartenu à ce
+      // partenaire (table referral_code_history), pour ne pas perdre
+      // l'historique en cas de régénération. Les inscriptions utilisent
+      // referred_by_user_id (lien stable).
       if (req.method === 'GET' && url === '/api/ref/me') {
         const me = db.prepare('SELECT is_influencer, referral_code FROM users WHERE id=?').get(userId);
         if (!me?.is_influencer || !me.referral_code) {
@@ -2550,37 +2653,44 @@ http.createServer(async (req, res) => {
           return;
         }
         const c = me.referral_code;
-        const visits   = db.prepare('SELECT COUNT(*) AS c FROM referral_visits WHERE code=?').get(c).c;
-        const signups  = db.prepare('SELECT COUNT(*) AS c FROM users WHERE referred_by_code=?').get(c).c;
-        const visits7  = db.prepare(`SELECT COUNT(*) AS c FROM referral_visits WHERE code=? AND ts > datetime('now','-7 days')`).get(c).c;
-        const signups7 = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE referred_by_code=? AND created_at > datetime('now','-7 days')`).get(c).c;
-        const lastVisit  = db.prepare('SELECT MAX(ts) AS t FROM referral_visits WHERE code=?').get(c).t;
-        const lastSignup = db.prepare('SELECT MAX(created_at) AS t FROM users WHERE referred_by_code=?').get(c).t;
+        // Tous les codes du partenaire (actuel + historiques) pour les visites
+        const allCodes = db.prepare(`
+          SELECT DISTINCT code FROM referral_code_history WHERE user_id=?
+          UNION SELECT referral_code FROM users WHERE id=? AND referral_code IS NOT NULL
+        `).all(userId, userId).map(r => r.code);
+        const placeholders = allCodes.map(() => '?').join(',') || "''";
+
+        const visits   = db.prepare(`SELECT COUNT(*) AS c FROM referral_visits WHERE code IN (${placeholders})`).get(...allCodes).c;
+        const signups  = db.prepare('SELECT COUNT(*) AS c FROM users WHERE referred_by_user_id=?').get(userId).c;
+        const visits7  = db.prepare(`SELECT COUNT(*) AS c FROM referral_visits WHERE code IN (${placeholders}) AND ts > datetime('now','-7 days')`).get(...allCodes).c;
+        const signups7 = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE referred_by_user_id=? AND created_at > datetime('now','-7 days')`).get(userId).c;
+        const lastVisit  = db.prepare(`SELECT MAX(ts) AS t FROM referral_visits WHERE code IN (${placeholders})`).get(...allCodes).t;
+        const lastSignup = db.prepare('SELECT MAX(created_at) AS t FROM users WHERE referred_by_user_id=?').get(userId).t;
         // Série quotidienne 30j : visites + inscriptions, déjà groupées par
         // jour. Le client merge les deux séries par date pour le graphique.
         const visitsDaily = db.prepare(`
           SELECT DATE(ts) AS day, COUNT(*) AS c
-          FROM referral_visits WHERE code=? AND ts > datetime('now','-30 days')
+          FROM referral_visits WHERE code IN (${placeholders}) AND ts > datetime('now','-30 days')
           GROUP BY DATE(ts) ORDER BY day ASC
-        `).all(c);
+        `).all(...allCodes);
         const signupsDaily = db.prepare(`
           SELECT DATE(created_at) AS day, COUNT(*) AS c
-          FROM users WHERE referred_by_code=? AND created_at > datetime('now','-30 days')
+          FROM users WHERE referred_by_user_id=? AND created_at > datetime('now','-30 days')
           GROUP BY DATE(created_at) ORDER BY day ASC
-        `).all(c);
+        `).all(userId);
         // Meilleur jour (mesuré en signups, fallback sur visites).
         const bestSignup = db.prepare(`
           SELECT DATE(created_at) AS day, COUNT(*) AS c FROM users
-          WHERE referred_by_code=? GROUP BY day ORDER BY c DESC, day DESC LIMIT 1
-        `).get(c);
+          WHERE referred_by_user_id=? GROUP BY day ORDER BY c DESC, day DESC LIMIT 1
+        `).get(userId);
         const bestVisit = db.prepare(`
           SELECT DATE(ts) AS day, COUNT(*) AS c FROM referral_visits
-          WHERE code=? GROUP BY day ORDER BY c DESC, day DESC LIMIT 1
-        `).get(c);
+          WHERE code IN (${placeholders}) GROUP BY day ORDER BY c DESC, day DESC LIMIT 1
+        `).get(...allCodes);
         const recent = db.prepare(`
           SELECT created_at, plan, email FROM users
-          WHERE referred_by_code=? ORDER BY created_at DESC LIMIT 10
-        `).all(c);
+          WHERE referred_by_user_id=? ORDER BY created_at DESC LIMIT 10
+        `).all(userId);
         // Email masqué : on garde la 1ère lettre + le domaine pour donner
         // une indication tangible au partenaire sans exposer l'identité.
         // Exemple : jean.dupont@gmail.com → j***@gmail.com
@@ -2782,6 +2892,15 @@ http.createServer(async (req, res) => {
           }
           if (!updates.length) { json(res, { ok: true }); return; }
           params.id = targetId;
+          // Si le code change, on archive d'abord l'ancien dans l'historique
+          // (préservation de la traçabilité des inscriptions anciennes).
+          if (typeof b.referral_code === 'string') {
+            const newCode = params.rc || null;
+            const prev = db.prepare('SELECT referral_code FROM users WHERE id=?').get(targetId);
+            if (prev && prev.referral_code !== newCode) {
+              recordCodeChange(targetId, newCode, 'admin_changed');
+            }
+          }
           db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id=:id`).run(params);
           json(res, { ok: true });
           return;
@@ -2793,19 +2912,33 @@ http.createServer(async (req, res) => {
         // tant qu'ils ont encore un code, pour pouvoir consulter et
         // réactiver depuis la liste.
         if (req.method === 'GET' && url === '/api/admin/influencers') {
+          // Stats agrégées sur TOUS les codes historiques d'un partenaire
+          // (visites) + via referred_by_user_id (signups). Permet de ne
+          // jamais perdre l'historique en cas de régénération de code.
+          // La sous-requête "codes" récupère pour chaque user_id la liste
+          // de codes possédés un jour (actuel ou archivés).
           const rows = db.prepare(`
+            WITH codes AS (
+              SELECT user_id, code FROM referral_code_history
+              UNION
+              SELECT id AS user_id, referral_code AS code FROM users WHERE referral_code IS NOT NULL
+            )
             SELECT u.id, u.email, u.name, u.referral_code, u.created_at,
               u.is_influencer, u.referral_commission_pct,
-              (SELECT COUNT(*) FROM referral_visits v WHERE v.code=u.referral_code)                                          AS visits_total,
-              (SELECT COUNT(*) FROM referral_visits v WHERE v.code=u.referral_code AND v.ts > datetime('now','-7 days'))     AS visits_7d,
-              (SELECT COUNT(*) FROM referral_visits v WHERE v.code=u.referral_code AND v.ts > datetime('now','-30 days'))    AS visits_30d,
-              (SELECT MAX(ts) FROM referral_visits v WHERE v.code=u.referral_code)                                           AS last_visit_at,
-              (SELECT COUNT(*) FROM users x WHERE x.referred_by_code=u.referral_code)                                        AS signups_total,
-              (SELECT COUNT(*) FROM users x WHERE x.referred_by_code=u.referral_code AND x.created_at > datetime('now','-7 days'))  AS signups_7d,
-              (SELECT COUNT(*) FROM users x WHERE x.referred_by_code=u.referral_code AND x.created_at > datetime('now','-30 days')) AS signups_30d,
-              (SELECT MAX(created_at) FROM users x WHERE x.referred_by_code=u.referral_code)                                 AS last_signup_at
+              (SELECT COUNT(*) FROM referral_visits v WHERE v.code IN (SELECT code FROM codes WHERE user_id=u.id))                                          AS visits_total,
+              (SELECT COUNT(*) FROM referral_visits v WHERE v.code IN (SELECT code FROM codes WHERE user_id=u.id) AND v.ts > datetime('now','-7 days'))     AS visits_7d,
+              (SELECT COUNT(*) FROM referral_visits v WHERE v.code IN (SELECT code FROM codes WHERE user_id=u.id) AND v.ts > datetime('now','-30 days'))    AS visits_30d,
+              (SELECT MAX(ts) FROM referral_visits v WHERE v.code IN (SELECT code FROM codes WHERE user_id=u.id))                                           AS last_visit_at,
+              (SELECT COUNT(*) FROM users x WHERE x.referred_by_user_id=u.id)                                                                                AS signups_total,
+              (SELECT COUNT(*) FROM users x WHERE x.referred_by_user_id=u.id AND x.created_at > datetime('now','-7 days'))                                  AS signups_7d,
+              (SELECT COUNT(*) FROM users x WHERE x.referred_by_user_id=u.id AND x.created_at > datetime('now','-30 days'))                                 AS signups_30d,
+              (SELECT MAX(created_at) FROM users x WHERE x.referred_by_user_id=u.id)                                                                         AS last_signup_at,
+              (SELECT COUNT(*) FROM referral_code_history h WHERE h.user_id=u.id AND h.ended_at IS NOT NULL)                                                AS past_codes_count
             FROM users u
             WHERE u.referral_code IS NOT NULL
+               OR u.id IN (SELECT user_id FROM referral_code_history)
+               OR u.id IN (SELECT referred_by_user_id FROM users WHERE referred_by_user_id IS NOT NULL)
+            GROUP BY u.id
             ORDER BY u.is_influencer DESC, signups_total DESC, visits_total DESC
           `).all().map(r => ({ ...r, is_influencer: !!r.is_influencer }));
           // Stats globales pour les cartes du haut du panel.
@@ -2827,37 +2960,50 @@ http.createServer(async (req, res) => {
         if (req.method === 'GET' && parts[2] === 'influencers' && parts[3] && !parts[4]) {
           const targetId = parts[3];
           // L'is_influencer=0 reste accessible (vue admin d'un partenaire désactivé)
-          // tant qu'il a encore un code, pour pouvoir consulter l'historique.
+          // tant qu'il a encore un code OU des codes archivés OU des filleuls.
           const u = db.prepare(`
             SELECT id, email, name, referral_code, created_at, is_influencer,
                    referral_note, referral_commission_pct
             FROM users WHERE id=?`).get(targetId);
-          if (!u || !u.referral_code) {
-            json(res, { error: 'Partenaire introuvable' }, 404); return;
+          if (!u) { json(res, { error: 'Partenaire introuvable' }, 404); return; }
+
+          // Tous les codes ayant appartenu à ce partenaire (actuel + archivés)
+          // pour agréger les visites historiques. Les inscriptions utilisent
+          // l'ID stable referred_by_user_id.
+          const allCodes = db.prepare(`
+            SELECT DISTINCT code FROM referral_code_history WHERE user_id=?
+            UNION SELECT referral_code FROM users WHERE id=? AND referral_code IS NOT NULL
+          `).all(targetId, targetId).map(r => r.code);
+          if (!allCodes.length && !u.referral_code) {
+            // Aucune trace : on accepte quand même s'il existe des filleuls
+            const hasSignups = db.prepare('SELECT 1 FROM users WHERE referred_by_user_id=? LIMIT 1').get(targetId);
+            if (!hasSignups) { json(res, { error: 'Partenaire sans aucune trace' }, 404); return; }
           }
-          const visitsDaily = db.prepare(`
+          const placeholders = allCodes.map(() => '?').join(',') || "''";
+
+          const visitsDaily = allCodes.length ? db.prepare(`
             SELECT DATE(ts) AS day, COUNT(*) AS c
             FROM referral_visits
-            WHERE code=? AND ts > datetime('now','-30 days')
+            WHERE code IN (${placeholders}) AND ts > datetime('now','-30 days')
             GROUP BY DATE(ts) ORDER BY day ASC
-          `).all(u.referral_code);
+          `).all(...allCodes) : [];
           const signupsDaily = db.prepare(`
             SELECT DATE(created_at) AS day, COUNT(*) AS c
             FROM users
-            WHERE referred_by_code=? AND created_at > datetime('now','-30 days')
+            WHERE referred_by_user_id=? AND created_at > datetime('now','-30 days')
             GROUP BY DATE(created_at) ORDER BY day ASC
-          `).all(u.referral_code);
+          `).all(targetId);
           // Top referers (lifetime) + niveau UA agrégé en grandes familles
           // (mobile / desktop / inconnu) pour donner une idée des canaux.
-          const topReferers = db.prepare(`
+          const topReferers = allCodes.length ? db.prepare(`
             SELECT COALESCE(referer, '(direct)') AS host, COUNT(*) AS c
-            FROM referral_visits WHERE code=?
+            FROM referral_visits WHERE code IN (${placeholders})
             GROUP BY COALESCE(referer, '(direct)')
             ORDER BY c DESC LIMIT 10
-          `).all(u.referral_code);
-          const deviceRows = db.prepare(`
-            SELECT user_agent FROM referral_visits WHERE code=?
-          `).all(u.referral_code);
+          `).all(...allCodes) : [];
+          const deviceRows = allCodes.length ? db.prepare(`
+            SELECT user_agent FROM referral_visits WHERE code IN (${placeholders})
+          `).all(...allCodes) : [];
           const devices = { mobile: 0, desktop: 0, bot: 0, unknown: 0 };
           for (const r of deviceRows) {
             const ua = (r.user_agent || '').toLowerCase();
@@ -2866,30 +3012,38 @@ http.createServer(async (req, res) => {
             else if (/mobi|iphone|android|ipad/.test(ua))       devices.mobile++;
             else                                                devices.desktop++;
           }
-          // Pour chaque filleul, on récupère aussi le statut Bambu pour
-          // donner une indication d'engagement (l'user a-t-il vraiment
-          // commencé à utiliser l'app ?).
+          // Filleuls via referred_by_user_id (lien stable) + on remonte
+          // aussi le code exact utilisé à l'inscription pour faciliter
+          // le rapprochement comptable.
           const signups = db.prepare(`
-            SELECT id, email, name, created_at, plan, last_login, bambu_email
-            FROM users WHERE referred_by_code=?
+            SELECT id, email, name, created_at, plan, last_login, bambu_email, referred_by_code
+            FROM users WHERE referred_by_user_id=?
             ORDER BY created_at DESC
-          `).all(u.referral_code);
+          `).all(targetId);
           const signupsOut = signups.map(s => ({
             ...s,
             bambu_connected: getBambuStatus(s.id),
           }));
 
+          // Historique des codes : actif + archivés, pour montrer la
+          // chronologie à l'admin (utile en cas de litige sur une commission).
+          const codeHistory = db.prepare(`
+            SELECT code, started_at, ended_at, reason
+            FROM referral_code_history WHERE user_id=?
+            ORDER BY started_at DESC
+          `).all(targetId);
+
           const qs = new URLSearchParams((req.url.split('?')[1] || ''));
           if (qs.get('format') === 'csv') {
-            const csvHead = 'id,email,name,plan,created_at,last_login,bambu_email,bambu_connected\n';
+            const csvHead = 'id,email,name,plan,referred_by_code,created_at,last_login,bambu_email,bambu_connected\n';
             const escCsv  = v => v == null ? '' : ('"' + String(v).replace(/"/g, '""') + '"');
             const lines = signupsOut.map(s => [
-              s.id, s.email, s.name, s.plan, s.created_at,
+              s.id, s.email, s.name, s.plan, s.referred_by_code, s.created_at,
               s.last_login, s.bambu_email, s.bambu_connected,
             ].map(escCsv).join(',')).join('\n');
             res.writeHead(200, {
               'Content-Type': 'text/csv; charset=utf-8',
-              'Content-Disposition': `attachment; filename="partenaire-${u.referral_code}-conversions.csv"`,
+              'Content-Disposition': `attachment; filename="partenaire-${u.referral_code || 'sans-code'}-conversions.csv"`,
             });
             res.end(csvHead + lines + (lines ? '\n' : ''));
             return;
@@ -2909,6 +3063,7 @@ http.createServer(async (req, res) => {
             top_referers:  topReferers,
             devices,
             signups: signupsOut,
+            code_history: codeHistory,
           });
           return;
         }
@@ -2934,6 +3089,9 @@ http.createServer(async (req, res) => {
             code = '';
           }
           if (!code) { json(res, { error: 'Impossible de générer un code unique' }, 500); return; }
+          // Archive l'ancien code dans l'historique avant d'écrire le nouveau.
+          // Les anciens liens (Instagram, vieilles vidéos) restent traçables.
+          recordCodeChange(targetId, code, 'regenerated');
           db.prepare('UPDATE users SET referral_code=?, is_influencer=1 WHERE id=?').run(code, targetId);
           json(res, { ok: true, code });
           return;
@@ -2949,10 +3107,30 @@ http.createServer(async (req, res) => {
             const admins = db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_admin=1').get().c;
             if (admins <= 1) { json(res, { error: 'Impossible de supprimer le dernier admin' }, 400); return; }
           }
+          // Garde-fou traçabilité partenaire : si ce user a des filleuls,
+          // refuser par défaut pour ne pas perdre l'historique commission.
+          // L'admin peut forcer avec ?force=true (et accepte la perte).
+          const qsDel = new URLSearchParams((req.url.split('?')[1] || ''));
+          const force = qsDel.get('force') === 'true';
+          const referralCount = db.prepare('SELECT COUNT(*) AS c FROM users WHERE referred_by_user_id=?').get(targetId).c;
+          if (referralCount > 0 && !force) {
+            json(res, {
+              error: `Ce partenaire a ${referralCount} filleul(s). Supprimer le compte ferait perdre l'historique commission. Désactive-le plutôt (toggle ⏸) ou ajoute ?force=true pour forcer.`,
+              referral_count: referralCount,
+              code: 'has_referrals',
+            }, 409);
+            return;
+          }
           const state = bambuByUser.get(targetId);
           if (state?.client) state.client.end(true);
           bambuByUser.delete(targetId);
           const tx = db.transaction(() => {
+            // Si on force la suppression d'un partenaire avec filleuls,
+            // on null-ifie le user_id (le code original reste en historique
+            // pour le rapprochement comptable manuel).
+            if (force && referralCount > 0) {
+              db.prepare('UPDATE users SET referred_by_user_id=NULL WHERE referred_by_user_id=?').run(targetId);
+            }
             db.prepare('DELETE FROM items      WHERE user_id=?').run(targetId);
             db.prepare('DELETE FROM categories WHERE user_id=?').run(targetId);
             db.prepare('DELETE FROM print_jobs WHERE user_id=?').run(targetId);
