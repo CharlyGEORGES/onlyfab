@@ -1471,10 +1471,20 @@
     document.getElementById('register-alert').style.display = 'none';
 
     try {
+      // Si l'user est arrivé via un lien partenaire (?ref=CODE), on a
+      // stocké le code en localStorage. On l'envoie à l'inscription
+      // pour attribuer cette conversion à l'influencer.
+      const refCode = (() => {
+        try { return localStorage.getItem('bs_ref_code') || null; } catch { return null; }
+      })();
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name: name || undefined }),
+        body: JSON.stringify({
+          email, password,
+          name: name || undefined,
+          referredByCode: refCode || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1485,6 +1495,8 @@
         return;
       }
       showAlert('register-alert', 'success', 'Compte créé ! Redirection vers l\'app...');
+      // Le ref code a servi à attribuer la conversion, on peut le nettoyer.
+      try { localStorage.removeItem('bs_ref_code'); } catch {}
       setTimeout(() => { window.location.href = '/app'; }, 1000);
     } catch (err) {
       showAlert('register-alert', 'error', 'Erreur réseau. Réessayez.');
@@ -1493,6 +1505,25 @@
       btn.textContent = 'Créer mon compte gratuitement';
     }
   }
+
+  // ── Programme partenaires ───────────────────────────────────────────────
+  // Si l'URL contient ?ref=CODE, on stocke le code en localStorage pour
+  // attribuer la future inscription à l'influencer, et on ping l'API
+  // pour incrémenter le compteur de clics. Si le code n'est pas valide
+  // côté serveur, la requête est silencieusement ignorée.
+  (function captureReferral() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ref = (params.get('ref') || '').trim().toUpperCase();
+      if (!ref || !/^[A-Z0-9_-]{1,40}$/.test(ref)) return;
+      localStorage.setItem('bs_ref_code', ref);
+      fetch('/api/ref/visit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: ref }),
+      }).catch(() => {});
+    } catch {}
+  })();
 </script>
 </body>
 </html>

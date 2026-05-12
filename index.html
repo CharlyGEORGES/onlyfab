@@ -3368,6 +3368,15 @@
           </svg>
           <span data-i18n="header.calculator">Calculateur de coût</span>
         </button>
+        <button class="user-menu-item" role="menuitem" id="userMenuReferral" onclick="closeUserMenu();openReferralModal()" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span>Programme partenaire</span>
+        </button>
 
         <div class="user-menu-divider" role="separator"></div>
 
@@ -4341,6 +4350,54 @@
           </div>
           <div style="font-size:0.72rem;color:var(--text-muted);margin-top:8px" id="calcOutProfit">Saisis le poids et le temps pour démarrer.</div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- REFERRAL / INFLUENCER MODAL -->
+<div class="modal-overlay" id="referralModal" role="dialog" aria-modal="true" aria-labelledby="referralModalTitle" aria-hidden="true">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title" id="referralModalTitle">Programme partenaire</div>
+      <button class="close-btn" onclick="closeReferralModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 14px">
+        Partage ton lien unique. Chaque clic et chaque inscription qui en découle sont comptés ici.
+      </p>
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Ton lien unique</h3>
+      <div style="display:flex;gap:8px;margin-bottom:18px">
+        <input type="text" id="referralLink" readonly
+               style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:0.85rem;font-family:ui-monospace,monospace">
+        <button type="button" id="referralCopyBtn" onclick="copyReferralLink()"
+                style="background:var(--primary);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:0.82rem;font-weight:700;cursor:pointer;white-space:nowrap">
+          Copier
+        </button>
+      </div>
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Statistiques</h3>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+          <div id="refStatVisits" style="font-size:1.5rem;font-weight:800;color:var(--text)">—</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">Clics</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+          <div id="refStatSignups" style="font-size:1.5rem;font-weight:800;color:var(--accent)">—</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">Inscriptions</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+          <div id="refStatRate" style="font-size:1.5rem;font-weight:800;color:var(--primary)">—</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">Conversion</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">10 dernières inscriptions</h3>
+      <div id="refRecentList" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:0.8rem;color:var(--text-muted)">
+        —
       </div>
     </div>
   </div>
@@ -5806,6 +5863,75 @@
   let _calcReady     = false;
   let _calcSavedFadeTimer = null;
 
+  // ── PROGRAMME PARTENAIRE ──────────────────────────────────────────────────
+  // Au boot on demande si l'user est un influencer pour afficher (ou non)
+  // l'entrée de menu dédiée. Le serveur renvoie isInfluencer=false si
+  // l'utilisateur n'est pas inscrit au programme, on cache alors le bouton.
+  async function _checkInfluencerStatus() {
+    try {
+      const r = await fetch('/api/ref/me');
+      if (!r.ok) return;
+      const d = await r.json();
+      const btn = document.getElementById('userMenuReferral');
+      if (btn && d?.isInfluencer) btn.style.display = '';
+    } catch { /* ignore */ }
+  }
+  // Délégué après le mount initial : on appelle ça quand on est sûr d'avoir
+  // un user loggué. Placé dans le flow d'init général un peu plus bas.
+
+  async function openReferralModal() {
+    document.getElementById('referralModal').classList.add('open');
+    document.getElementById('referralLink').value      = 'Chargement…';
+    document.getElementById('refStatVisits').textContent  = '—';
+    document.getElementById('refStatSignups').textContent = '—';
+    document.getElementById('refStatRate').textContent    = '—';
+    document.getElementById('refRecentList').textContent  = 'Chargement…';
+    try {
+      const d = await api('GET', '/api/ref/me');
+      if (!d?.isInfluencer) {
+        document.getElementById('referralLink').value = '';
+        document.getElementById('refRecentList').textContent = 'Ton compte n\'est pas (encore) activé comme partenaire.';
+        return;
+      }
+      document.getElementById('referralLink').value         = d.link;
+      document.getElementById('refStatVisits').textContent  = d.stats.visits;
+      document.getElementById('refStatSignups').textContent = d.stats.signups;
+      document.getElementById('refStatRate').textContent    = (d.stats.conversionRate * 100).toFixed(1) + '%';
+      const list = document.getElementById('refRecentList');
+      if (!d.recentSignups?.length) {
+        list.textContent = 'Aucune inscription pour l\'instant — partage ton lien !';
+      } else {
+        list.innerHTML = d.recentSignups.map(r => {
+          const dt = new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+          return `<div style="padding:4px 0;border-bottom:1px solid var(--border)">Nouvelle inscription · ${dt}</div>`;
+        }).join('');
+      }
+    } catch (err) {
+      document.getElementById('refRecentList').textContent = 'Erreur : ' + (err.message || 'réseau');
+    }
+  }
+  window.openReferralModal = openReferralModal;
+
+  function closeReferralModal() {
+    document.getElementById('referralModal').classList.remove('open');
+  }
+  window.closeReferralModal = closeReferralModal;
+
+  function copyReferralLink() {
+    const input = document.getElementById('referralLink');
+    if (!input.value) return;
+    input.select();
+    try { document.execCommand('copy'); } catch {}
+    if (navigator.clipboard) {
+      try { navigator.clipboard.writeText(input.value); } catch {}
+    }
+    const btn = document.getElementById('referralCopyBtn');
+    const orig = btn.textContent;
+    btn.textContent = 'Copié ✓';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }
+  window.copyReferralLink = copyReferralLink;
+
   async function openCalculatorModal() {
     _calcReady = false; // empêche les save spontanés pendant le populate
     document.getElementById('calculatorModal').classList.add('open');
@@ -6402,6 +6528,9 @@
             <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin})" title="${u.is_admin?'Retirer admin':'Promouvoir admin'}" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:0.72rem;cursor:pointer">
               ${u.is_admin ? '↓ user' : '↑ admin'}
             </button>
+            <button onclick="adminEditInfluencer('${escAttr(u.id)}', '${escAttr(u.referral_code || '')}')" title="${u.referral_code ? 'Code partenaire : ' + u.referral_code : 'Activer comme partenaire'}" style="background:transparent;border:1px solid ${u.referral_code ? 'var(--primary)' : 'var(--border)'};border-radius:6px;color:${u.referral_code ? 'var(--primary)' : 'var(--text)'};padding:4px 8px;font-size:0.72rem;cursor:pointer">
+              ${u.referral_code ? '★ ' + escHtml(u.referral_code) : '+ partenaire'}
+            </button>
             <button onclick="adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" title="Supprimer" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:4px 8px;font-size:0.72rem;cursor:pointer">✕</button>
           </div>
         </div>`;
@@ -6431,6 +6560,30 @@
     }
     await refreshAdminPanel();
   }
+  // Active / met à jour / désactive le statut influencer d'un user.
+  // Prompt = nouveau code (vide = désactiver). Le serveur uppercase + valide.
+  async function adminEditInfluencer(uid, currentCode) {
+    const prompt1 = currentCode
+      ? `Code actuel : ${currentCode}\n\nNouveau code (laisse vide pour désactiver) :`
+      : `Code partenaire (ex: NICOMAKE, BAMBUFR) :`;
+    const input = window.prompt(prompt1, currentCode || '');
+    if (input === null) return; // cancel
+    const code = input.trim();
+    const r = await fetch('/api/admin/users/' + encodeURIComponent(uid), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        is_influencer: code.length > 0,
+        referral_code: code,
+      }),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      alert(data.error || 'Erreur');
+    }
+    await refreshAdminPanel();
+  }
+  window.adminEditInfluencer = adminEditInfluencer;
   async function adminDeleteUser(uid, email) {
     if (!confirm('Supprimer définitivement ' + email + ' ? Toutes ses données seront effacées.')) return;
     const r = await fetch('/api/admin/users/' + encodeURIComponent(uid), { method: 'DELETE' });
@@ -9201,6 +9354,9 @@
     const el = document.getElementById('appVersion');
     if (el) el.textContent = `v${v.version}`;
   }).catch(() => {});
+
+  // Programme partenaire : affiche l'entrée du menu si l'user est influencer.
+  _checkInfluencerStatus();
 
   // ── ONGLETS ───────────────────────────────────────────────────────────────
   let currentTab = 'stock';

@@ -212,6 +212,26 @@ addColumnIfMissing('users', 'bambu_refresh_token', 'TEXT');
 //   laborRatePerHour, targetMarginPct, currency }
 addColumnIfMissing('users', 'cost_settings', 'TEXT');
 
+// ── Programme partenaires / influenceurs ─────────────────────────────────
+// is_influencer  : flag pour distinguer un compte partenaire
+// referral_code  : code unique de l'influencer (NULL pour les users normaux)
+// referred_by_code : code utilisé par l'user pour s'inscrire (si applicable),
+//                    permet de compter les conversions par influencer.
+addColumnIfMissing('users', 'is_influencer',    'INTEGER DEFAULT 0');
+addColumnIfMissing('users', 'referral_code',    'TEXT');
+addColumnIfMissing('users', 'referred_by_code', 'TEXT');
+
+// Table des visites taggées : un row par fois que quelqu'un arrive sur
+// la landing avec ?ref=CODE. Permet de calculer le ratio conversion.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS referral_visits (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    ts   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_ref_visits_code ON referral_visits(code);
+`);
+
 // Indexes pour requêtes fréquentes (créés après TOUTES les migrations
 // pour garantir que colonnes et tables existent) :
 // - history.item_id   : timeline d'un item (déjà existant)
@@ -462,7 +482,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v35';
+const CACHE_VERSION = 'bs-v36';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1236,6 +1256,23 @@ http.createServer(async (req, res) => {
       return;
     }
 
+    // POST /api/ref/visit { code } → track une visite avec ?ref=CODE.
+    // Public (pas d'auth requise). On valide que le code correspond à un
+    // influencer actif pour ne pas polluer la table avec des codes random.
+    if (req.method === 'POST' && url === '/api/ref/visit') {
+      try {
+        const b = await parseBody(req);
+        if (typeof b?.code !== 'string') { json(res, { ok: true }); return; }
+        const code = b.code.trim().toUpperCase().slice(0, 40);
+        if (!code) { json(res, { ok: true }); return; }
+        const valid = db.prepare('SELECT 1 FROM users WHERE referral_code=? AND is_influencer=1').get(code);
+        if (!valid) { json(res, { ok: true }); return; }
+        db.prepare('INSERT INTO referral_visits (code) VALUES (?)').run(code);
+      } catch { /* ignore */ }
+      json(res, { ok: true });
+      return;
+    }
+
     if (req.method === 'POST' && url === '/api/auth/register') {
       const b = await parseBody(req);
       const { email, password, name } = b;
@@ -1255,8 +1292,17 @@ http.createServer(async (req, res) => {
       const uid = nanoid();
       // Premier utilisateur créé = admin
       const isAdmin = userCount === 0 ? 1 : 0;
-      db.prepare('INSERT INTO users (id,email,password_hash,name,is_admin,created_at) VALUES (?,?,?,?,?,?)')
-        .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString());
+      // Code influencer associé à l'inscription (si l'user est arrivé via un
+      // lien ?ref=CODE et qu'on a stocké le code en localStorage côté client).
+      // On valide juste que le code correspond à un compte influencer actif.
+      let refByCode = null;
+      if (typeof b.referredByCode === 'string' && b.referredByCode.trim()) {
+        const candidate = b.referredByCode.trim().toUpperCase().slice(0, 40);
+        const refOwner = db.prepare('SELECT id FROM users WHERE referral_code=? AND is_influencer=1').get(candidate);
+        if (refOwner) refByCode = candidate;
+      }
+      db.prepare('INSERT INTO users (id,email,password_hash,name,is_admin,created_at,referred_by_code) VALUES (?,?,?,?,?,?,?)')
+        .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString(), refByCode);
       // Assigner items existants sans user_id au premier utilisateur
       const orphans = db.prepare('SELECT COUNT(*) as c FROM items WHERE user_id IS NULL').get().c;
       if (orphans > 0) {
@@ -2359,6 +2405,34 @@ http.createServer(async (req, res) => {
         return;
       }
 
+      // GET /api/ref/me → infos influencer du user courant.
+      // Renvoie { isInfluencer, code, link, stats:{visits,signups} }.
+      // Si l'user n'est pas un influencer, isInfluencer=false et le reste null.
+      if (req.method === 'GET' && url === '/api/ref/me') {
+        const me = db.prepare('SELECT is_influencer, referral_code FROM users WHERE id=?').get(userId);
+        if (!me?.is_influencer || !me.referral_code) {
+          json(res, { isInfluencer: false });
+          return;
+        }
+        const visits  = db.prepare('SELECT COUNT(*) AS c FROM referral_visits WHERE code=?').get(me.referral_code).c;
+        const signups = db.prepare('SELECT COUNT(*) AS c FROM users WHERE referred_by_code=?').get(me.referral_code).c;
+        const recent  = db.prepare(`
+          SELECT created_at FROM users
+          WHERE referred_by_code=?
+          ORDER BY created_at DESC
+          LIMIT 10
+        `).all(me.referral_code);
+        const base = process.env.PUBLIC_URL || 'https://bambustock.com';
+        json(res, {
+          isInfluencer: true,
+          code:         me.referral_code,
+          link:         base.replace(/\/$/, '') + '/?ref=' + encodeURIComponent(me.referral_code),
+          stats:        { visits, signups, conversionRate: visits ? signups / visits : 0 },
+          recentSignups: recent.map(r => ({ at: r.created_at })),
+        });
+        return;
+      }
+
       // GET /api/bambu/printers → liste des imprimantes Bambu liées au
       // compte, avec puissance déduite du modèle (heuristique). Utilisé
       // par le calculateur pour pré-remplir la liste d'imprimantes.
@@ -2470,16 +2544,22 @@ http.createServer(async (req, res) => {
           const rows = db.prepare(`
             SELECT u.id, u.email, u.name, u.plan, u.is_admin, u.bambu_email,
                    u.created_at, u.last_login, u.last_seen,
+                   u.is_influencer, u.referral_code,
                    (SELECT COUNT(*) FROM items      WHERE user_id=u.id) AS items_count,
                    (SELECT COUNT(*) FROM print_jobs WHERE user_id=u.id) AS prints_count,
                    (SELECT COUNT(*) FROM sessions   WHERE user_id=u.id AND expires_at>datetime('now')) AS active_sessions
             FROM users u ORDER BY u.created_at DESC
           `).all();
-          json(res, rows.map(r => ({ ...r, is_admin: !!r.is_admin, bambu_connected: getBambuStatus(r.id) })));
+          json(res, rows.map(r => ({
+            ...r,
+            is_admin:        !!r.is_admin,
+            is_influencer:   !!r.is_influencer,
+            bambu_connected: getBambuStatus(r.id),
+          })));
           return;
         }
 
-        // PATCH /api/admin/users/:id { plan?, is_admin? }
+        // PATCH /api/admin/users/:id { plan?, is_admin?, is_influencer?, referral_code? }
         if (req.method === 'PATCH' && parts[2] === 'users' && parts[3]) {
           const targetId = parts[3];
           const b = await parseBody(req);
@@ -2497,10 +2577,39 @@ http.createServer(async (req, res) => {
             }
             updates.push('is_admin=:ia'); params.ia = b.is_admin ? 1 : 0;
           }
+          if (typeof b.is_influencer === 'boolean') {
+            updates.push('is_influencer=:ii'); params.ii = b.is_influencer ? 1 : 0;
+          }
+          if (typeof b.referral_code === 'string') {
+            // Code court alphanumérique, uppercase, unique. Vide → on retire le code.
+            const code = b.referral_code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 40);
+            if (code) {
+              const taken = db.prepare('SELECT id FROM users WHERE referral_code=? AND id<>?').get(code, targetId);
+              if (taken) { json(res, { error: `Code "${code}" déjà utilisé` }, 409); return; }
+              updates.push('referral_code=:rc'); params.rc = code;
+            } else {
+              updates.push('referral_code=NULL');
+            }
+          }
           if (!updates.length) { json(res, { ok: true }); return; }
           params.id = targetId;
           db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id=:id`).run(params);
           json(res, { ok: true });
+          return;
+        }
+
+        // GET /api/admin/influencers → liste des comptes influencer avec stats.
+        // Utilisé par le panel admin pour voir d'un coup d'œil qui ramène quoi.
+        if (req.method === 'GET' && url === '/api/admin/influencers') {
+          const rows = db.prepare(`
+            SELECT u.id, u.email, u.name, u.referral_code, u.created_at,
+                   (SELECT COUNT(*) FROM referral_visits WHERE code=u.referral_code) AS visits,
+                   (SELECT COUNT(*) FROM users WHERE referred_by_code=u.referral_code) AS signups
+            FROM users u
+            WHERE u.is_influencer=1 AND u.referral_code IS NOT NULL
+            ORDER BY signups DESC, visits DESC
+          `).all();
+          json(res, rows);
           return;
         }
 
