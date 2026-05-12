@@ -36,6 +36,9 @@
           carbon:    ['#000000', 'dark'],
           synthwave: ['#1a0b2e', 'dark'],
           light:     ['#f6f6fb', 'light'],
+          paper:     ['#fdf6e3', 'light'],
+          mist:      ['#eef2f6', 'light'],
+          sand:      ['#f5ebdc', 'light'],
         };
         if (saved && BG[saved]) {
           document.documentElement.setAttribute('data-theme', saved);
@@ -80,6 +83,57 @@
       --text-muted: #5e6080;
       --shadow: 0 4px 24px rgba(20,20,40,0.08);
       --focus-ring: 0 0 0 3px rgba(85,53,212,0.35);
+    }
+
+    /* Paper — fond crème chaud (inspiration Solarized Light), terracotta + olive */
+    html[data-theme="paper"] {
+      --primary: #c75c2e;
+      --primary-dark: #a04421;
+      --primary-light: #de7449;
+      --accent: #5f8b3f;
+      --danger: #d24545;
+      --bg: #fdf6e3;
+      --surface: #fffaee;
+      --surface2: #f3ead0;
+      --border: #ddd2b0;
+      --text: #2d2820;
+      --text-muted: #7a7060;
+      --shadow: 0 4px 24px rgba(80,60,30,0.06);
+      --focus-ring: 0 0 0 3px rgba(199,92,46,0.3);
+    }
+
+    /* Mist — fond bleu-gris froid, bleu profond + cyan */
+    html[data-theme="mist"] {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-light: #3b82f6;
+      --accent: #0891b2;
+      --danger: #dc2626;
+      --bg: #eef2f6;
+      --surface: #ffffff;
+      --surface2: #e2e8ef;
+      --border: #ccd4de;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --shadow: 0 4px 24px rgba(30,41,59,0.06);
+      --focus-ring: 0 0 0 3px rgba(37,99,235,0.3);
+    }
+
+    /* Sand — beige désert chaud, terracotta + sage */
+    html[data-theme="sand"] {
+      --primary: #b8542a;
+      --primary-dark: #964020;
+      --primary-light: #d06d44;
+      --accent: #7a9b3e;
+      --danger: #c0392b;
+      --bg: #f5ebdc;
+      --surface: #fcf5e8;
+      --surface2: #ebdfca;
+      --border: #d6c5a5;
+      --text: #2a2418;
+      --text-muted: #7a6a4f;
+      --shadow: 0 4px 24px rgba(80,50,20,0.07);
+      --focus-ring: 0 0 0 3px rgba(184,84,42,0.3);
     }
 
     /* ── PALETTES DARK ALTERNATIVES ─────────────────────────────────────
@@ -5384,6 +5438,9 @@
     { id: 'carbon',    name: 'Carbon',      kind: 'dark',  swatches: ['#000000', '#1a1a1a', '#ff006e', '#00f0ff'] },
     { id: 'synthwave', name: 'Synthwave',   kind: 'dark',  swatches: ['#1a0b2e', '#3a1f5e', '#ff2a6d', '#05d9e8'] },
     { id: 'light',     name: 'Light',       kind: 'light', swatches: ['#f6f6fb', '#ffffff', '#5535d4', '#00a37e'] },
+    { id: 'paper',     name: 'Paper',       kind: 'light', swatches: ['#fdf6e3', '#fffaee', '#c75c2e', '#5f8b3f'] },
+    { id: 'mist',      name: 'Mist',        kind: 'light', swatches: ['#eef2f6', '#ffffff', '#2563eb', '#0891b2'] },
+    { id: 'sand',      name: 'Sand',        kind: 'light', swatches: ['#f5ebdc', '#fcf5e8', '#b8542a', '#7a9b3e'] },
   ];
   const THEME_IDS = THEMES.map(t => t.id);
   window.THEMES = THEMES;
