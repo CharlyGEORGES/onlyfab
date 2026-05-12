@@ -5352,28 +5352,12 @@
 
 <script>
   // ─────────────────────────────────────────────────────────────────────────
-  // THEME MANAGER (dark / light)
+  // THEME MANAGER — catalogue + setter générique
   // ─────────────────────────────────────────────────────────────────────────
-  // Appliqué AVANT tout render pour éviter un flash de la mauvaise palette.
-  (function initTheme() {
-    let saved;
-    try { saved = localStorage.getItem('onlyfab.theme'); } catch {}
-    const theme = saved === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    updateThemeMeta(theme);
-  })();
-
-  function updateThemeMeta(theme) {
-    // theme-color du navigateur = bg du thème actif (1er swatch).
-    const t = (typeof THEMES !== 'undefined') ? THEMES.find(x => x.id === theme) : null;
-    const color = t ? t.swatches[0] : (theme === 'light' ? '#f6f6fb' : '#0f0f13');
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', color);
-  }
-
   // Catalogue des thèmes disponibles. Chaque entrée a un id (= valeur
   // data-theme), un nom affiché, et 4 swatches pour le picker visuel
-  // (bg, surface, primary, accent).
+  // (bg, surface, primary, accent). Déclaré AVANT initTheme pour
+  // pouvoir l'utiliser dans updateThemeMeta sans TDZ.
   const THEMES = [
     { id: 'dark',    name: 'Midnight',  kind: 'dark',  swatches: ['#0f0f13', '#1a1a24', '#6c47ff', '#00d4aa'] },
     { id: 'ocean',   name: 'Ocean',     kind: 'dark',  swatches: ['#0a0f1c', '#131b2e', '#3b82f6', '#06b6d4'] },
@@ -5385,6 +5369,23 @@
   ];
   const THEME_IDS = THEMES.map(t => t.id);
   window.THEMES = THEMES;
+
+  function updateThemeMeta(theme) {
+    // theme-color du navigateur = bg du thème actif (1er swatch).
+    const t = THEMES.find(x => x.id === theme);
+    const color = t ? t.swatches[0] : '#0f0f13';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', color);
+  }
+
+  // Appliqué AVANT tout render pour éviter un flash de la mauvaise palette.
+  (function initTheme() {
+    let saved;
+    try { saved = localStorage.getItem('onlyfab.theme'); } catch {}
+    const theme = THEME_IDS.includes(saved) ? saved : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    updateThemeMeta(theme);
+  })();
 
   function setTheme(theme) {
     if (!THEME_IDS.includes(theme)) theme = 'dark';
