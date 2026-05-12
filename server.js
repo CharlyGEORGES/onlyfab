@@ -590,7 +590,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v45';
+const CACHE_VERSION = 'bs-v46';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -790,7 +790,11 @@ function getSessionUser(req) {
 // requêtes en quelques secondes). Le throttle est mémorisé en RAM, donc
 // reset au redémarrage du serveur — acceptable.
 const _lastSeenTouches = new Map(); // userId → timestamp ms du dernier UPDATE
-const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
+// Throttle 1 min : compromis entre fraîcheur de la donnée et écritures
+// DB. À 1 min on capte précisément les ouvertures (re-ouverture après
+// quelques heures de pause = 1 update propre) sans flooder pour les
+// rafales de requêtes simultanées (charge initiale, polling).
+const LAST_SEEN_THROTTLE_MS = 60 * 1000;
 function _touchLastSeen(user) {
   if (!user || !user.id) return;
   const now = Date.now();
