@@ -452,6 +452,132 @@
       line-height: 1.6;
     }
 
+    /* ── CALCULATOR (landing demo) ── */
+    .calc-bg {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .calc-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      max-width: 920px;
+      margin: 0 auto;
+    }
+    .calc-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 26px;
+    }
+    .calc-card h3 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 0 0 14px;
+      font-weight: 700;
+    }
+    .calc-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 12px;
+    }
+    .calc-row label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .calc-row input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 0.92rem;
+      font-family: inherit;
+    }
+    .calc-row input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(108, 71, 255, 0.15);
+    }
+    .calc-row-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .calc-result-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .calc-result-line span:last-child {
+      color: var(--text);
+      font-weight: 600;
+      font-family: ui-monospace, monospace;
+    }
+    .calc-result-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 0 6px;
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--text);
+      border-top: 2px solid var(--border);
+      margin-top: 6px;
+    }
+    .calc-result-total span:last-child {
+      font-family: ui-monospace, monospace;
+    }
+    .calc-result-price {
+      margin-top: 16px;
+      background: linear-gradient(135deg, rgba(108,71,255,0.12), rgba(0,212,170,0.12));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .calc-result-price-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+    .calc-result-price-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-family: ui-monospace, monospace;
+    }
+    .calc-cta {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .calc-cta a {
+      color: var(--primary-light);
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .calc-cta a:hover { text-decoration: underline; }
+
+    @media (max-width: 760px) {
+      .calc-grid { grid-template-columns: 1fr; gap: 18px; }
+      .calc-card { padding: 22px; }
+    }
+
     /* ── PRICING ── */
     .pricing-bg {
       background: var(--bg2);
@@ -1073,6 +1199,82 @@
   </div>
 </section>
 
+<!-- ── CALCULATEUR DEMO ── -->
+<section class="calc-bg" id="calculator">
+  <div class="container">
+    <div class="section-header centered">
+      <div class="section-label">Calculateur de coût</div>
+      <h2 class="section-title">Combien te coûte vraiment un print ?</h2>
+      <p class="section-sub">Filament, électricité, marge — la même logique que dans l'app. Essaie tout de suite, aucune inscription nécessaire.</p>
+    </div>
+
+    <div class="calc-grid">
+      <!-- COLONNE PARAMÈTRES -->
+      <div class="calc-card">
+        <h3>Paramètres</h3>
+        <div class="calc-row-grid">
+          <div class="calc-row">
+            <label for="lcFilament">Filament (€/kg)</label>
+            <input type="number" id="lcFilament" min="0" step="0.5" value="22" inputmode="decimal">
+          </div>
+          <div class="calc-row">
+            <label for="lcElec">Électricité (€/kWh)</label>
+            <input type="number" id="lcElec" min="0" step="0.01" value="0.20" inputmode="decimal">
+          </div>
+          <div class="calc-row">
+            <label for="lcPower">Imprimante (W)</label>
+            <input type="number" id="lcPower" min="0" step="10" value="150" inputmode="numeric">
+          </div>
+          <div class="calc-row">
+            <label for="lcMargin">Marge cible (%)</label>
+            <input type="number" id="lcMargin" min="0" step="5" value="50" inputmode="numeric">
+          </div>
+        </div>
+
+        <h3 style="margin-top:18px">Cette impression</h3>
+        <div class="calc-row-grid">
+          <div class="calc-row">
+            <label for="lcWeight">Poids filament (g)</label>
+            <input type="number" id="lcWeight" min="0" step="1" value="50" inputmode="decimal">
+          </div>
+          <div class="calc-row">
+            <label for="lcHours">Temps (h)</label>
+            <input type="number" id="lcHours" min="0" step="0.1" value="3" inputmode="decimal">
+          </div>
+        </div>
+      </div>
+
+      <!-- COLONNE RÉSULTATS -->
+      <div class="calc-card">
+        <h3>Résultat</h3>
+        <div class="calc-result-line">
+          <span>Filament <span id="lcOutFilDetail" style="opacity:.6;font-weight:500"></span></span>
+          <span id="lcOutFilament">—</span>
+        </div>
+        <div class="calc-result-line">
+          <span>Électricité <span id="lcOutElecDetail" style="opacity:.6;font-weight:500"></span></span>
+          <span id="lcOutElec">—</span>
+        </div>
+        <div class="calc-result-total">
+          <span>Coût de revient</span>
+          <span id="lcOutCost">—</span>
+        </div>
+        <div class="calc-result-price">
+          <div>
+            <div class="calc-result-price-label">Prix conseillé</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px" id="lcOutMarginDetail">avec marge 50%</div>
+          </div>
+          <div class="calc-result-price-value" id="lcOutPrice">—</div>
+        </div>
+        <div class="calc-cta">
+          Tu veux automatiser tout ça avec ton Bambu ?
+          <a href="#register">Crée ton compte gratuit →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ── PRICING ── -->
 <section class="pricing-bg" id="pricing">
   <div class="container">
@@ -1523,6 +1725,54 @@
         body: JSON.stringify({ code: ref }),
       }).catch(() => {});
     } catch {}
+  })();
+
+  // ── Calculateur de démonstration ────────────────────────────────────────
+  // Version standalone (pas d'API, pas de persistance) qui illustre la
+  // valeur du produit aux visiteurs avant inscription. Mêmes formules que
+  // l'app : filament = poids × prix/kg ; élec = (W × h) / 1000 × tarif ;
+  // prix conseillé = coût × (1 + marge/100).
+  (function setupLandingCalc() {
+    const ids = ['lcFilament','lcElec','lcPower','lcMargin','lcWeight','lcHours'];
+    const inputs = ids.map(id => document.getElementById(id));
+    if (inputs.some(i => !i)) return; // section absente (failsafe)
+
+    const fmt = n => isFinite(n)
+      ? n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
+      : '—';
+
+    function recompute() {
+      const v = id => parseFloat(document.getElementById(id).value);
+      const filPrice = v('lcFilament');   // €/kg
+      const elecRate = v('lcElec');       // €/kWh
+      const powerW   = v('lcPower');      // W
+      const marginP  = v('lcMargin');     // %
+      const weightG  = v('lcWeight');     // g
+      const hours    = v('lcHours');      // h
+
+      const filCost  = (weightG > 0 && filPrice > 0) ? (weightG / 1000) * filPrice : 0;
+      const elecCost = (hours > 0 && powerW > 0 && elecRate > 0)
+        ? (powerW * hours / 1000) * elecRate : 0;
+      const total    = filCost + elecCost;
+      const margin   = isFinite(marginP) && marginP >= 0 ? marginP : 0;
+      const price    = total * (1 + margin / 100);
+
+      document.getElementById('lcOutFilament').textContent  = fmt(filCost);
+      document.getElementById('lcOutElec').textContent      = fmt(elecCost);
+      document.getElementById('lcOutCost').textContent      = fmt(total);
+      document.getElementById('lcOutPrice').textContent     = price > 0 ? fmt(price) : '—';
+
+      // Sous-titres pour rendre le calcul transparent.
+      document.getElementById('lcOutFilDetail').textContent =
+        (weightG > 0 && filPrice > 0) ? `· ${weightG} g × ${filPrice.toFixed(2)} €/kg` : '';
+      document.getElementById('lcOutElecDetail').textContent =
+        (hours > 0 && powerW > 0) ? `· ${powerW} W × ${hours} h` : '';
+      document.getElementById('lcOutMarginDetail').textContent =
+        margin > 0 ? `avec marge ${margin}%` : 'sans marge';
+    }
+
+    inputs.forEach(i => i.addEventListener('input', recompute));
+    recompute();
   })();
 </script>
 </body>
