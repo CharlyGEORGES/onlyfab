@@ -314,6 +314,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_feedback_status     ON feedback(status);
   CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
 `);
+// Réponse visible par l'utilisateur (distinct de admin_note qui reste privé).
+addColumnIfMissing('feedback', 'admin_reply', 'TEXT');
+addColumnIfMissing('feedback', 'replied_at',  'TIMESTAMP');
 
 // Réglages globaux app (clé/valeur). Pour l'instant : webhook Discord
 // utilisé pour notifier les nouvelles remontées en direct.
@@ -590,7 +593,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v50';
+const CACHE_VERSION = 'bs-v51';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1499,7 +1502,8 @@ http.createServer(async (req, res) => {
       const user = getSessionUser(req);
       if (!user) { json(res, { error: 'Connexion requise' }, 401); return; }
       const items = db.prepare(`
-        SELECT id, type, message, page_url, status, created_at, resolved_at
+        SELECT id, type, message, page_url, status, admin_reply, replied_at,
+               created_at, resolved_at
         FROM feedback WHERE user_id=?
         ORDER BY created_at DESC LIMIT 100
       `).all(user.id);
@@ -2928,7 +2932,7 @@ http.createServer(async (req, res) => {
           // messages directement depuis sa fiche.
           const feedbacks = db.prepare(`
             SELECT id, type, message, page_url, status, admin_note,
-                   created_at, resolved_at
+                   admin_reply, replied_at, created_at, resolved_at
             FROM feedback WHERE user_id=?
             ORDER BY created_at DESC LIMIT 50
           `).all(targetId);
@@ -3265,7 +3269,8 @@ http.createServer(async (req, res) => {
           const where = status === 'all' ? '' : 'WHERE f.status=?';
           const rows = db.prepare(`
             SELECT f.id, f.user_id, f.type, f.message, f.page_url, f.user_agent,
-                   f.status, f.admin_note, f.created_at, f.resolved_at,
+                   f.status, f.admin_note, f.admin_reply, f.replied_at,
+                   f.created_at, f.resolved_at,
                    u.email AS user_email, u.name AS user_name, u.plan AS user_plan
             FROM feedback f
             LEFT JOIN users u ON u.id = f.user_id
@@ -3291,7 +3296,9 @@ http.createServer(async (req, res) => {
           return;
         }
 
-        // PATCH /api/admin/feedback/:id { status?, admin_note? }
+        // PATCH /api/admin/feedback/:id { status?, admin_note?, admin_reply? }
+        // admin_note = privé (admin uniquement)
+        // admin_reply = visible par l'utilisateur dans son historique
         if (req.method === 'PATCH' && parts[2] === 'feedback' && parts[3]) {
           const id = parts[3];
           const b  = await parseBody(req);
@@ -3303,6 +3310,15 @@ http.createServer(async (req, res) => {
           }
           if (typeof b.admin_note === 'string') {
             updates.push('admin_note=:n'); params.n = b.admin_note.slice(0, 4000);
+          }
+          if (typeof b.admin_reply === 'string') {
+            const reply = b.admin_reply.slice(0, 4000);
+            updates.push('admin_reply=:rep'); params.rep = reply;
+            // replied_at se met à jour quand on écrit une réponse, se vide
+            // quand on l'efface — comme ça l'UI sait s'il y a une réponse.
+            updates.push(reply.trim()
+              ? "replied_at=CURRENT_TIMESTAMP"
+              : "replied_at=NULL");
           }
           if (!updates.length) { json(res, { ok: true }); return; }
           params.id = id;
