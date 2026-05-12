@@ -7271,6 +7271,33 @@
           </div>
         </div>
 
+        <!-- Historique des codes (toujours affiché pour la transparence) -->
+        ${(d.code_history && d.code_history.length) ? `
+          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">
+            Historique des codes <span style="opacity:.6;font-size:0.8em">· traçabilité</span>
+          </h3>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:18px">
+            ${d.code_history.map(h => {
+              const active = !h.ended_at;
+              const start  = new Date(h.started_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' });
+              const end    = h.ended_at ? new Date(h.ended_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) : 'maintenant';
+              const reasonLbl = {
+                initial:        'créé',
+                regenerated:    'régénéré',
+                admin_changed:  'changé par admin',
+                new:            'nouveau',
+                changed:        'changé',
+              }[h.reason] || h.reason || '';
+              return `
+                <div style="display:flex;align-items:center;gap:10px;padding:5px 0;font-size:0.78rem">
+                  <span style="font-family:ui-monospace,monospace;background:${active ? 'var(--primary)' : 'var(--surface)'};color:${active ? '#fff' : 'var(--text-muted)'};padding:2px 8px;border-radius:4px;${active ? '' : 'border:1px solid var(--border);text-decoration:line-through'}">${escHtml(h.code)}</span>
+                  <span style="color:var(--text-muted);font-size:0.72rem;flex:1">${start} → ${end}${reasonLbl ? ' · ' + reasonLbl : ''}</span>
+                  ${active ? '<span style="background:var(--accent);color:#000;font-size:0.55rem;padding:1px 6px;border-radius:3px">ACTIF</span>' : ''}
+                </div>`;
+            }).join('')}
+          </div>
+        ` : ''}
+
         <!-- Liste des inscriptions -->
         <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">
           Inscriptions attribuées (${d.signups.length})
@@ -7282,11 +7309,18 @@
                 ? '<span style="background:var(--accent);color:#000;font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;margin-left:4px">BAMBU ✓</span>'
                 : (s.bambu_email ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;margin-left:4px;border:1px solid var(--border)">BAMBU déconnecté</span>' : '');
               const lastLog = s.last_login ? `· dernier login ${_fmtRelTime(s.last_login)}` : '· jamais loggé';
+              // Code utilisé à l'inscription : on l'affiche en badge "ancien"
+              // si différent du code actuel, pour repérer les vieux liens.
+              const signupCodeBadge = s.referred_by_code
+                ? (s.referred_by_code === d.user.referral_code
+                    ? `<span style="font-family:ui-monospace,monospace;background:var(--surface);color:var(--text-muted);font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;margin-left:4px;border:1px solid var(--border)" title="Code utilisé à l'inscription">${escHtml(s.referred_by_code)}</span>`
+                    : `<span style="font-family:ui-monospace,monospace;background:var(--surface2);color:var(--accent);font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;margin-left:4px;border:1px solid var(--accent)" title="Code ancien (régénéré depuis) — l'attribution est préservée">${escHtml(s.referred_by_code)} ↗</span>`)
+                : '';
               return `
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;${i ? 'border-top:1px solid var(--border)' : ''};gap:10px">
                   <div style="flex:1;min-width:0">
                     <div style="font-size:0.85rem;font-weight:600;display:flex;align-items:center;flex-wrap:wrap">
-                      ${escHtml(s.name || s.email)}${bambuBadge}
+                      ${escHtml(s.name || s.email)}${bambuBadge}${signupCodeBadge}
                     </div>
                     <div style="font-size:0.7rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                       ${escHtml(s.email)} · plan ${escHtml(s.plan || 'beta')} ${lastLog}
@@ -7604,7 +7638,21 @@
   window.adminEditInfluencer = adminEditInfluencer;
   async function adminDeleteUser(uid, email) {
     if (!confirm('Supprimer définitivement ' + email + ' ? Toutes ses données seront effacées.')) return;
-    const r = await fetch('/api/admin/users/' + encodeURIComponent(uid), { method: 'DELETE' });
+    let r = await fetch('/api/admin/users/' + encodeURIComponent(uid), { method: 'DELETE' });
+    if (r.status === 409) {
+      // Partenaire avec filleuls : on propose un choix clair (désactiver vs forcer)
+      const d = await r.json().catch(() => ({}));
+      const n = d.referral_count || 0;
+      const ok = confirm(
+        `⚠ Ce compte est un partenaire avec ${n} filleul(s).\n\n` +
+        `Le supprimer fait perdre la traçabilité de leurs commissions.\n` +
+        `On RECOMMANDE plutôt de le désactiver (toggle ⏸ dans Partenaires).\n\n` +
+        `Cliquer OK pour FORCER la suppression (perte historique commission).\n` +
+        `Cliquer Annuler pour conserver le compte.`
+      );
+      if (!ok) { await refreshAdminPanel(); return; }
+      r = await fetch('/api/admin/users/' + encodeURIComponent(uid) + '?force=true', { method: 'DELETE' });
+    }
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
       alert(data.error || 'Erreur');
