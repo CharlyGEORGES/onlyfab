@@ -3991,7 +3991,7 @@
 
 <!-- CALCULATOR MODAL -->
 <div class="modal-overlay" id="calculatorModal" role="dialog" aria-modal="true" aria-labelledby="calculatorModalTitle" aria-hidden="true">
-  <div class="modal" style="max-width:540px">
+  <div class="modal" style="max-width:560px">
     <div class="modal-header">
       <div class="modal-title" id="calculatorModalTitle">Calculateur de coût</div>
       <button class="close-btn" onclick="closeCalculatorModal()" aria-label="Fermer">
@@ -3999,19 +3999,11 @@
       </button>
     </div>
     <div class="modal-body">
-      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Paramètres de coût</h3>
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Paramètres généraux</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
-        <div class="form-group">
-          <label for="calcFilamentPrice">Filament (€/kg)</label>
-          <input type="number" id="calcFilamentPrice" min="0" step="0.5" inputmode="decimal" oninput="recomputeCalc()">
-        </div>
         <div class="form-group">
           <label for="calcElecRate">Électricité (€/kWh)</label>
           <input type="number" id="calcElecRate" min="0" step="0.01" inputmode="decimal" oninput="recomputeCalc()">
-        </div>
-        <div class="form-group">
-          <label for="calcPrinterW">Puissance imprimante (W)</label>
-          <input type="number" id="calcPrinterW" min="0" step="10" inputmode="numeric" oninput="recomputeCalc()">
         </div>
         <div class="form-group">
           <label for="calcLaborRate">Main d'œuvre (€/h, 0 = ignoré)</label>
@@ -4022,6 +4014,19 @@
           <input type="number" id="calcMarginPct" min="0" step="5" inputmode="numeric" oninput="recomputeCalc()">
         </div>
       </div>
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:14px 0 8px">Filaments (prix par kg)</h3>
+      <div id="calcFilamentList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
+      <button type="button" onclick="addCalcFilament()" style="background:transparent;color:var(--primary);border:1px dashed var(--primary);border-radius:8px;padding:7px 10px;font-size:0.8rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:6px">
+        + Ajouter un filament
+      </button>
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:14px 0 8px">Imprimantes (puissance en W)</h3>
+      <div id="calcPrinterList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
+      <button type="button" onclick="addCalcPrinter()" style="background:transparent;color:var(--primary);border:1px dashed var(--primary);border-radius:8px;padding:7px 10px;font-size:0.8rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:14px">
+        + Ajouter une imprimante
+      </button>
+
       <button type="button" onclick="saveCostSettings()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:0.82rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:18px">
         Enregistrer les paramètres
       </button>
@@ -4030,6 +4035,14 @@
 
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Cette impression</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group">
+          <label for="calcSelectFilament">Filament utilisé</label>
+          <select id="calcSelectFilament" onchange="recomputeCalc()"></select>
+        </div>
+        <div class="form-group">
+          <label for="calcSelectPrinter">Imprimante</label>
+          <select id="calcSelectPrinter" onchange="recomputeCalc()"></select>
+        </div>
         <div class="form-group">
           <label for="calcWeight">Poids filament (g)</label>
           <input type="number" id="calcWeight" min="0" step="1" inputmode="decimal" placeholder="ex. 45" oninput="recomputeCalc()">
@@ -4042,10 +4055,10 @@
 
       <div id="calcResult" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
-          <span>Filament</span><span id="calcOutFilament">—</span>
+          <span>Filament <span id="calcOutFilName" style="opacity:0.7"></span></span><span id="calcOutFilament">—</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
-          <span>Électricité</span><span id="calcOutElec">—</span>
+          <span>Électricité <span id="calcOutPrinterName" style="opacity:0.7"></span></span><span id="calcOutElec">—</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:10px">
           <span>Main d'œuvre</span><span id="calcOutLabor">—</span>
@@ -4438,6 +4451,7 @@
       'header.saved': 'Sauvegardé',
       'header.categories': 'Gérer les catégories',
       'header.history': 'Historique',
+      'header.calculator': 'Calculateur de coût',
       'header.export': 'Exporter en CSV',
       'header.import': 'Importer un CSV',
       'form.tags': 'Tags',
@@ -4563,6 +4577,7 @@
       'header.saved': 'Saved',
       'header.categories': 'Manage categories',
       'header.history': 'History',
+      'header.calculator': 'Cost calculator',
       'header.export': 'Export to CSV',
       'header.import': 'Import a CSV',
       'form.tags': 'Tags',
@@ -4688,6 +4703,7 @@
       'header.saved': 'Guardado',
       'header.categories': 'Gestionar categorías',
       'header.history': 'Historial',
+      'header.calculator': 'Calculadora de costes',
       'header.export': 'Exportar a CSV',
       'header.import': 'Importar un CSV',
       'form.tags': 'Etiquetas',
@@ -4813,6 +4829,7 @@
       'header.saved': 'Gespeichert',
       'header.categories': 'Kategorien verwalten',
       'header.history': 'Verlauf',
+      'header.calculator': 'Kostenkalkulator',
       'header.export': 'CSV exportieren',
       'header.import': 'CSV importieren',
       'form.tags': 'Tags',
@@ -4938,6 +4955,7 @@
       'header.saved': 'Salvato',
       'header.categories': 'Gestisci categorie',
       'header.history': 'Cronologia',
+      'header.calculator': 'Calcolatore di costi',
       'header.export': 'Esporta in CSV',
       'header.import': 'Importa un CSV',
       'form.tags': 'Tag',
@@ -5063,6 +5081,7 @@
       'header.saved': 'Guardado',
       'header.categories': 'Gerir categorias',
       'header.history': 'Histórico',
+      'header.calculator': 'Calculadora de custos',
       'header.export': 'Exportar para CSV',
       'header.import': 'Importar um CSV',
       'form.tags': 'Tags',
@@ -5484,35 +5503,50 @@
   }
 
   // ── CALCULATEUR DE COÛT ───────────────────────────────────────────────────
-  // Defaults raisonnables si le user n'a jamais ouvert le modal.
-  const _calcDefaults = {
-    filamentPricePerKg:    20,    // ~20 €/kg pour du PLA basique
-    electricityRatePerKwh: 0.20,  // tarif moyen France 2024
-    printerPowerW:         150,   // X1C en moyenne
-    laborRatePerHour:      0,     // off par défaut
+  // State tenu en mémoire le temps que le modal est ouvert. Persisté côté
+  // serveur via saveCostSettings(). Les filaments / imprimantes sont des
+  // listes éditables : le user peut en ajouter / supprimer puis utiliser
+  // la sélection dans le calculateur pour appliquer leur prix / puissance.
+  const _calcDefaultFilaments = [
+    { name: 'PLA',  pricePerKg: 20 },
+    { name: 'PETG', pricePerKg: 25 },
+    { name: 'ABS',  pricePerKg: 22 },
+  ];
+  const _calcDefaultPrinters = [
+    { name: 'Bambu X1C', powerW: 350 },
+    { name: 'Bambu P1S', powerW: 200 },
+    { name: 'Bambu A1',  powerW: 150 },
+  ];
+  let _calcState = {
+    electricityRatePerKwh: 0.20,
+    laborRatePerHour:      0,
     targetMarginPct:       50,
+    filaments: [..._calcDefaultFilaments],
+    printers:  [..._calcDefaultPrinters],
   };
 
   async function openCalculatorModal() {
     document.getElementById('calculatorModal').classList.add('open');
-    // Charge les settings depuis le serveur, fallback sur defaults.
     try {
       const s = await api('GET', '/api/cost-settings');
-      const merged = { ..._calcDefaults, ...s };
-      document.getElementById('calcFilamentPrice').value = merged.filamentPricePerKg;
-      document.getElementById('calcElecRate').value      = merged.electricityRatePerKwh;
-      document.getElementById('calcPrinterW').value      = merged.printerPowerW;
-      document.getElementById('calcLaborRate').value     = merged.laborRatePerHour;
-      document.getElementById('calcMarginPct').value     = merged.targetMarginPct;
+      _calcState = {
+        electricityRatePerKwh: s.electricityRatePerKwh ?? 0.20,
+        laborRatePerHour:      s.laborRatePerHour      ?? 0,
+        targetMarginPct:       s.targetMarginPct       ?? 50,
+        filaments: Array.isArray(s.filaments) && s.filaments.length
+                   ? s.filaments : [..._calcDefaultFilaments],
+        printers:  Array.isArray(s.printers) && s.printers.length
+                   ? s.printers : [..._calcDefaultPrinters],
+      };
     } catch {
-      // Si l'API échoue, on remplit les defaults pour que le formulaire soit
-      // utilisable hors-ligne (même si la sauvegarde échouera).
-      document.getElementById('calcFilamentPrice').value = _calcDefaults.filamentPricePerKg;
-      document.getElementById('calcElecRate').value      = _calcDefaults.electricityRatePerKwh;
-      document.getElementById('calcPrinterW').value      = _calcDefaults.printerPowerW;
-      document.getElementById('calcLaborRate').value     = _calcDefaults.laborRatePerHour;
-      document.getElementById('calcMarginPct').value     = _calcDefaults.targetMarginPct;
+      // hors-ligne : on garde les defaults
     }
+    document.getElementById('calcElecRate').value   = _calcState.electricityRatePerKwh;
+    document.getElementById('calcLaborRate').value  = _calcState.laborRatePerHour;
+    document.getElementById('calcMarginPct').value  = _calcState.targetMarginPct;
+    renderCalcFilamentList();
+    renderCalcPrinterList();
+    renderCalcSelects();
     recomputeCalc();
   }
   window.openCalculatorModal = openCalculatorModal;
@@ -5522,16 +5556,104 @@
   }
   window.closeCalculatorModal = closeCalculatorModal;
 
+  // Liste éditable des filaments. Chaque row a un input name + price.
+  function renderCalcFilamentList() {
+    const list = document.getElementById('calcFilamentList');
+    list.innerHTML = _calcState.filaments.map((f, i) => `
+      <div style="display:grid;grid-template-columns:1fr 110px 32px;gap:6px;align-items:center">
+        <input type="text" value="${escHtml(f.name)}" placeholder="Nom"
+               oninput="updateCalcFilament(${i},'name',this.value)"
+               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem">
+        <input type="number" value="${f.pricePerKg}" min="0" step="0.5" inputmode="decimal" placeholder="€/kg"
+               oninput="updateCalcFilament(${i},'pricePerKg',this.value)"
+               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem;text-align:right">
+        <button type="button" onclick="removeCalcFilament(${i})" aria-label="Supprimer"
+                style="background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:1.2rem;line-height:1;padding:4px">×</button>
+      </div>
+    `).join('');
+  }
+  function addCalcFilament() {
+    _calcState.filaments.push({ name: '', pricePerKg: 20 });
+    renderCalcFilamentList();
+    renderCalcSelects();
+  }
+  function removeCalcFilament(idx) {
+    _calcState.filaments.splice(idx, 1);
+    renderCalcFilamentList();
+    renderCalcSelects();
+    recomputeCalc();
+  }
+  function updateCalcFilament(idx, key, val) {
+    if (!_calcState.filaments[idx]) return;
+    _calcState.filaments[idx][key] = key === 'pricePerKg' ? (parseFloat(val) || 0) : val;
+    // On ne re-render pas la row entière pour ne pas perdre le focus du champ,
+    // mais on update le select pour refléter un changement de nom.
+    renderCalcSelects();
+    recomputeCalc();
+  }
+  window.addCalcFilament    = addCalcFilament;
+  window.removeCalcFilament = removeCalcFilament;
+  window.updateCalcFilament = updateCalcFilament;
+
+  function renderCalcPrinterList() {
+    const list = document.getElementById('calcPrinterList');
+    list.innerHTML = _calcState.printers.map((p, i) => `
+      <div style="display:grid;grid-template-columns:1fr 110px 32px;gap:6px;align-items:center">
+        <input type="text" value="${escHtml(p.name)}" placeholder="Nom"
+               oninput="updateCalcPrinter(${i},'name',this.value)"
+               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem">
+        <input type="number" value="${p.powerW}" min="0" step="10" inputmode="numeric" placeholder="W"
+               oninput="updateCalcPrinter(${i},'powerW',this.value)"
+               style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.85rem;text-align:right">
+        <button type="button" onclick="removeCalcPrinter(${i})" aria-label="Supprimer"
+                style="background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:1.2rem;line-height:1;padding:4px">×</button>
+      </div>
+    `).join('');
+  }
+  function addCalcPrinter() {
+    _calcState.printers.push({ name: '', powerW: 150 });
+    renderCalcPrinterList();
+    renderCalcSelects();
+  }
+  function removeCalcPrinter(idx) {
+    _calcState.printers.splice(idx, 1);
+    renderCalcPrinterList();
+    renderCalcSelects();
+    recomputeCalc();
+  }
+  function updateCalcPrinter(idx, key, val) {
+    if (!_calcState.printers[idx]) return;
+    _calcState.printers[idx][key] = key === 'powerW' ? (parseFloat(val) || 0) : val;
+    renderCalcSelects();
+    recomputeCalc();
+  }
+  window.addCalcPrinter    = addCalcPrinter;
+  window.removeCalcPrinter = removeCalcPrinter;
+  window.updateCalcPrinter = updateCalcPrinter;
+
+  // Remplit les <select> du calculateur en préservant la sélection actuelle
+  // (par index, fallback sur 0 si l'élément choisi a été supprimé).
+  function renderCalcSelects() {
+    const filSel = document.getElementById('calcSelectFilament');
+    const prnSel = document.getElementById('calcSelectPrinter');
+    const prevFil = filSel.value;
+    const prevPrn = prnSel.value;
+    filSel.innerHTML = _calcState.filaments.length
+      ? _calcState.filaments.map((f, i) => `<option value="${i}">${escHtml(f.name || '—')} (${f.pricePerKg} €/kg)</option>`).join('')
+      : `<option value="">Aucun — ajoute-en un</option>`;
+    prnSel.innerHTML = _calcState.printers.length
+      ? _calcState.printers.map((p, i) => `<option value="${i}">${escHtml(p.name || '—')} (${p.powerW} W)</option>`).join('')
+      : `<option value="">Aucune — ajoute-en une</option>`;
+    if (prevFil && filSel.querySelector(`option[value="${prevFil}"]`)) filSel.value = prevFil;
+    if (prevPrn && prnSel.querySelector(`option[value="${prevPrn}"]`)) prnSel.value = prevPrn;
+  }
+
   async function saveCostSettings() {
-    const payload = {
-      filamentPricePerKg:    parseFloat(document.getElementById('calcFilamentPrice').value) || 0,
-      electricityRatePerKwh: parseFloat(document.getElementById('calcElecRate').value)      || 0,
-      printerPowerW:         parseFloat(document.getElementById('calcPrinterW').value)      || 0,
-      laborRatePerHour:      parseFloat(document.getElementById('calcLaborRate').value)     || 0,
-      targetMarginPct:       parseFloat(document.getElementById('calcMarginPct').value)     || 0,
-    };
+    _calcState.electricityRatePerKwh = parseFloat(document.getElementById('calcElecRate').value)  || 0;
+    _calcState.laborRatePerHour      = parseFloat(document.getElementById('calcLaborRate').value) || 0;
+    _calcState.targetMarginPct       = parseFloat(document.getElementById('calcMarginPct').value) || 0;
     try {
-      await api('PATCH', '/api/cost-settings', payload);
+      await api('PATCH', '/api/cost-settings', _calcState);
       showToast('Paramètres enregistrés');
     } catch (err) {
       showToast('Échec sauvegarde : ' + (err.message || ''), 'error');
@@ -5539,30 +5661,38 @@
   }
   window.saveCostSettings = saveCostSettings;
 
-  // Recalcul live à chaque changement d'input. Tout en € sauf indication.
+  // Recalcul live : tire le prix du filament sélectionné et la puissance
+  // de l'imprimante sélectionnée, applique élec + main d'œuvre + marge.
   function recomputeCalc() {
     const fmt = n => isFinite(n) ? n.toFixed(2) + ' €' : '—';
-    const filPrice = parseFloat(document.getElementById('calcFilamentPrice').value) || 0;
-    const elecRate = parseFloat(document.getElementById('calcElecRate').value)      || 0;
-    const power    = parseFloat(document.getElementById('calcPrinterW').value)      || 0;
-    const labor    = parseFloat(document.getElementById('calcLaborRate').value)     || 0;
-    const margin   = parseFloat(document.getElementById('calcMarginPct').value)     || 0;
-    const weight   = parseFloat(document.getElementById('calcWeight').value)        || 0;
-    const hours    = parseFloat(document.getElementById('calcHours').value)         || 0;
+    const elecRate = parseFloat(document.getElementById('calcElecRate').value)  || 0;
+    const labor    = parseFloat(document.getElementById('calcLaborRate').value) || 0;
+    const margin   = parseFloat(document.getElementById('calcMarginPct').value) || 0;
+    const weight   = parseFloat(document.getElementById('calcWeight').value)    || 0;
+    const hours    = parseFloat(document.getElementById('calcHours').value)     || 0;
 
-    const filCost   = (weight / 1000) * filPrice;     // g → kg
+    const filIdx = parseInt(document.getElementById('calcSelectFilament').value, 10);
+    const prnIdx = parseInt(document.getElementById('calcSelectPrinter').value, 10);
+    const fil    = _calcState.filaments[filIdx] || null;
+    const prn    = _calcState.printers[prnIdx]  || null;
+    const filPrice = fil ? fil.pricePerKg : 0;
+    const power    = prn ? prn.powerW     : 0;
+
+    const filCost   = (weight / 1000) * filPrice;        // g → kg
     const elecCost  = (power / 1000) * hours * elecRate; // W → kW
     const laborCost = labor * hours;
     const total     = filCost + elecCost + laborCost;
     const price     = total * (1 + margin / 100);
     const profit    = price - total;
 
-    document.getElementById('calcOutFilament').textContent = fmt(filCost);
-    document.getElementById('calcOutElec').textContent     = fmt(elecCost);
-    document.getElementById('calcOutLabor').textContent    = labor > 0 ? fmt(laborCost) : 'ignoré';
-    document.getElementById('calcOutTotal').textContent    = fmt(total);
-    document.getElementById('calcOutMarginPct').textContent = `(marge ${margin}%)`;
-    document.getElementById('calcOutPrice').textContent    = fmt(price);
+    document.getElementById('calcOutFilament').textContent    = fmt(filCost);
+    document.getElementById('calcOutElec').textContent        = fmt(elecCost);
+    document.getElementById('calcOutLabor').textContent       = labor > 0 ? fmt(laborCost) : 'ignoré';
+    document.getElementById('calcOutTotal').textContent       = fmt(total);
+    document.getElementById('calcOutMarginPct').textContent   = `(marge ${margin}%)`;
+    document.getElementById('calcOutPrice').textContent       = fmt(price);
+    document.getElementById('calcOutFilName').textContent     = fil ? `· ${fil.name || '—'}` : '';
+    document.getElementById('calcOutPrinterName').textContent = prn ? `· ${prn.name || '—'}` : '';
     const profEl = document.getElementById('calcOutProfit');
     if (weight > 0 || hours > 0) {
       profEl.textContent = `Profit estimé : ${fmt(profit)} par impression`;
