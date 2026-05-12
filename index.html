@@ -4317,18 +4317,8 @@
           <span>Main d'œuvre</span><span id="calcOutLabor">—</span>
         </div>
         <hr style="border:none;border-top:1px solid var(--border);margin:8px 0">
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:1rem;font-weight:800;color:var(--text);margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:1rem;font-weight:800;color:var(--text);margin-bottom:14px">
           <span>Coût total</span><span id="calcOutTotal">—</span>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-          <div style="background:var(--surface);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Coût / gramme</div>
-            <div id="calcOutPerGram" style="font-size:0.9rem;font-weight:700;color:var(--text)">—</div>
-          </div>
-          <div style="background:var(--surface);border-radius:8px;padding:8px 10px;text-align:center">
-            <div style="font-size:0.68rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Coût / heure</div>
-            <div id="calcOutPerHour" style="font-size:0.9rem;font-weight:700;color:var(--text)">—</div>
-          </div>
         </div>
 
         <div style="background:var(--surface);border-radius:10px;padding:12px">
@@ -4398,6 +4388,118 @@
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">10 dernières inscriptions</h3>
       <div id="refRecentList" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:0.8rem;color:var(--text-muted)">
         —
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ONBOARDING WIZARD MODAL -->
+<div class="modal-overlay" id="onboardingModal" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle" aria-hidden="true">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header" style="position:relative">
+      <div class="modal-title" id="onboardingTitle">Bienvenue 👋</div>
+      <button class="close-btn" onclick="skipOnboarding()" aria-label="Passer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div style="display:flex;gap:6px;padding:0 24px 12px">
+      <div class="onb-dot" data-step="1" style="flex:1;height:4px;border-radius:2px;background:var(--primary);transition:background .2s"></div>
+      <div class="onb-dot" data-step="2" style="flex:1;height:4px;border-radius:2px;background:var(--border);transition:background .2s"></div>
+      <div class="onb-dot" data-step="3" style="flex:1;height:4px;border-radius:2px;background:var(--border);transition:background .2s"></div>
+    </div>
+
+    <div class="modal-body">
+      <!-- ÉTAPE 1 : Connection Bambu Lab -->
+      <div class="onb-step" data-step="1">
+        <h3 style="margin:0 0 8px;font-size:1.1rem">Connecte ton imprimante Bambu Lab</h3>
+        <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.55;margin:0 0 14px">
+          On se connecte à ton compte Bambu Lab pour récupérer automatiquement
+          tes impressions terminées. Aucun mot de passe n'est stocké en clair —
+          on garde juste un token de session.
+        </p>
+        <ul style="color:var(--text-muted);font-size:0.85rem;line-height:1.7;margin:0 0 18px;padding-left:18px">
+          <li>Récupération auto des prints (poids, temps, filament)</li>
+          <li>Statut imprimante en temps réel (MQTT)</li>
+          <li>Compatible X1C / P1S / P1P / A1 / A1 mini</li>
+        </ul>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" onclick="onbConnectBambu()"
+                  style="flex:1;min-width:160px;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:11px 16px;font-size:0.9rem;font-weight:700;cursor:pointer">
+            Connecter Bambu Lab
+          </button>
+          <button type="button" onclick="onbNext()"
+                  style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:11px 16px;font-size:0.85rem;cursor:pointer">
+            Plus tard
+          </button>
+        </div>
+      </div>
+
+      <!-- ÉTAPE 2 : Configuration des coûts -->
+      <div class="onb-step" data-step="2" style="display:none">
+        <h3 style="margin:0 0 8px;font-size:1.1rem">Configure tes coûts</h3>
+        <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.55;margin:0 0 16px">
+          Saisis le prix de ton filament et de ton électricité pour que
+          chaque impression soit chiffrée automatiquement. Tu pourras
+          ajuster tout ça plus tard depuis le calculateur.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
+          <label style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Prix filament (€/kg)</span>
+            <input type="number" id="onbFilamentPrice" min="0" step="0.5" placeholder="ex: 22"
+                   style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:0.92rem">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Tarif électricité (€/kWh)</span>
+            <input type="number" id="onbElecRate" min="0" step="0.01" placeholder="ex: 0.20"
+                   style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:0.92rem">
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" onclick="onbSaveCosts()"
+                  style="flex:1;min-width:160px;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:11px 16px;font-size:0.9rem;font-weight:700;cursor:pointer">
+            Enregistrer et continuer
+          </button>
+          <button type="button" onclick="onbNext()"
+                  style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:11px 16px;font-size:0.85rem;cursor:pointer">
+            Plus tard
+          </button>
+        </div>
+      </div>
+
+      <!-- ÉTAPE 3 : Tour de l'app -->
+      <div class="onb-step" data-step="3" style="display:none">
+        <h3 style="margin:0 0 8px;font-size:1.1rem">Bambu Stock en 30 secondes</h3>
+        <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.55;margin:0 0 16px">
+          Tu es prêt. Voici les 3 endroits où tu passeras le plus de temps :
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+            <div style="font-weight:700;font-size:0.92rem;margin-bottom:3px">📦 Stock</div>
+            <div style="color:var(--text-muted);font-size:0.83rem;line-height:1.5">
+              Ton catalogue de produits imprimés : modèles, prix, photos, stock disponible.
+              Chaque article peut être lié à une catégorie.
+            </div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+            <div style="font-weight:700;font-size:0.92rem;margin-bottom:3px">🖨 Impressions</div>
+            <div style="color:var(--text-muted);font-size:0.83rem;line-height:1.5">
+              Les prints qui arrivent de Bambu en temps réel. Tu les associes
+              à un article et le stock se met à jour.
+            </div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+            <div style="font-weight:700;font-size:0.92rem;margin-bottom:3px">📊 Calculateur</div>
+            <div style="color:var(--text-muted);font-size:0.83rem;line-height:1.5">
+              Combien te coûte vraiment un print, et à quel prix le vendre
+              pour rester rentable. Ajustable à tout moment.
+            </div>
+          </div>
+        </div>
+        <button type="button" onclick="onbFinish()"
+                style="width:100%;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:12px 16px;font-size:0.95rem;font-weight:700;cursor:pointer">
+          C'est parti !
+        </button>
       </div>
     </div>
   </div>
@@ -5693,6 +5795,12 @@
     if (!u) return;
     window.currentUser = u;
     applyUserToHeader(u);
+    // Premier login : déclenche le wizard d'accueil. setTimeout pour laisser
+    // l'app finir son init (handlers attachés, modales déclarées) avant
+    // d'ouvrir un modal par-dessus.
+    if (u.onboarding_completed === false) {
+      setTimeout(() => { try { window.openOnboarding && window.openOnboarding(); } catch {} }, 300);
+    }
   })();
 
   function applyUserToHeader(u) {
@@ -5931,6 +6039,87 @@
     setTimeout(() => { btn.textContent = orig; }, 1500);
   }
   window.copyReferralLink = copyReferralLink;
+
+  // ── ONBOARDING WIZARD ───────────────────────────────────────────────────
+  // 3 étapes : connexion Bambu → coûts → tour. Affiché auto au premier
+  // login (onboarding_completed=0). À chaque navigation on persiste pas :
+  // c'est seulement à la fin (ou skip) qu'on flag pour ne plus l'afficher.
+  let _onbStep = 1;
+  function _onbShow(step) {
+    _onbStep = step;
+    document.querySelectorAll('.onb-step').forEach(el => {
+      el.style.display = Number(el.dataset.step) === step ? '' : 'none';
+    });
+    document.querySelectorAll('.onb-dot').forEach(el => {
+      el.style.background = Number(el.dataset.step) <= step
+        ? 'var(--primary)' : 'var(--border)';
+    });
+  }
+  function openOnboarding() {
+    _onbStep = 1;
+    _onbShow(1);
+    // Pré-remplit les coûts si déjà saisis
+    fetch('/api/cost-settings').then(r => r.ok ? r.json() : {}).then(cs => {
+      const fp = document.getElementById('onbFilamentPrice');
+      const er = document.getElementById('onbElecRate');
+      if (cs.filamentPricePerKg != null) fp.value = cs.filamentPricePerKg;
+      if (cs.electricityRatePerKwh != null) er.value = cs.electricityRatePerKwh;
+    }).catch(() => {});
+    document.getElementById('onboardingModal').classList.add('open');
+  }
+  window.openOnboarding = openOnboarding;
+
+  function onbNext() {
+    if (_onbStep < 3) _onbShow(_onbStep + 1);
+    else onbFinish();
+  }
+  window.onbNext = onbNext;
+
+  function onbConnectBambu() {
+    // Ferme l'onboarding et ouvre la modale Bambu déjà existante.
+    // Au prochain login (ou refresh), l'onboarding reprendra à l'étape 2
+    // tant que onboarding_completed=0. On ne marque pas l'étape comme
+    // "faite" puisque l'user peut annuler côté Bambu.
+    document.getElementById('onboardingModal').classList.remove('open');
+    if (typeof window.openBambuSetup === 'function')      window.openBambuSetup();
+    else if (typeof window.openProfileModal === 'function') window.openProfileModal();
+  }
+  window.onbConnectBambu = onbConnectBambu;
+
+  async function onbSaveCosts() {
+    const fp = parseFloat(document.getElementById('onbFilamentPrice').value);
+    const er = parseFloat(document.getElementById('onbElecRate').value);
+    const body = {};
+    if (isFinite(fp) && fp > 0) body.filamentPricePerKg     = fp;
+    if (isFinite(er) && er > 0) body.electricityRatePerKwh = er;
+    if (Object.keys(body).length) {
+      try {
+        await fetch('/api/cost-settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch {}
+    }
+    onbNext();
+  }
+  window.onbSaveCosts = onbSaveCosts;
+
+  async function _onbMarkDone() {
+    try {
+      await fetch('/api/onboarding/complete', { method: 'POST' });
+    } catch {}
+  }
+  function onbFinish() {
+    _onbMarkDone();
+    document.getElementById('onboardingModal').classList.remove('open');
+  }
+  window.onbFinish = onbFinish;
+  function skipOnboarding() {
+    _onbMarkDone();
+    document.getElementById('onboardingModal').classList.remove('open');
+  }
+  window.skipOnboarding = skipOnboarding;
 
   async function openCalculatorModal() {
     _calcReady = false; // empêche les save spontanés pendant le populate
@@ -6314,12 +6503,6 @@
     document.getElementById('calcOutTotal').textContent       = fmt(totalCost);
     document.getElementById('calcOutFilName').textContent     = fil ? `· ${fil.name || '—'}` : '';
     document.getElementById('calcOutPrinterName').textContent = prn ? `· ${prn.name || '—'}` : '';
-
-    // Détails coût / gramme et coût / heure : utile pour comparer les
-    // prints entre eux. On affiche "—" si pas de poids / pas de temps
-    // pour éviter une division par zéro absurde.
-    document.getElementById('calcOutPerGram').textContent = weight > 0 ? (totalCost / weight).toFixed(3) + ' €/g' : '—';
-    document.getElementById('calcOutPerHour').textContent = hours  > 0 ? (totalCost / hours).toFixed(2)  + ' €/h' : '—';
 
     document.getElementById('calcOutMarginPct').textContent = `(marge ${margin}%)`;
     document.getElementById('calcOutPriceHt').textContent   = fmt(priceHt);
@@ -9639,7 +9822,7 @@
 
   // Entrée principale : ouvre le modal et choisit la bonne vue selon l'état.
   async function openBambuSetup() {
-    openBambuSetup();
+    document.getElementById('bambuSetupModal').classList.add('open');
     // Affiche d'abord la vue connected en placeholder pour ne pas flasher
     // entre 2 vues. Si on découvre qu'on n'est pas connecté, on switch.
     _bambuShowView('connected');
