@@ -7408,11 +7408,17 @@
     box.hidden = false;
   }
 
-  function addVariantRow(color = '#6c47ff', colorName = '', qty = 0) {
+  // showPalette : permet de planquer la palette quick-pick inline. On l'utilise
+  // pour les variantes EXISTANTES en mode édition (le user voit moins de bruit,
+  // et le click sur le carré ouvre déjà le modal picker qui contient la palette).
+  // Les nouvelles variantes créées via le bouton "+ Ajouter une couleur" la
+  // gardent visible pour faciliter le pick initial.
+  function addVariantRow(color = '#6c47ff', colorName = '', qty = 0, showPalette = true) {
     const list = document.getElementById('variantsList');
     const row = document.createElement('div');
     row.className = 'variant-row-wrap';
     const initialAuto = !colorName;
+    const paletteStyle = showPalette ? '' : ' style="display:none"';
     row.innerHTML = `
       <div class="variant-row">
         <button type="button" class="color-swatch-btn" data-color="${color}"
@@ -7429,7 +7435,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
-      <div class="color-palette">
+      <div class="color-palette"${paletteStyle}>
         ${_renderColorPalette(color, '_onVariantPalettePick')}
       </div>`;
     list.appendChild(row);
@@ -8283,7 +8289,9 @@
       toggleMultiPartMode(false);
       clearVariantsList();
       const variants = parseVariants(item);
-      variants.forEach(v => addVariantRow(v.color || '#6c47ff', v.colorName || '', v.qty || 0));
+      // Variantes existantes : palette inline cachée. Le user peut toujours
+      // changer la couleur en cliquant sur le carré (ouvre le modal picker).
+      variants.forEach(v => addVariantRow(v.color || '#6c47ff', v.colorName || '', v.qty || 0, false));
     }
 
     document.getElementById('formModalTitle').textContent = t('form.title.edit');
