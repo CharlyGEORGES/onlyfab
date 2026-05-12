@@ -28,17 +28,15 @@
         // bg/scheme par thème — gardés en dur ici pour éviter l'éval
         // d'un objet JS (ce script tourne avant tout le code).
         var BG = {
-          dark:      ['#0f0f13', 'dark'],
-          dracula:   ['#282a36', 'dark'],
-          tokyo:     ['#1a1b26', 'dark'],
-          nord:      ['#2e3440', 'dark'],
-          mocha:     ['#1a1612', 'dark'],
-          carbon:    ['#000000', 'dark'],
-          synthwave: ['#1a0b2e', 'dark'],
-          light:     ['#f6f6fb', 'light'],
-          paper:     ['#fdf6e3', 'light'],
-          mist:      ['#eef2f6', 'light'],
-          sand:      ['#f5ebdc', 'light'],
+          dark:    ['#0f0f13', 'dark'],
+          dracula: ['#282a36', 'dark'],
+          tokyo:   ['#1a1b26', 'dark'],
+          mocha:   ['#1a1612', 'dark'],
+          onyx:    ['#000000', 'dark'],
+          light:   ['#f6f6fb', 'light'],
+          paper:   ['#fdf6e3', 'light'],
+          mist:    ['#eef2f6', 'light'],
+          sand:    ['#f5ebdc', 'light'],
         };
         if (saved && BG[saved]) {
           document.documentElement.setAttribute('data-theme', saved);
@@ -172,22 +170,6 @@
       --focus-ring: 0 0 0 3px rgba(122,162,247,0.4);
     }
 
-    /* Nord — polar night, frost + aurora */
-    html[data-theme="nord"] {
-      --primary: #88c0d0;
-      --primary-dark: #5e81ac;
-      --primary-light: #b8d8e5;
-      --accent: #a3be8c;
-      --danger: #bf616a;
-      --bg: #2e3440;
-      --surface: #3b4252;
-      --surface2: #434c5e;
-      --border: #4c566a;
-      --text: #eceff4;
-      --text-muted: #7a8597;
-      --focus-ring: 0 0 0 3px rgba(136,192,208,0.4);
-    }
-
     /* Mocha — café chaud, caramel + sage */
     html[data-theme="mocha"] {
       --primary: #d4a574;
@@ -204,36 +186,20 @@
       --focus-ring: 0 0 0 3px rgba(212,165,116,0.4);
     }
 
-    /* Carbon — pure black, accents neon */
-    html[data-theme="carbon"] {
-      --primary: #ff006e;
-      --primary-dark: #d10058;
-      --primary-light: #ff3389;
-      --accent: #00f0ff;
-      --danger: #ff3333;
+    /* Onyx — pur noir + cobalt blue + silver, sobre et élégant */
+    html[data-theme="onyx"] {
+      --primary: #5b8def;
+      --primary-dark: #3d6ed4;
+      --primary-light: #7ba3f5;
+      --accent: #c8c8d0;
+      --danger: #d65555;
       --bg: #000000;
-      --surface: #0e0e0e;
-      --surface2: #1a1a1a;
-      --border: #2a2a2a;
-      --text: #f5f5f5;
-      --text-muted: #808080;
-      --focus-ring: 0 0 0 3px rgba(255,0,110,0.5);
-    }
-
-    /* Synthwave — années 80, néon pink + cyan sur violet profond */
-    html[data-theme="synthwave"] {
-      --primary: #ff2a6d;
-      --primary-dark: #d91e5a;
-      --primary-light: #ff5588;
-      --accent: #05d9e8;
-      --danger: #ff5555;
-      --bg: #1a0b2e;
-      --surface: #2a1547;
-      --surface2: #3a1f5e;
-      --border: #4a2a78;
-      --text: #ffe6f5;
-      --text-muted: #9b7bb8;
-      --focus-ring: 0 0 0 3px rgba(255,42,109,0.4);
+      --surface: #0c0c10;
+      --surface2: #18181f;
+      --border: #2a2a35;
+      --text: #f0f0f5;
+      --text-muted: #7e7e8a;
+      --focus-ring: 0 0 0 3px rgba(91,141,239,0.4);
     }
 
     /* Couleur de fond brut HTML synchronisée pour éviter le flash blanc/noir
@@ -5430,17 +5396,15 @@
   // (bg, surface, primary, accent). Déclaré AVANT initTheme pour
   // pouvoir l'utiliser dans updateThemeMeta sans TDZ.
   const THEMES = [
-    { id: 'dark',      name: 'Midnight',    kind: 'dark',  swatches: ['#0f0f13', '#1a1a24', '#6c47ff', '#00d4aa'] },
-    { id: 'dracula',   name: 'Dracula',     kind: 'dark',  swatches: ['#282a36', '#44475a', '#ff79c6', '#8be9fd'] },
-    { id: 'tokyo',     name: 'Tokyo Night', kind: 'dark',  swatches: ['#1a1b26', '#2f334d', '#7aa2f7', '#7dcfff'] },
-    { id: 'nord',      name: 'Nord',        kind: 'dark',  swatches: ['#2e3440', '#434c5e', '#88c0d0', '#a3be8c'] },
-    { id: 'mocha',     name: 'Mocha',       kind: 'dark',  swatches: ['#1a1612', '#362e26', '#d4a574', '#a8c098'] },
-    { id: 'carbon',    name: 'Carbon',      kind: 'dark',  swatches: ['#000000', '#1a1a1a', '#ff006e', '#00f0ff'] },
-    { id: 'synthwave', name: 'Synthwave',   kind: 'dark',  swatches: ['#1a0b2e', '#3a1f5e', '#ff2a6d', '#05d9e8'] },
-    { id: 'light',     name: 'Light',       kind: 'light', swatches: ['#f6f6fb', '#ffffff', '#5535d4', '#00a37e'] },
-    { id: 'paper',     name: 'Paper',       kind: 'light', swatches: ['#fdf6e3', '#fffaee', '#c75c2e', '#5f8b3f'] },
-    { id: 'mist',      name: 'Mist',        kind: 'light', swatches: ['#eef2f6', '#ffffff', '#2563eb', '#0891b2'] },
-    { id: 'sand',      name: 'Sand',        kind: 'light', swatches: ['#f5ebdc', '#fcf5e8', '#b8542a', '#7a9b3e'] },
+    { id: 'dark',    name: 'Midnight',    kind: 'dark',  swatches: ['#0f0f13', '#1a1a24', '#6c47ff', '#00d4aa'] },
+    { id: 'dracula', name: 'Dracula',     kind: 'dark',  swatches: ['#282a36', '#44475a', '#ff79c6', '#8be9fd'] },
+    { id: 'tokyo',   name: 'Tokyo Night', kind: 'dark',  swatches: ['#1a1b26', '#2f334d', '#7aa2f7', '#7dcfff'] },
+    { id: 'mocha',   name: 'Mocha',       kind: 'dark',  swatches: ['#1a1612', '#362e26', '#d4a574', '#a8c098'] },
+    { id: 'onyx',    name: 'Onyx',        kind: 'dark',  swatches: ['#000000', '#18181f', '#5b8def', '#c8c8d0'] },
+    { id: 'light',   name: 'Light',       kind: 'light', swatches: ['#f6f6fb', '#ffffff', '#5535d4', '#00a37e'] },
+    { id: 'paper',   name: 'Paper',       kind: 'light', swatches: ['#fdf6e3', '#fffaee', '#c75c2e', '#5f8b3f'] },
+    { id: 'mist',    name: 'Mist',        kind: 'light', swatches: ['#eef2f6', '#ffffff', '#2563eb', '#0891b2'] },
+    { id: 'sand',    name: 'Sand',        kind: 'light', swatches: ['#f5ebdc', '#fcf5e8', '#b8542a', '#7a9b3e'] },
   ];
   const THEME_IDS = THEMES.map(t => t.id);
   window.THEMES = THEMES;
