@@ -590,7 +590,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v49';
+const CACHE_VERSION = 'bs-v50';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1489,6 +1489,21 @@ http.createServer(async (req, res) => {
       `).run(user.id, type, message, pageUrl || null, ua || null);
       notifyDiscord({ id: info.lastInsertRowid, type, message, page_url: pageUrl }, user);
       json(res, { ok: true, id: info.lastInsertRowid });
+      return;
+    }
+
+    // GET /api/feedback/mine → historique des remontées de l'utilisateur
+    // courant. On expose le statut (pour qu'il voie si c'est résolu) mais
+    // pas la note privée admin.
+    if (req.method === 'GET' && url === '/api/feedback/mine') {
+      const user = getSessionUser(req);
+      if (!user) { json(res, { error: 'Connexion requise' }, 401); return; }
+      const items = db.prepare(`
+        SELECT id, type, message, page_url, status, created_at, resolved_at
+        FROM feedback WHERE user_id=?
+        ORDER BY created_at DESC LIMIT 100
+      `).all(user.id);
+      json(res, { items });
       return;
     }
 
