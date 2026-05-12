@@ -1533,7 +1533,7 @@
         el.textContent = `Bêta complète — ${r.used}/${r.max} places prises. Inscriptions fermées pour le moment.`;
         const btn = document.getElementById('reg-submit');
         if (btn) { btn.disabled = true; btn.textContent = 'Bêta complète'; }
-      } else if (r.remaining <= 5) {
+      } else if (r.remaining <= 10) {
         el.style.background = 'rgba(245,158,11,0.08)';
         el.style.borderColor = 'rgba(245,158,11,0.3)';
         el.style.color = '#f59e0b';
