@@ -498,6 +498,9 @@
       color: var(--text);
       font-size: 0.92rem;
       font-family: inherit;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
     }
     .calc-row input:focus {
       outline: none;
@@ -546,7 +549,10 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
     }
+    .calc-result-price > div:first-child { min-width: 0; flex: 1; }
     .calc-result-price-label {
       font-size: 0.78rem;
       color: var(--text-muted);
@@ -575,7 +581,19 @@
 
     @media (max-width: 760px) {
       .calc-grid { grid-template-columns: 1fr; gap: 18px; }
-      .calc-card { padding: 22px; }
+      .calc-card { padding: 18px; }
+      /* Inputs : 2 colonnes restent OK sur tablette/petit desktop, mais
+         vraiment serré sur très petit écran (≤480px). Voir media query
+         plus fin ci-dessous. */
+    }
+    @media (max-width: 480px) {
+      .calc-card { padding: 16px; }
+      .calc-row-grid { grid-template-columns: 1fr; gap: 0; }
+      .calc-result-price { padding: 12px 14px; }
+      .calc-result-price-value { font-size: 1.4rem; }
+      .calc-result-price-label { font-size: 0.7rem; }
+      .calc-result-line { font-size: 0.82rem; }
+      .calc-result-total { font-size: 0.95rem; }
     }
 
     /* ── PRICING ── */
