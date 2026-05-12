@@ -462,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v32';
+const CACHE_VERSION = 'bs-v33';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -773,11 +773,15 @@ function onPrintCompleteForUser(userId, job) {
     console.log(`  [Bambu] Doublon ignoré : ${job.fileName} (déjà en attente)`);
     return;
   }
-  // Règle 2 : reçu il y a moins de 10 min (Bambu renvoie souvent FINISH plusieurs fois)
+  // Règle 2 : reçu il y a moins de 90 s (Bambu renvoie souvent FINISH
+  // plusieurs fois, parfois après l'expiration du dedup en mémoire de
+  // 60 s côté MQTT). 90 s couvre ces doublons sans bloquer un vrai
+  // re-print du même fichier (avant on était à 10 min, ce qui empêchait
+  // de re-imprimer un petit objet plusieurs fois dans la même session).
   const justReceived = db.prepare(`
     SELECT id FROM print_jobs
     WHERE printer_serial=:ps AND file_name=:fn AND user_id=:uid
-      AND ts > datetime('now','-10 minutes')
+      AND ts > datetime('now','-90 seconds')
   `).get({ ps: job.printerSerial, fn: job.fileName, uid: userId });
   if (justReceived) {
     console.log(`  [Bambu] Doublon ignoré : ${job.fileName} (reçu il y a moins de 10 min)`);
