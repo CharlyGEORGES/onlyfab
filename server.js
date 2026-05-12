@@ -498,7 +498,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v38';
+const CACHE_VERSION = 'bs-v39';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2434,7 +2434,8 @@ http.createServer(async (req, res) => {
       }
 
       // GET /api/ref/me → infos influencer du user courant.
-      // Renvoie { isInfluencer, code, link, stats:{visits,signups} }.
+      // Renvoie un payload enrichi pour le dashboard partenaire :
+      // { isInfluencer, code, link, stats, daily, last, best, recentSignups }.
       // Si l'user n'est pas un influencer, isInfluencer=false et le reste null.
       if (req.method === 'GET' && url === '/api/ref/me') {
         const me = db.prepare('SELECT is_influencer, referral_code FROM users WHERE id=?').get(userId);
@@ -2442,21 +2443,52 @@ http.createServer(async (req, res) => {
           json(res, { isInfluencer: false });
           return;
         }
-        const visits  = db.prepare('SELECT COUNT(*) AS c FROM referral_visits WHERE code=?').get(me.referral_code).c;
-        const signups = db.prepare('SELECT COUNT(*) AS c FROM users WHERE referred_by_code=?').get(me.referral_code).c;
-        const recent  = db.prepare(`
-          SELECT created_at FROM users
-          WHERE referred_by_code=?
-          ORDER BY created_at DESC
-          LIMIT 10
-        `).all(me.referral_code);
+        const c = me.referral_code;
+        const visits   = db.prepare('SELECT COUNT(*) AS c FROM referral_visits WHERE code=?').get(c).c;
+        const signups  = db.prepare('SELECT COUNT(*) AS c FROM users WHERE referred_by_code=?').get(c).c;
+        const visits7  = db.prepare(`SELECT COUNT(*) AS c FROM referral_visits WHERE code=? AND ts > datetime('now','-7 days')`).get(c).c;
+        const signups7 = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE referred_by_code=? AND created_at > datetime('now','-7 days')`).get(c).c;
+        const lastVisit  = db.prepare('SELECT MAX(ts) AS t FROM referral_visits WHERE code=?').get(c).t;
+        const lastSignup = db.prepare('SELECT MAX(created_at) AS t FROM users WHERE referred_by_code=?').get(c).t;
+        // Série quotidienne 30j : visites + inscriptions, déjà groupées par
+        // jour. Le client merge les deux séries par date pour le graphique.
+        const visitsDaily = db.prepare(`
+          SELECT DATE(ts) AS day, COUNT(*) AS c
+          FROM referral_visits WHERE code=? AND ts > datetime('now','-30 days')
+          GROUP BY DATE(ts) ORDER BY day ASC
+        `).all(c);
+        const signupsDaily = db.prepare(`
+          SELECT DATE(created_at) AS day, COUNT(*) AS c
+          FROM users WHERE referred_by_code=? AND created_at > datetime('now','-30 days')
+          GROUP BY DATE(created_at) ORDER BY day ASC
+        `).all(c);
+        // Meilleur jour (mesuré en signups, fallback sur visites).
+        const bestSignup = db.prepare(`
+          SELECT DATE(created_at) AS day, COUNT(*) AS c FROM users
+          WHERE referred_by_code=? GROUP BY day ORDER BY c DESC, day DESC LIMIT 1
+        `).get(c);
+        const bestVisit = db.prepare(`
+          SELECT DATE(ts) AS day, COUNT(*) AS c FROM referral_visits
+          WHERE code=? GROUP BY day ORDER BY c DESC, day DESC LIMIT 1
+        `).get(c);
+        const recent = db.prepare(`
+          SELECT created_at, plan FROM users
+          WHERE referred_by_code=? ORDER BY created_at DESC LIMIT 10
+        `).all(c);
         const base = process.env.PUBLIC_URL || 'https://bambustock.com';
         json(res, {
           isInfluencer: true,
-          code:         me.referral_code,
-          link:         base.replace(/\/$/, '') + '/?ref=' + encodeURIComponent(me.referral_code),
-          stats:        { visits, signups, conversionRate: visits ? signups / visits : 0 },
-          recentSignups: recent.map(r => ({ at: r.created_at })),
+          code: c,
+          link: base.replace(/\/$/, '') + '/?ref=' + encodeURIComponent(c),
+          stats: {
+            visits, signups,
+            visits_7d: visits7, signups_7d: signups7,
+            conversionRate: visits ? signups / visits : 0,
+          },
+          daily: { visits: visitsDaily, signups: signupsDaily },
+          last:  { visit_at: lastVisit, signup_at: lastSignup },
+          best:  { signup: bestSignup || null, visit: bestVisit || null },
+          recentSignups: recent.map(r => ({ at: r.created_at, plan: r.plan })),
         });
         return;
       }
@@ -2626,18 +2658,68 @@ http.createServer(async (req, res) => {
           return;
         }
 
-        // GET /api/admin/influencers → liste des comptes influencer avec stats.
-        // Utilisé par le panel admin pour voir d'un coup d'œil qui ramène quoi.
+        // GET /api/admin/influencers → liste des comptes influencer avec stats
+        // enrichies (7j / 30j / total + dernières activités) pour le panel
+        // admin dédié.
         if (req.method === 'GET' && url === '/api/admin/influencers') {
           const rows = db.prepare(`
             SELECT u.id, u.email, u.name, u.referral_code, u.created_at,
-                   (SELECT COUNT(*) FROM referral_visits WHERE code=u.referral_code) AS visits,
-                   (SELECT COUNT(*) FROM users WHERE referred_by_code=u.referral_code) AS signups
+              (SELECT COUNT(*) FROM referral_visits v WHERE v.code=u.referral_code)                                          AS visits_total,
+              (SELECT COUNT(*) FROM referral_visits v WHERE v.code=u.referral_code AND v.ts > datetime('now','-7 days'))     AS visits_7d,
+              (SELECT COUNT(*) FROM referral_visits v WHERE v.code=u.referral_code AND v.ts > datetime('now','-30 days'))    AS visits_30d,
+              (SELECT MAX(ts) FROM referral_visits v WHERE v.code=u.referral_code)                                           AS last_visit_at,
+              (SELECT COUNT(*) FROM users x WHERE x.referred_by_code=u.referral_code)                                        AS signups_total,
+              (SELECT COUNT(*) FROM users x WHERE x.referred_by_code=u.referral_code AND x.created_at > datetime('now','-7 days'))  AS signups_7d,
+              (SELECT COUNT(*) FROM users x WHERE x.referred_by_code=u.referral_code AND x.created_at > datetime('now','-30 days')) AS signups_30d,
+              (SELECT MAX(created_at) FROM users x WHERE x.referred_by_code=u.referral_code)                                 AS last_signup_at
             FROM users u
             WHERE u.is_influencer=1 AND u.referral_code IS NOT NULL
-            ORDER BY signups DESC, visits DESC
+            ORDER BY signups_total DESC, visits_total DESC
           `).all();
-          json(res, rows);
+          // Stats globales pour les cartes du haut du panel.
+          const totals = {
+            partners:       rows.length,
+            visits_total:   rows.reduce((s, r) => s + r.visits_total,   0),
+            visits_30d:     rows.reduce((s, r) => s + r.visits_30d,     0),
+            signups_total:  rows.reduce((s, r) => s + r.signups_total,  0),
+            signups_30d:    rows.reduce((s, r) => s + r.signups_30d,    0),
+          };
+          json(res, { totals, partners: rows });
+          return;
+        }
+
+        // GET /api/admin/influencers/:userId → détail d'un partenaire :
+        // série quotidienne (30j) clics + signups, et liste complète des
+        // inscriptions attribuées (email/nom/date).
+        if (req.method === 'GET' && parts[2] === 'influencers' && parts[3]) {
+          const targetId = parts[3];
+          const u = db.prepare('SELECT id,email,name,referral_code,created_at,is_influencer FROM users WHERE id=?').get(targetId);
+          if (!u || !u.is_influencer || !u.referral_code) {
+            json(res, { error: 'Partenaire introuvable' }, 404); return;
+          }
+          const visitsDaily = db.prepare(`
+            SELECT DATE(ts) AS day, COUNT(*) AS c
+            FROM referral_visits
+            WHERE code=? AND ts > datetime('now','-30 days')
+            GROUP BY DATE(ts) ORDER BY day ASC
+          `).all(u.referral_code);
+          const signupsDaily = db.prepare(`
+            SELECT DATE(created_at) AS day, COUNT(*) AS c
+            FROM users
+            WHERE referred_by_code=? AND created_at > datetime('now','-30 days')
+            GROUP BY DATE(created_at) ORDER BY day ASC
+          `).all(u.referral_code);
+          const signups = db.prepare(`
+            SELECT id, email, name, created_at, plan
+            FROM users WHERE referred_by_code=?
+            ORDER BY created_at DESC
+          `).all(u.referral_code);
+          json(res, {
+            user: { id: u.id, email: u.email, name: u.name, referral_code: u.referral_code, created_at: u.created_at },
+            visits_daily:  visitsDaily,   // [{day, c}]
+            signups_daily: signupsDaily,  // [{day, c}]
+            signups,                      // [{id, email, name, created_at, plan}]
+          });
           return;
         }
 

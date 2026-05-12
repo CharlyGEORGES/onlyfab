@@ -4347,7 +4347,7 @@
 
 <!-- REFERRAL / INFLUENCER MODAL -->
 <div class="modal-overlay" id="referralModal" role="dialog" aria-modal="true" aria-labelledby="referralModalTitle" aria-hidden="true">
-  <div class="modal" style="max-width:520px">
+  <div class="modal" style="max-width:620px">
     <div class="modal-header">
       <div class="modal-title" id="referralModalTitle">Programme partenaire</div>
       <button class="close-btn" onclick="closeReferralModal()" aria-label="Fermer">
@@ -4370,25 +4370,95 @@
       </div>
 
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Statistiques</h3>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
           <div id="refStatVisits" style="font-size:1.5rem;font-weight:800;color:var(--text)">—</div>
-          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">Clics</div>
+          <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">Clics total</div>
+          <div id="refStatVisits7" style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;opacity:.8">—</div>
         </div>
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
           <div id="refStatSignups" style="font-size:1.5rem;font-weight:800;color:var(--accent)">—</div>
           <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">Inscriptions</div>
+          <div id="refStatSignups7" style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;opacity:.8">—</div>
         </div>
         <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
           <div id="refStatRate" style="font-size:1.5rem;font-weight:800;color:var(--primary)">—</div>
           <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">Conversion</div>
+          <div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;opacity:.8">lifetime</div>
         </div>
       </div>
 
+      <!-- Stats détaillées : meilleur jour, dernière activité -->
+      <div id="refDetailedStats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;font-size:0.78rem"></div>
+
+      <!-- Graphique 30 jours : clics + inscriptions par jour -->
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Activité 30 derniers jours</h3>
+      <div id="refChart" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:18px">
+        <div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:20px">—</div>
+      </div>
+
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">10 dernières inscriptions</h3>
-      <div id="refRecentList" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:0.8rem;color:var(--text-muted)">
+      <div id="refRecentList" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:0.8rem;color:var(--text-muted);margin-bottom:18px">
         —
       </div>
+
+      <!-- Kit marketing : conseils de partage -->
+      <details style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden">
+        <summary style="padding:12px 14px;cursor:pointer;font-weight:600;font-size:0.88rem;list-style:none">
+          📣 Kit marketing — comment partager efficacement
+        </summary>
+        <div style="padding:0 14px 14px;font-size:0.83rem;line-height:1.55;color:var(--text-muted)">
+          <p style="margin:6px 0 10px;color:var(--text)"><strong>À faire ✅</strong></p>
+          <ul style="margin:0 0 12px;padding-left:18px">
+            <li>Montre l'app en action (capture d'écran de tes vrais stats, du calculateur).</li>
+            <li>Insiste sur le problème résolu : « combien me coûte vraiment un print ? ».</li>
+            <li>Mets le lien direct dans la description (YouTube, Instagram bio, Twitch about).</li>
+            <li>Mentionne la connexion Bambu Lab native — c'est le différenciateur.</li>
+            <li>Sois transparent : « je suis partenaire, mais je l'utilise vraiment ».</li>
+          </ul>
+          <p style="margin:6px 0 10px;color:var(--text)"><strong>À éviter ❌</strong></p>
+          <ul style="margin:0 0 12px;padding-left:18px">
+            <li>Spammer ton lien sur des Discords/forums où tu ne contribues pas.</li>
+            <li>Promettre des features qui n'existent pas (impression Prusa, achats intégrés…).</li>
+            <li>Acheter du trafic payant (Google/Meta Ads) sans accord — risque de ban du compte.</li>
+          </ul>
+          <p style="margin:6px 0 10px;color:var(--text)"><strong>Formats qui marchent</strong></p>
+          <ul style="margin:0;padding-left:18px">
+            <li><strong>YouTube</strong> : vidéo « j'ai testé X pour gérer mon stock 3D », lien en description fixé en commentaire épinglé.</li>
+            <li><strong>Instagram / TikTok</strong> : reel 30 s qui montre « avant/après » (carnet vs. dashboard).</li>
+            <li><strong>Twitch</strong> : panel « tools » avec ton lien + mention en stream toutes les ~2h.</li>
+            <li><strong>Discord communauté</strong> : un post épinglé dans le channel <em>resources</em>, pas du flood.</li>
+          </ul>
+        </div>
+      </details>
+
+      <!-- Conditions du programme -->
+      <details style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <summary style="padding:12px 14px;cursor:pointer;font-weight:600;font-size:0.88rem;list-style:none">
+          📋 Conditions du programme
+        </summary>
+        <div style="padding:0 14px 14px;font-size:0.83rem;line-height:1.6;color:var(--text-muted)">
+          <p style="margin:6px 0 10px"><strong style="color:var(--text)">Comment ça marche</strong></p>
+          <ul style="margin:0 0 12px;padding-left:18px">
+            <li>Tu reçois un code unique (ton lien <code style="background:var(--surface);padding:1px 5px;border-radius:3px;font-size:0.78rem">?ref=TONCODE</code>).</li>
+            <li>Chaque visite qui arrive sur la landing avec ton code est comptée comme un clic.</li>
+            <li>Quand un visiteur s'inscrit dans les 30 jours suivant son clic, l'inscription t'est attribuée.</li>
+            <li>Les stats sont mises à jour en quasi-temps réel (rafraîchis le modal au besoin).</li>
+          </ul>
+          <p style="margin:6px 0 10px"><strong style="color:var(--text)">Paiement</strong></p>
+          <ul style="margin:0 0 12px;padding-left:18px">
+            <li>Pendant la <strong>bêta</strong>, l'app est gratuite — aucune commission monétaire pour le moment.</li>
+            <li>Quand les plans payants arriveront, on annoncera le taux de commission et la cadence de paiement avant tout déclenchement.</li>
+            <li>En attendant, on te récompense par d'autres moyens (place dans le crédit de l'app, accès anticipé aux features…). Contact direct par mail si tu veux discuter.</li>
+          </ul>
+          <p style="margin:6px 0 10px"><strong style="color:var(--text)">Règles</strong></p>
+          <ul style="margin:0;padding-left:18px">
+            <li>Pas de self-referral : ton propre compte ne sera jamais compté comme conversion.</li>
+            <li>Les inscriptions frauduleuses (faux emails, bots) sont retirées des stats sans préavis.</li>
+            <li>On peut désactiver un compte partenaire à tout moment en cas d'abus.</li>
+          </ul>
+        </div>
+      </details>
     </div>
   </div>
 </div>
@@ -4518,6 +4588,33 @@
       <div id="adminStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:18px"></div>
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Utilisateurs</h3>
       <div id="adminUsers" style="display:flex;flex-direction:column;gap:8px"></div>
+
+      <div style="height:1px;background:var(--border);margin:24px 0"></div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+        <h3 style="font-size:0.92rem;font-weight:700;color:var(--text);margin:0">Programme partenaire</h3>
+        <button type="button" onclick="refreshAdminPartners()"
+                style="background:var(--surface2);color:var(--primary);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">
+          ⟳ Rafraîchir
+        </button>
+      </div>
+      <div id="adminPartnersTotals" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px"></div>
+      <div id="adminPartners" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN PARTNER DETAIL MODAL -->
+<div class="modal-overlay" id="partnerDetailModal" role="dialog" aria-modal="true" aria-labelledby="partnerDetailTitle" aria-hidden="true">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <div class="modal-title" id="partnerDetailTitle">Détail partenaire</div>
+      <button class="close-btn" onclick="closePartnerDetailModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="partnerDetailBody">
+      <div style="text-align:center;color:var(--text-muted);padding:30px">Chargement…</div>
     </div>
   </div>
 </div>
@@ -5993,25 +6090,63 @@
     document.getElementById('refStatVisits').textContent  = '—';
     document.getElementById('refStatSignups').textContent = '—';
     document.getElementById('refStatRate').textContent    = '—';
+    document.getElementById('refStatVisits7').textContent  = '';
+    document.getElementById('refStatSignups7').textContent = '';
+    document.getElementById('refDetailedStats').innerHTML  = '';
+    document.getElementById('refChart').innerHTML =
+      '<div style="text-align:center;color:var(--text-muted);font-size:0.78rem;padding:20px">Chargement…</div>';
     document.getElementById('refRecentList').textContent  = 'Chargement…';
     try {
       const d = await api('GET', '/api/ref/me');
       if (!d?.isInfluencer) {
         document.getElementById('referralLink').value = '';
         document.getElementById('refRecentList').textContent = 'Ton compte n\'est pas (encore) activé comme partenaire.';
+        document.getElementById('refChart').innerHTML = '';
         return;
       }
       document.getElementById('referralLink').value         = d.link;
       document.getElementById('refStatVisits').textContent  = d.stats.visits;
       document.getElementById('refStatSignups').textContent = d.stats.signups;
       document.getElementById('refStatRate').textContent    = (d.stats.conversionRate * 100).toFixed(1) + '%';
+      document.getElementById('refStatVisits7').textContent  = '+' + (d.stats.visits_7d  || 0) + ' / 7 j';
+      document.getElementById('refStatSignups7').textContent = '+' + (d.stats.signups_7d || 0) + ' / 7 j';
+
+      // Stats détaillées : dernière activité + meilleur jour
+      const fmtDay = iso => iso ? new Date(iso).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' }) : '—';
+      const fmtDayShort = iso => iso ? new Date(iso).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) : '—';
+      const bestDay = d.best?.signup?.c
+        ? `${fmtDayShort(d.best.signup.day)} — ${d.best.signup.c} inscription${d.best.signup.c>1?'s':''}`
+        : d.best?.visit?.c
+          ? `${fmtDayShort(d.best.visit.day)} — ${d.best.visit.c} clic${d.best.visit.c>1?'s':''}`
+          : '—';
+      document.getElementById('refDetailedStats').innerHTML = [
+        ['Dernier clic',          _fmtRelTime(d.last?.visit_at)],
+        ['Dernière inscription',  _fmtRelTime(d.last?.signup_at)],
+        ['Meilleur jour',         bestDay],
+        ['Lien actif depuis',     d.code ? 'aujourd\'hui' : '—'],
+      ].map(([l, v]) => `
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+          <div style="font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">${l}</div>
+          <div style="font-size:0.85rem;font-weight:600;color:var(--text);margin-top:2px">${v}</div>
+        </div>`).join('');
+
+      // Graphique 30 jours — réutilise le rendu admin
+      const totalV = (d.daily?.visits  || []).reduce((s, x) => s + x.c, 0);
+      const totalS = (d.daily?.signups || []).reduce((s, x) => s + x.c, 0);
+      document.getElementById('refChart').innerHTML =
+        _renderDualSparkline(d.daily?.visits || [], d.daily?.signups || [], 30) +
+        `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:0.72rem;color:var(--text-muted)">
+           <span><span style="display:inline-block;width:10px;height:10px;background:var(--primary);border-radius:2px;vertical-align:middle;margin-right:4px"></span>Clics (${totalV})</span>
+           <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;vertical-align:middle;margin-right:4px"></span>Inscriptions (${totalS})</span>
+         </div>`;
+
       const list = document.getElementById('refRecentList');
       if (!d.recentSignups?.length) {
         list.textContent = 'Aucune inscription pour l\'instant — partage ton lien !';
       } else {
         list.innerHTML = d.recentSignups.map(r => {
           const dt = new Date(r.at).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-          return `<div style="padding:4px 0;border-bottom:1px solid var(--border)">Nouvelle inscription · ${dt}</div>`;
+          return `<div style="padding:4px 0;border-bottom:1px solid var(--border)">Nouvelle inscription · ${dt} · plan ${escHtml(r.plan || 'beta')}</div>`;
         }).join('');
       }
     } catch (err) {
@@ -6722,7 +6857,194 @@
       document.getElementById('adminUsers').innerHTML =
         '<div style="color:var(--danger);padding:12px">Erreur de chargement : ' + (e.message || e) + '</div>';
     }
+    // Rafraîchit aussi la section partenaires dans la foulée (fire-and-forget).
+    refreshAdminPartners();
   }
+
+  // ── ADMIN : SECTION PARTENAIRES ───────────────────────────────────────────
+  // Charge les stats globales + la liste de tous les partenaires actifs.
+  // Affiche un tableau riche (clics 7j/30j/total, signups idem, dernière
+  // activité, conversion, actions). Click sur une ligne → modal détail.
+  function _fmtRelTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60)     return 'à l\'instant';
+    if (diff < 3600)   return Math.floor(diff / 60) + ' min';
+    if (diff < 86400)  return Math.floor(diff / 3600) + ' h';
+    if (diff < 7*86400) return Math.floor(diff / 86400) + ' j';
+    return d.toLocaleDateString('fr-FR', { day:'2-digit', month:'short' });
+  }
+  async function refreshAdminPartners() {
+    const totalsEl = document.getElementById('adminPartnersTotals');
+    const listEl   = document.getElementById('adminPartners');
+    if (!totalsEl || !listEl) return;
+    try {
+      const r = await fetch('/api/admin/influencers');
+      if (r.status === 403 || r.status === 401) {
+        totalsEl.innerHTML = '';
+        listEl.innerHTML   = '';
+        return;
+      }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const t = d.totals || {};
+      totalsEl.innerHTML = [
+        ['🤝 Partenaires',     t.partners      || 0, 'actifs'],
+        ['👀 Clics 30j',        t.visits_30d    || 0, 'sur ' + (t.visits_total  || 0) + ' total'],
+        ['✅ Inscriptions 30j', t.signups_30d   || 0, 'sur ' + (t.signups_total || 0) + ' total'],
+        ['🎯 Taux conv. global', (t.visits_total ? ((t.signups_total / t.visits_total) * 100).toFixed(1) : '0') + '%', 'lifetime'],
+      ].map(([l, v, sub]) => `
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:1.4rem;font-weight:800;color:var(--primary)">${v}</div>
+          <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:2px">${l}</div>
+          <div style="font-size:0.6rem;color:var(--text-muted);opacity:.7">${sub}</div>
+        </div>`).join('');
+
+      const partners = d.partners || [];
+      if (!partners.length) {
+        listEl.innerHTML = '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:20px;text-align:center;color:var(--text-muted);font-size:0.85rem">Aucun partenaire pour l\'instant. Active un compte depuis la liste utilisateurs ci-dessus (bouton « + partenaire »).</div>';
+        return;
+      }
+      listEl.innerHTML = partners.map(p => {
+        const conv  = p.visits_total ? ((p.signups_total / p.visits_total) * 100).toFixed(1) + '%' : '—';
+        const lastV = _fmtRelTime(p.last_visit_at);
+        const lastS = _fmtRelTime(p.last_signup_at);
+        return `
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="flex:1;min-width:160px">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:0.92rem">
+                ${escHtml(p.name || p.email)}
+                <span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px;letter-spacing:0.04em;font-family:ui-monospace,monospace">${escHtml(p.referral_code)}</span>
+              </div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px">${escHtml(p.email)}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button onclick="openPartnerDetail('${escAttr(p.id)}')" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">Détail →</button>
+              <button onclick="adminEditInfluencer('${escAttr(p.id)}', '${escAttr(p.referral_code || '')}')" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 10px;font-size:0.72rem;cursor:pointer">Modifier</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(82px,1fr));gap:6px;font-size:0.72rem">
+            ${[
+              ['Clics 7j',   p.visits_7d,    'var(--text)'],
+              ['Clics 30j',  p.visits_30d,   'var(--text)'],
+              ['Clics total',p.visits_total, 'var(--text-muted)'],
+              ['Signups 7j', p.signups_7d,   'var(--accent)'],
+              ['Signups 30j',p.signups_30d,  'var(--accent)'],
+              ['Signups tot',p.signups_total,'var(--accent)'],
+              ['Conv.',      conv,           'var(--primary)'],
+            ].map(([l, v, color]) => `
+              <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 6px;text-align:center">
+                <div style="font-weight:700;color:${color};font-size:0.88rem">${v}</div>
+                <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">${l}</div>
+              </div>`).join('')}
+          </div>
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:8px;display:flex;gap:12px;flex-wrap:wrap">
+            <span>Dernier clic : <strong style="color:var(--text)">${lastV}</strong></span>
+            <span>Dernière inscription : <strong style="color:var(--text)">${lastS}</strong></span>
+          </div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      listEl.innerHTML = '<div style="color:var(--danger);padding:12px;font-size:0.85rem">Erreur : ' + (e.message || e) + '</div>';
+    }
+  }
+  window.refreshAdminPartners = refreshAdminPartners;
+
+  // Modal détail : graph 30j + liste complète des inscriptions attribuées
+  // au partenaire. Réutilise le rendu de barres _renderSparkline().
+  async function openPartnerDetail(userId) {
+    const modal = document.getElementById('partnerDetailModal');
+    const body  = document.getElementById('partnerDetailBody');
+    document.getElementById('partnerDetailTitle').textContent = 'Détail partenaire';
+    body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px">Chargement…</div>';
+    modal.classList.add('open');
+    try {
+      const r = await fetch('/api/admin/influencers/' + encodeURIComponent(userId));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      document.getElementById('partnerDetailTitle').textContent =
+        (d.user.name || d.user.email) + ' · ' + d.user.referral_code;
+      const totalVisits  = (d.visits_daily  || []).reduce((s, x) => s + x.c, 0);
+      const totalSignups = (d.signups_daily || []).reduce((s, x) => s + x.c, 0);
+      body.innerHTML = `
+        <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 16px">
+          ${escHtml(d.user.email)} · code <strong style="color:var(--text);font-family:ui-monospace,monospace">${escHtml(d.user.referral_code)}</strong>
+          · inscrit le ${new Date(d.user.created_at).toLocaleDateString('fr-FR')}
+        </p>
+
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Activité 30 derniers jours</h3>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:18px">
+          ${_renderDualSparkline(d.visits_daily, d.signups_daily, 30)}
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:0.72rem;color:var(--text-muted)">
+            <span><span style="display:inline-block;width:10px;height:10px;background:var(--primary);border-radius:2px;vertical-align:middle;margin-right:4px"></span>Clics (${totalVisits})</span>
+            <span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;vertical-align:middle;margin-right:4px"></span>Inscriptions (${totalSignups})</span>
+          </div>
+        </div>
+
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">
+          Inscriptions attribuées (${d.signups.length})
+        </h3>
+        ${d.signups.length ? `
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+            ${d.signups.map((s, i) => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;${i ? 'border-top:1px solid var(--border)' : ''}">
+                <div>
+                  <div style="font-size:0.85rem;font-weight:600">${escHtml(s.name || s.email)}</div>
+                  <div style="font-size:0.7rem;color:var(--text-muted)">${escHtml(s.email)} · plan ${escHtml(s.plan || 'beta')}</div>
+                </div>
+                <div style="font-size:0.72rem;color:var(--text-muted);text-align:right">
+                  ${new Date(s.created_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' })}<br>
+                  <span style="opacity:.7">${new Date(s.created_at).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })}</span>
+                </div>
+              </div>`).join('')}
+          </div>
+        ` : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--text-muted);font-size:0.82rem">Aucune inscription attribuée pour l\'instant.</div>'}
+      `;
+    } catch (e) {
+      body.innerHTML = '<div style="color:var(--danger);padding:18px">Erreur : ' + (e.message || e) + '</div>';
+    }
+  }
+  window.openPartnerDetail = openPartnerDetail;
+  function closePartnerDetailModal() {
+    document.getElementById('partnerDetailModal').classList.remove('open');
+  }
+  window.closePartnerDetailModal = closePartnerDetailModal;
+
+  // Rend un mini bar chart 30 jours avec 2 séries superposées (clics + signups)
+  // sur une grille jour-par-jour. Pas de lib : juste des divs avec hauteur en %.
+  function _renderDualSparkline(visits, signups, days) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const map = new Map(); // 'YYYY-MM-DD' → { v, s }
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      map.set(key, { v: 0, s: 0, label: d });
+    }
+    (visits  || []).forEach(r => { if (map.has(r.day)) map.get(r.day).v = r.c; });
+    (signups || []).forEach(r => { if (map.has(r.day)) map.get(r.day).s = r.c; });
+    const arr = [...map.values()];
+    const maxV = Math.max(1, ...arr.map(x => x.v));
+    const maxS = Math.max(1, ...arr.map(x => x.s));
+    const max  = Math.max(maxV, maxS);
+    return `
+      <div style="display:flex;align-items:flex-end;gap:2px;height:96px">
+        ${arr.map((d) => {
+          const vH = max ? (d.v / max) * 100 : 0;
+          const sH = max ? (d.s / max) * 100 : 0;
+          const dateLbl = d.label.toLocaleDateString('fr-FR', { day:'2-digit', month:'short' });
+          return `<div style="flex:1;display:flex;align-items:flex-end;gap:1px;height:100%" title="${dateLbl} · ${d.v} clic(s) · ${d.s} inscription(s)">
+            <div style="flex:1;background:var(--primary);height:${vH}%;border-radius:2px 2px 0 0;min-height:${d.v ? 2 : 0}px;opacity:${d.v ? 1 : 0.15}"></div>
+            <div style="flex:1;background:var(--accent);height:${sH}%;border-radius:2px 2px 0 0;min-height:${d.s ? 2 : 0}px;opacity:${d.s ? 1 : 0.15}"></div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  }
+  window._renderDualSparkline = _renderDualSparkline;
+
   async function adminSetPlan(uid, plan) {
     await fetch('/api/admin/users/' + encodeURIComponent(uid), {
       method: 'PATCH',
