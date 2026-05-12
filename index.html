@@ -33,10 +33,12 @@
           tokyo:   ['#1a1b26', 'dark'],
           mocha:   ['#1a1612', 'dark'],
           onyx:    ['#000000', 'dark'],
+          voltage: ['#000000', 'dark'],
           light:   ['#f6f6fb', 'light'],
           paper:   ['#fdf6e3', 'light'],
           mist:    ['#eef2f6', 'light'],
           sand:    ['#f5ebdc', 'light'],
+          sharp:   ['#ffffff', 'light'],
         };
         if (saved && BG[saved]) {
           document.documentElement.setAttribute('data-theme', saved);
@@ -134,6 +136,23 @@
       --focus-ring: 0 0 0 3px rgba(184,84,42,0.3);
     }
 
+    /* Sharp — contraste max, blanc pur + noir profond + rouge éditorial */
+    html[data-theme="sharp"] {
+      --primary: #d50000;
+      --primary-dark: #aa0000;
+      --primary-light: #ff3333;
+      --accent: #1976d2;
+      --danger: #b71c1c;
+      --bg: #ffffff;
+      --surface: #fafafa;
+      --surface2: #f0f0f0;
+      --border: #c8c8c8;
+      --text: #000000;
+      --text-muted: #555555;
+      --shadow: 0 4px 24px rgba(0,0,0,0.08);
+      --focus-ring: 0 0 0 3px rgba(213,0,0,0.3);
+    }
+
     /* ── PALETTES DARK ALTERNATIVES ─────────────────────────────────────
        Bg neutre (peu ou pas teinté) + primary/accent saturés qui pop,
        pour éviter l'effet "ton sur ton" monochromatique. */
@@ -200,6 +219,22 @@
       --text: #f0f0f5;
       --text-muted: #7e7e8a;
       --focus-ring: 0 0 0 3px rgba(91,141,239,0.4);
+    }
+
+    /* Voltage — contraste max, fond noir + jaune électrique + cyan néon */
+    html[data-theme="voltage"] {
+      --primary: #ffeb3b;
+      --primary-dark: #e0c800;
+      --primary-light: #ffef5e;
+      --accent: #00e5ff;
+      --danger: #ff1744;
+      --bg: #000000;
+      --surface: #121212;
+      --surface2: #1f1f1f;
+      --border: #2e2e2e;
+      --text: #ffffff;
+      --text-muted: #a0a0a0;
+      --focus-ring: 0 0 0 3px rgba(255,235,59,0.5);
     }
 
     /* Couleur de fond brut HTML synchronisée pour éviter le flash blanc/noir
@@ -5401,10 +5436,12 @@
     { id: 'tokyo',   name: 'Tokyo Night', kind: 'dark',  swatches: ['#1a1b26', '#2f334d', '#7aa2f7', '#7dcfff'] },
     { id: 'mocha',   name: 'Mocha',       kind: 'dark',  swatches: ['#1a1612', '#362e26', '#d4a574', '#a8c098'] },
     { id: 'onyx',    name: 'Onyx',        kind: 'dark',  swatches: ['#000000', '#18181f', '#5b8def', '#c8c8d0'] },
+    { id: 'voltage', name: 'Voltage',     kind: 'dark',  swatches: ['#000000', '#1f1f1f', '#ffeb3b', '#00e5ff'] },
     { id: 'light',   name: 'Light',       kind: 'light', swatches: ['#f6f6fb', '#ffffff', '#5535d4', '#00a37e'] },
     { id: 'paper',   name: 'Paper',       kind: 'light', swatches: ['#fdf6e3', '#fffaee', '#c75c2e', '#5f8b3f'] },
     { id: 'mist',    name: 'Mist',        kind: 'light', swatches: ['#eef2f6', '#ffffff', '#2563eb', '#0891b2'] },
     { id: 'sand',    name: 'Sand',        kind: 'light', swatches: ['#f5ebdc', '#fcf5e8', '#b8542a', '#7a9b3e'] },
+    { id: 'sharp',   name: 'Sharp',       kind: 'light', swatches: ['#ffffff', '#f0f0f0', '#d50000', '#1976d2'] },
   ];
   const THEME_IDS = THEMES.map(t => t.id);
   window.THEMES = THEMES;
