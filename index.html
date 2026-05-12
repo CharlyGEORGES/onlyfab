@@ -6938,21 +6938,29 @@
       };
       listEl.innerHTML = items.map(f => {
         const m = meta[f.type] || meta.other;
+        const hasReply = !!(f.admin_reply && f.admin_reply.trim());
         const statusBadge =
           f.status === 'new'      ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.6rem;padding:1px 6px;border-radius:3px;border:1px solid var(--border)">EN ATTENTE</span>' :
           f.status === 'resolved' ? '<span style="background:var(--accent);color:#000;font-size:0.6rem;padding:1px 6px;border-radius:3px">✓ RÉSOLU</span>' :
           '<span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:1px 6px;border-radius:3px">EN COURS</span>';
-        const when = f.created_at ? _fmtRelTime(f.created_at) : '';
+        const when    = f.created_at ? _fmtRelTime(f.created_at) : '';
+        const replyAt = f.replied_at ? _fmtRelTime(f.replied_at) : '';
         return `
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
               <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;font-weight:600">
                 <span style="color:${m.color}">${m.ic} ${m.label}</span>
                 ${statusBadge}
+                ${hasReply ? '<span style="background:var(--primary);color:#fff;font-size:0.6rem;padding:1px 6px;border-radius:3px">✉ RÉPONSE</span>' : ''}
               </div>
               <span style="font-size:0.7rem;color:var(--text-muted)">${when}</span>
             </div>
             <div style="font-size:0.82rem;color:var(--text);white-space:pre-wrap;line-height:1.45">${escHtml(f.message)}</div>
+            ${hasReply ? `
+              <div style="margin-top:8px;background:var(--surface);border-left:3px solid var(--primary);border-radius:6px;padding:8px 10px">
+                <div style="font-size:0.68rem;color:var(--primary);font-weight:700;letter-spacing:0.04em;margin-bottom:3px">RÉPONSE DE L'ÉQUIPE ${replyAt ? '· ' + replyAt : ''}</div>
+                <div style="font-size:0.82rem;color:var(--text);white-space:pre-wrap;line-height:1.45">${escHtml(f.admin_reply)}</div>
+              </div>` : ''}
           </div>`;
       }).join('');
     } catch (e) {
@@ -7427,6 +7435,11 @@
                   </div>
                   <div style="font-size:0.78rem;color:var(--text);white-space:pre-wrap;line-height:1.4">${escHtml(f.message)}</div>
                   ${f.page_url ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:4px" title="${escAttr(f.page_url)}">📍 ${escHtml((f.page_url || '').split('/').slice(3).join('/').slice(0, 60) || '/')}</div>` : ''}
+                  ${f.admin_reply ? `
+                    <div style="margin-top:6px;background:var(--surface);border-left:3px solid var(--primary);border-radius:4px;padding:6px 8px">
+                      <div style="font-size:0.62rem;color:var(--primary);font-weight:700;letter-spacing:0.04em;margin-bottom:2px">RÉPONSE ENVOYÉE ${f.replied_at ? '· ' + _fmtRelTime(f.replied_at) : ''}</div>
+                      <div style="font-size:0.76rem;color:var(--text);white-space:pre-wrap;line-height:1.4">${escHtml(f.admin_reply)}</div>
+                    </div>` : ''}
                 </div>`;
             }).join('')}
           </div>
@@ -7862,6 +7875,22 @@
               ${f.page_url ? ' · <span title="' + escAttr(f.page_url) + '">📍 ' + escHtml((f.page_url || '').split('/').slice(3).join('/').slice(0, 40) || '/') + '</span>' : ''}
             </div>
             <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:0.85rem;white-space:pre-wrap;color:var(--text);line-height:1.5">${escHtml(f.message)}</div>
+
+            <!-- Zone réponse à l'utilisateur (visible par lui dans son historique) -->
+            <details style="margin-top:8px" ${f.admin_reply ? 'open' : ''}>
+              <summary style="cursor:pointer;font-size:0.75rem;color:var(--text-muted);user-select:none;padding:4px 0">
+                💬 ${f.admin_reply ? `Réponse envoyée ${f.replied_at ? '· ' + _fmtRelTime(f.replied_at) : ''}` : 'Répondre à l\'utilisateur'}
+              </summary>
+              <div style="margin-top:6px">
+                <textarea id="adminReply_${f.id}" rows="2" placeholder="Ta réponse sera visible par l'utilisateur dans son historique de remontées…"
+                          style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:0.82rem;font-family:inherit;resize:vertical;box-sizing:border-box">${escHtml(f.admin_reply || '')}</textarea>
+                <div style="display:flex;gap:6px;margin-top:4px;justify-content:flex-end">
+                  ${f.admin_reply ? `<button onclick="saveFeedbackReply(${f.id}, '')" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);padding:3px 8px;font-size:0.7rem;cursor:pointer">Effacer</button>` : ''}
+                  <button onclick="saveFeedbackReply(${f.id})" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:3px 12px;font-size:0.72rem;font-weight:600;cursor:pointer">${f.admin_reply ? 'Mettre à jour' : 'Envoyer'}</button>
+                </div>
+              </div>
+            </details>
+
             <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
               ${f.status !== 'read' ? `<button onclick="setFeedbackStatus(${f.id},'read')" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 10px;font-size:0.72rem;cursor:pointer">👁 Marquer lu</button>` : ''}
               ${f.status !== 'resolved' ? `<button onclick="setFeedbackStatus(${f.id},'resolved')" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">✅ Résoudre</button>` : `<button onclick="setFeedbackStatus(${f.id},'new')" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 10px;font-size:0.72rem;cursor:pointer">↺ Rouvrir</button>`}
@@ -7891,6 +7920,22 @@
     await refreshAdminFeedback();
   }
   window.setFeedbackStatus = setFeedbackStatus;
+
+  // Envoie/met à jour la réponse admin pour une remontée. Si `forcedReply`
+  // est passé (string), il prime sur la valeur du textarea (utile pour
+  // "Effacer" qui force une chaîne vide).
+  async function saveFeedbackReply(id, forcedReply) {
+    const ta = document.getElementById('adminReply_' + id);
+    const reply = (forcedReply !== undefined ? forcedReply : (ta?.value || '')).trim();
+    const r = await fetch('/api/admin/feedback/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_reply: reply }),
+    });
+    if (!r.ok) { alert('Erreur'); return; }
+    await refreshAdminFeedback();
+  }
+  window.saveFeedbackReply = saveFeedbackReply;
 
   async function deleteFeedback(id) {
     if (!confirm('Supprimer définitivement cette remontée ?')) return;
