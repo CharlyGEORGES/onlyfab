@@ -1530,16 +1530,11 @@
         el.style.background = 'rgba(255,71,87,0.08)';
         el.style.borderColor = 'rgba(255,71,87,0.25)';
         el.style.color = 'var(--danger)';
-        el.textContent = `Bêta complète — ${r.used}/${r.max} places prises. Inscriptions fermées pour le moment.`;
+        el.textContent = `Bêta complète — inscriptions fermées pour le moment.`;
         const btn = document.getElementById('reg-submit');
         if (btn) { btn.disabled = true; btn.textContent = 'Bêta complète'; }
-      } else if (r.remaining <= 10) {
-        el.style.background = 'rgba(245,158,11,0.08)';
-        el.style.borderColor = 'rgba(245,158,11,0.3)';
-        el.style.color = '#f59e0b';
-        el.textContent = `Plus que ${r.remaining} place${r.remaining>1?'s':''} disponible${r.remaining>1?'s':''} sur ${r.max} en bêta — dépêchez-vous !`;
       } else {
-        el.textContent = `${r.remaining} places disponibles sur ${r.max} en bêta`;
+        el.textContent = `${r.remaining} place${r.remaining>1?'s':''} disponible${r.remaining>1?'s':''} sur ${r.max} en bêta`;
       }
     } catch { /* silent */ }
   })();
