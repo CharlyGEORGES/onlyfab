@@ -3177,6 +3177,27 @@
       width: 14px;
       height: 14px;
     }
+    .calc-save-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: opacity 0.2s, color 0.2s;
+    }
+    .calc-save-status[data-state="idle"]   { opacity: 0; }
+    .calc-save-status[data-state="saving"] { color: var(--text-muted); }
+    .calc-save-status[data-state="saved"]  { color: var(--accent); }
+    .calc-save-status[data-state="error"]  { color: var(--danger); }
+    .calc-save-status svg {
+      width: 14px;
+      height: 14px;
+    }
+    .calc-save-status .calc-spin {
+      animation: calcSpin 0.9s linear infinite;
+    }
+    @keyframes calcSpin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -4068,8 +4089,11 @@
 <!-- CALCULATOR MODAL -->
 <div class="modal-overlay" id="calculatorModal" role="dialog" aria-modal="true" aria-labelledby="calculatorModalTitle" aria-hidden="true">
   <div class="modal" style="max-width:560px">
-    <div class="modal-header">
-      <div class="modal-title" id="calculatorModalTitle">Calculateur de coût</div>
+    <div class="modal-header" style="gap:12px">
+      <div class="modal-title" id="calculatorModalTitle" style="flex:1">Calculateur de coût</div>
+      <span class="calc-save-status" id="calcSaveStatus" data-state="idle" role="status" aria-live="polite">
+        <span id="calcSaveStatusIcon"></span><span id="calcSaveStatusText"></span>
+      </span>
       <button class="close-btn" onclick="closeCalculatorModal()" aria-label="Fermer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
@@ -4128,11 +4152,7 @@
         + Ajouter une imprimante
       </button>
 
-      <button type="button" onclick="saveCostSettings()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:0.82rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:18px">
-        Enregistrer les paramètres
-      </button>
-
-      <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 18px">
+      <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
 
       <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:4px">Exemple</h3>
       <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 10px">Simule le coût et la rentabilité d'une impression donnée.</p>
@@ -5657,8 +5677,18 @@
     printers:  [..._calcDefaultPrinters],
   };
 
+  // Auto-save : on debounce 500ms les modifications pour ne pas spammer
+  // l'API à chaque caractère tapé. _calcReady empêche un save spontané
+  // au moment du chargement initial (où on populate les inputs depuis
+  // les settings serveur, ce qui déclencherait des oninput).
+  let _calcSaveTimer = null;
+  let _calcReady     = false;
+  let _calcSavedFadeTimer = null;
+
   async function openCalculatorModal() {
+    _calcReady = false; // empêche les save spontanés pendant le populate
     document.getElementById('calculatorModal').classList.add('open');
+    setCalcSaveStatus('idle');
     try {
       const s = await api('GET', '/api/cost-settings');
       _calcState = {
@@ -5682,12 +5712,24 @@
     document.getElementById('calcTvaEnabled').checked   = _calcState.tvaEnabled;
     document.getElementById('calcTvaPct').value         = _calcState.tvaPct;
     document.getElementById('calcMarginPct').value      = _calcState.targetMarginPct;
+    // Branche l'auto-save sur les champs settings une seule fois ici :
+    // les oninput="recomputeCalc()" déjà présents n'enclenchent pas le
+    // save, on ajoute un listener dédié qui appelle scheduleAutoSave().
+    ['calcElecRate','calcLaborRate','calcMarginPct','calcTvaPct'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && !el.dataset.autoSaveBound) {
+        el.addEventListener('input', scheduleAutoSave);
+        el.dataset.autoSaveBound = '1';
+      }
+    });
     onLaborToggle();
     onTvaToggle();
     renderCalcFilamentList();
     renderCalcPrinterList();
     renderCalcSelects();
     recomputeCalc();
+    // À partir d'ici, les modifications déclenchent un save.
+    _calcReady = true;
   }
   window.openCalculatorModal = openCalculatorModal;
 
@@ -5718,12 +5760,14 @@
     _calcState.filaments.push({ name: '', pricePerKg: 20 });
     renderCalcFilamentList();
     renderCalcSelects();
+    scheduleAutoSave();
   }
   function removeCalcFilament(idx) {
     _calcState.filaments.splice(idx, 1);
     renderCalcFilamentList();
     renderCalcSelects();
     recomputeCalc();
+    scheduleAutoSave();
   }
   function updateCalcFilament(idx, key, val) {
     if (!_calcState.filaments[idx]) return;
@@ -5732,6 +5776,7 @@
     // mais on update le select pour refléter un changement de nom.
     renderCalcSelects();
     recomputeCalc();
+    scheduleAutoSave();
   }
   window.addCalcFilament    = addCalcFilament;
   window.removeCalcFilament = removeCalcFilament;
@@ -5755,18 +5800,21 @@
     _calcState.printers.push({ name: '', powerW: 150 });
     renderCalcPrinterList();
     renderCalcSelects();
+    scheduleAutoSave();
   }
   function removeCalcPrinter(idx) {
     _calcState.printers.splice(idx, 1);
     renderCalcPrinterList();
     renderCalcSelects();
     recomputeCalc();
+    scheduleAutoSave();
   }
   function updateCalcPrinter(idx, key, val) {
     if (!_calcState.printers[idx]) return;
     _calcState.printers[idx][key] = key === 'powerW' ? (parseFloat(val) || 0) : val;
     renderCalcSelects();
     recomputeCalc();
+    scheduleAutoSave();
   }
   window.addCalcPrinter    = addCalcPrinter;
   window.removeCalcPrinter = removeCalcPrinter;
@@ -5789,6 +5837,43 @@
     if (prevPrn && prnSel.querySelector(`option[value="${prevPrn}"]`)) prnSel.value = prevPrn;
   }
 
+  // Icônes pour l'indicateur de statut.
+  const _calcStatusIcons = {
+    saving: '<svg class="calc-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>',
+    saved:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+    error:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>',
+  };
+  const _calcStatusLabels = {
+    saving: 'Enregistrement…',
+    saved:  'Enregistré',
+    error:  'Échec',
+  };
+  function setCalcSaveStatus(state) {
+    const el = document.getElementById('calcSaveStatus');
+    if (!el) return;
+    el.setAttribute('data-state', state);
+    document.getElementById('calcSaveStatusIcon').innerHTML = _calcStatusIcons[state] || '';
+    document.getElementById('calcSaveStatusText').textContent = _calcStatusLabels[state] || '';
+    // Si on passe en 'saved', on laisse l'indicateur visible quelques
+    // secondes puis on le fade out pour ne pas polluer le header.
+    if (_calcSavedFadeTimer) { clearTimeout(_calcSavedFadeTimer); _calcSavedFadeTimer = null; }
+    if (state === 'saved') {
+      _calcSavedFadeTimer = setTimeout(() => {
+        const cur = document.getElementById('calcSaveStatus');
+        if (cur && cur.getAttribute('data-state') === 'saved') setCalcSaveStatus('idle');
+      }, 2500);
+    }
+  }
+
+  // Débouncé : tout changement déclenche un save 500ms après le dernier
+  // input. Pendant ce delay, l'indicateur affiche 'Enregistrement…'.
+  function scheduleAutoSave() {
+    if (!_calcReady) return;
+    setCalcSaveStatus('saving');
+    if (_calcSaveTimer) clearTimeout(_calcSaveTimer);
+    _calcSaveTimer = setTimeout(saveCostSettings, 500);
+  }
+
   async function saveCostSettings() {
     _calcState.electricityRatePerKwh = parseFloat(document.getElementById('calcElecRate').value)  || 0;
     _calcState.laborRatePerHour      = parseFloat(document.getElementById('calcLaborRate').value) || 0;
@@ -5798,9 +5883,10 @@
     _calcState.targetMarginPct       = parseFloat(document.getElementById('calcMarginPct').value) || 0;
     try {
       await api('PATCH', '/api/cost-settings', _calcState);
-      showToast('Paramètres enregistrés');
+      setCalcSaveStatus('saved');
     } catch (err) {
-      showToast('Échec sauvegarde : ' + (err.message || ''), 'error');
+      setCalcSaveStatus('error');
+      console.warn('[calc] save failed', err);
     }
   }
   window.saveCostSettings = saveCostSettings;
@@ -5813,6 +5899,7 @@
     document.getElementById('calcLaborRateGroup').style.display    = enabled ? '' : 'none';
     document.getElementById('calcLaborMinutesGroup').style.display = enabled ? '' : 'none';
     recomputeCalc();
+    scheduleAutoSave();
   }
   window.onLaborToggle = onLaborToggle;
 
@@ -5822,6 +5909,7 @@
     const enabled = document.getElementById('calcTvaEnabled').checked;
     document.getElementById('calcTvaPctGroup').style.display = enabled ? '' : 'none';
     recomputeCalc();
+    scheduleAutoSave();
   }
   window.onTvaToggle = onTvaToggle;
 
@@ -5870,11 +5958,12 @@
       renderCalcPrinterList();
       renderCalcSelects();
       recomputeCalc();
+      if (added || updated) scheduleAutoSave();
       const parts = [];
       if (added)   parts.push(`${added} ajoutée(s)`);
       if (updated) parts.push(`${updated} mise(s) à jour`);
       showToast(parts.length
-        ? `${parts.join(' · ')} — pense à enregistrer`
+        ? parts.join(' · ')
         : 'Tes imprimantes Bambu sont déjà à jour');
     } catch (err) {
       showToast('Échec sync Bambu : ' + (err.message || ''), 'error');
