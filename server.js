@@ -317,6 +317,10 @@ db.exec(`
 // Réponse visible par l'utilisateur (distinct de admin_note qui reste privé).
 addColumnIfMissing('feedback', 'admin_reply', 'TEXT');
 addColumnIfMissing('feedback', 'replied_at',  'TIMESTAMP');
+// Marqueur "réponse vue par l'utilisateur" : null = pas encore vue
+// (pastille de notif côté user), set = timestamp où l'user a ouvert
+// son historique après la réponse.
+addColumnIfMissing('feedback', 'user_seen_reply_at', 'TIMESTAMP');
 
 // Réglages globaux app (clé/valeur). Pour l'instant : webhook Discord
 // utilisé pour notifier les nouvelles remontées en direct.
@@ -593,7 +597,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v51';
+const CACHE_VERSION = 'bs-v52';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1498,16 +1502,39 @@ http.createServer(async (req, res) => {
     // GET /api/feedback/mine → historique des remontées de l'utilisateur
     // courant. On expose le statut (pour qu'il voie si c'est résolu) mais
     // pas la note privée admin.
+    // Side-effect : marque toutes les réponses non encore vues comme vues
+    // (l'utilisateur a ouvert son historique → il a forcément vu les
+    // réponses). Ça clear la pastille notif.
     if (req.method === 'GET' && url === '/api/feedback/mine') {
       const user = getSessionUser(req);
       if (!user) { json(res, { error: 'Connexion requise' }, 401); return; }
       const items = db.prepare(`
         SELECT id, type, message, page_url, status, admin_reply, replied_at,
-               created_at, resolved_at
+               user_seen_reply_at, created_at, resolved_at
         FROM feedback WHERE user_id=?
         ORDER BY created_at DESC LIMIT 100
       `).all(user.id);
+      // Marque comme vues toutes les réponses pleines non encore vues.
+      db.prepare(`
+        UPDATE feedback SET user_seen_reply_at = CURRENT_TIMESTAMP
+        WHERE user_id=? AND admin_reply IS NOT NULL
+              AND TRIM(admin_reply) <> '' AND user_seen_reply_at IS NULL
+      `).run(user.id);
       json(res, { items });
+      return;
+    }
+
+    // GET /api/feedback/unread_replies_count → utilisé pour la pastille
+    // notif sur l'entrée "Signaler un bug" du menu user. Polling léger.
+    if (req.method === 'GET' && url === '/api/feedback/unread_replies_count') {
+      const user = getSessionUser(req);
+      if (!user) { json(res, { count: 0 }); return; }
+      const c = db.prepare(`
+        SELECT COUNT(*) AS c FROM feedback
+        WHERE user_id=? AND admin_reply IS NOT NULL
+              AND TRIM(admin_reply) <> '' AND user_seen_reply_at IS NULL
+      `).get(user.id).c;
+      json(res, { count: c });
       return;
     }
 
@@ -3299,9 +3326,14 @@ http.createServer(async (req, res) => {
         // PATCH /api/admin/feedback/:id { status?, admin_note?, admin_reply? }
         // admin_note = privé (admin uniquement)
         // admin_reply = visible par l'utilisateur dans son historique
+        // Side-effects quand admin_reply est non-vide :
+        //   - status passe de 'new' à 'read' (on a forcément lu pour répondre)
+        //   - user_seen_reply_at est remis à NULL → pastille notif côté user
         if (req.method === 'PATCH' && parts[2] === 'feedback' && parts[3]) {
           const id = parts[3];
           const b  = await parseBody(req);
+          const current = db.prepare('SELECT status FROM feedback WHERE id=?').get(id);
+          if (!current) { json(res, { error: 'Introuvable' }, 404); return; }
           const updates = []; const params = {};
           if (typeof b.status === 'string' && ['new','read','resolved'].includes(b.status)) {
             updates.push('status=:s'); params.s = b.status;
@@ -3313,12 +3345,23 @@ http.createServer(async (req, res) => {
           }
           if (typeof b.admin_reply === 'string') {
             const reply = b.admin_reply.slice(0, 4000);
+            const isNewReply = !!reply.trim();
             updates.push('admin_reply=:rep'); params.rep = reply;
-            // replied_at se met à jour quand on écrit une réponse, se vide
-            // quand on l'efface — comme ça l'UI sait s'il y a une réponse.
-            updates.push(reply.trim()
+            updates.push(isNewReply
               ? "replied_at=CURRENT_TIMESTAMP"
               : "replied_at=NULL");
+            // Réponse pleine = notif côté user : reset user_seen_reply_at.
+            // Effacement = on retire la notif aussi.
+            updates.push(isNewReply
+              ? "user_seen_reply_at=NULL"
+              : "user_seen_reply_at=CURRENT_TIMESTAMP");
+            // Auto-passe en "lu" si encore en "new" — répondre implique lire.
+            // Si l'admin a explicitement choisi un autre statut dans la même
+            // requête, on respecte ce choix (b.status > auto-bump).
+            if (isNewReply && current.status === 'new' && typeof b.status !== 'string') {
+              updates.push("status='read'");
+              updates.push("resolved_at=NULL");
+            }
           }
           if (!updates.length) { json(res, { ok: true }); return; }
           params.id = id;

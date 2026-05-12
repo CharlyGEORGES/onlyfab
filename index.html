@@ -3380,7 +3380,8 @@
     <!-- MENU UTILISATEUR : tout le reste tient ici -->
     <div class="user-menu-wrap">
       <button class="user-menu-trigger" id="userMenuBtn" onclick="toggleUserMenu(event)"
-              aria-haspopup="true" aria-expanded="false" aria-controls="userMenu" aria-label="Menu utilisateur">
+              aria-haspopup="true" aria-expanded="false" aria-controls="userMenu" aria-label="Menu utilisateur"
+              style="position:relative">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <circle cx="12" cy="8" r="4"/>
           <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
@@ -3388,6 +3389,8 @@
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
+        <!-- Point rouge si réponse non lue à une remontée (notif user) -->
+        <span id="userMenuTriggerDot" style="display:none;position:absolute;top:4px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--danger);border:2px solid var(--surface);box-sizing:content-box"></span>
       </button>
 
       <div class="user-menu" id="userMenu" role="menu" aria-labelledby="userMenuBtn">
@@ -3490,6 +3493,7 @@
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           </svg>
           <span>Signaler un bug · suggestion</span>
+          <span id="feedbackReplyBadge" style="display:none;background:var(--danger);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:auto">0</span>
         </button>
         <button class="user-menu-item danger" role="menuitem" onclick="closeUserMenu();logout()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -6902,9 +6906,39 @@
     document.getElementById('feedbackModal').classList.add('open');
     setTimeout(() => document.getElementById('feedbackMessage').focus(), 50);
     // Refresh de l'historique en arrière-plan : si l'user déplie il a la donnée à jour.
+    // Le GET /api/feedback/mine marque aussi les réponses comme vues côté serveur.
     loadFeedbackHistory();
+    // On clear la pastille notif tout de suite côté client — la requête au
+    // serveur va la clear côté DB aussi.
+    setFeedbackReplyBadge(0);
   }
   window.openFeedbackModal = openFeedbackModal;
+
+  // Pastille notif (point rouge sur le trigger du menu + compteur sur
+  // l'entrée "Signaler un bug") quand une réponse admin est arrivée et
+  // n'a pas encore été ouverte par l'utilisateur.
+  function setFeedbackReplyBadge(n) {
+    const badge = document.getElementById('feedbackReplyBadge');
+    const dot   = document.getElementById('userMenuTriggerDot');
+    const has   = n > 0;
+    if (badge) {
+      badge.textContent = n;
+      badge.style.display = has ? 'inline-block' : 'none';
+    }
+    if (dot) dot.style.display = has ? 'block' : 'none';
+  }
+  async function refreshFeedbackReplyBadge() {
+    try {
+      const r = await fetch('/api/feedback/unread_replies_count');
+      if (!r.ok) return;
+      const d = await r.json();
+      setFeedbackReplyBadge(d.count || 0);
+    } catch {}
+  }
+  window.refreshFeedbackReplyBadge = refreshFeedbackReplyBadge;
+  // Premier check + polling 60s (aligné sur refreshAdminUnreadBadge).
+  setTimeout(refreshFeedbackReplyBadge, 3000);
+  setInterval(refreshFeedbackReplyBadge, 60_000);
   function closeFeedbackModal() {
     document.getElementById('feedbackModal').classList.remove('open');
   }
