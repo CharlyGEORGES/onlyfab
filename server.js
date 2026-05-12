@@ -232,6 +232,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_ref_visits_code ON referral_visits(code);
 `);
 
+// Flag onboarding : 0 = jamais terminé le wizard d'accueil (Bambu →
+// coûts → tour) ; 1 = déjà passé. On l'utilise pour ouvrir le modal
+// automatiquement au premier login.
+addColumnIfMissing('users', 'onboarding_completed', 'INTEGER DEFAULT 0');
+
+// Backfill : on considère que tout user déjà actif (qui a un last_login
+// non-NULL ou des items) a "fini" l'onboarding implicitement — pas de
+// raison de lui afficher le wizard. Idempotent : ne touche que les rows
+// encore à 0.
+db.exec(`
+  UPDATE users SET onboarding_completed = 1
+  WHERE onboarding_completed = 0
+    AND (last_login IS NOT NULL
+      OR id IN (SELECT DISTINCT user_id FROM items WHERE user_id IS NOT NULL));
+`);
+
 // Indexes pour requêtes fréquentes (créés après TOUTES les migrations
 // pour garantir que colonnes et tables existent) :
 // - history.item_id   : timeline d'un item (déjà existant)
@@ -482,7 +498,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v36';
+const CACHE_VERSION = 'bs-v37';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1175,6 +1191,7 @@ http.createServer(async (req, res) => {
         user: {
           id: user.id, email: user.email, name: user.name, plan: user.plan,
           is_admin: !!user.is_admin, created_at: user.created_at,
+          onboarding_completed: !!user.onboarding_completed,
         },
         items, categories,
       };
@@ -1244,6 +1261,7 @@ http.createServer(async (req, res) => {
       json(res, { user: {
         id: user.id, email: user.email, name: user.name, plan: user.plan,
         is_admin: !!user.is_admin, created_at: user.created_at,
+        onboarding_completed: !!user.onboarding_completed,
       }});
       return;
     }
@@ -2402,6 +2420,16 @@ http.createServer(async (req, res) => {
         db.prepare('UPDATE users SET cost_settings=? WHERE id=?')
           .run(JSON.stringify(clean), userId);
         json(res, { ok: true, settings: clean });
+        return;
+      }
+
+      // POST /api/onboarding/complete → marque le wizard d'accueil comme
+      // terminé pour ne plus le ré-ouvrir. Appelé soit à la fin du tour,
+      // soit quand l'user clique sur "Passer" au début (un opt-out vaut
+      // un opt-in : on ne va pas le harceler).
+      if (req.method === 'POST' && url === '/api/onboarding/complete') {
+        db.prepare('UPDATE users SET onboarding_completed=1 WHERE id=?').run(userId);
+        json(res, { ok: true });
         return;
       }
 
