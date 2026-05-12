@@ -4006,12 +4006,18 @@
           <input type="number" id="calcElecRate" min="0" step="0.01" inputmode="decimal" oninput="recomputeCalc()">
         </div>
         <div class="form-group">
-          <label for="calcLaborRate">Main d'œuvre (€/h, 0 = ignoré)</label>
-          <input type="number" id="calcLaborRate" min="0" step="1" inputmode="decimal" oninput="recomputeCalc()">
-        </div>
-        <div class="form-group" style="grid-column:1 / -1">
           <label for="calcMarginPct">Marge cible (%)</label>
           <input type="number" id="calcMarginPct" min="0" step="5" inputmode="numeric" oninput="recomputeCalc()">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1;margin-bottom:0">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="calcLaborEnabled" onchange="onLaborToggle()" style="width:auto;margin:0">
+            <span>Inclure la main d'œuvre dans le calcul</span>
+          </label>
+        </div>
+        <div class="form-group" id="calcLaborRateGroup" style="grid-column:1 / -1;display:none">
+          <label for="calcLaborRate">Taux main d'œuvre (€/h)</label>
+          <input type="number" id="calcLaborRate" min="0" step="1" inputmode="decimal" oninput="recomputeCalc()">
         </div>
       </div>
 
@@ -4021,7 +4027,16 @@
         + Ajouter un filament
       </button>
 
-      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:14px 0 8px">Imprimantes (puissance en W)</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px;gap:8px">
+        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0">Imprimantes (puissance en W)</h3>
+        <button type="button" onclick="syncBambuPrinters()" title="Importer les imprimantes liées à votre compte Bambu Lab"
+                style="background:var(--surface2);color:var(--primary);border:1px solid var(--border);border-radius:6px;padding:4px 9px;font-size:0.72rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12" aria-hidden="true">
+            <path d="M3 12a9 9 0 0 1 14.85-6.85L21 8M21 3v5h-5M21 12a9 9 0 0 1-14.85 6.85L3 16M3 21v-5h5"/>
+          </svg>
+          Sync Bambu
+        </button>
+      </div>
       <div id="calcPrinterList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       <button type="button" onclick="addCalcPrinter()" style="background:transparent;color:var(--primary);border:1px dashed var(--primary);border-radius:8px;padding:7px 10px;font-size:0.8rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:14px">
         + Ajouter une imprimante
@@ -4050,6 +4065,10 @@
         <div class="form-group">
           <label for="calcHours">Temps d'impression (h)</label>
           <input type="number" id="calcHours" min="0" step="0.1" inputmode="decimal" placeholder="ex. 2.5" oninput="recomputeCalc()">
+        </div>
+        <div class="form-group" id="calcLaborMinutesGroup" style="grid-column:1 / -1;display:none">
+          <label for="calcLaborMinutes">Temps de main d'œuvre (min) <span style="color:var(--text-muted);font-weight:400">— prep, monitoring, post-traitement</span></label>
+          <input type="number" id="calcLaborMinutes" min="0" step="5" inputmode="numeric" placeholder="ex. 15" oninput="recomputeCalc()">
         </div>
       </div>
 
@@ -5519,7 +5538,8 @@
   ];
   let _calcState = {
     electricityRatePerKwh: 0.20,
-    laborRatePerHour:      0,
+    laborRatePerHour:      30,
+    laborEnabled:          false,
     targetMarginPct:       50,
     filaments: [..._calcDefaultFilaments],
     printers:  [..._calcDefaultPrinters],
@@ -5531,7 +5551,8 @@
       const s = await api('GET', '/api/cost-settings');
       _calcState = {
         electricityRatePerKwh: s.electricityRatePerKwh ?? 0.20,
-        laborRatePerHour:      s.laborRatePerHour      ?? 0,
+        laborRatePerHour:      s.laborRatePerHour      ?? 30,
+        laborEnabled:          s.laborEnabled === true,
         targetMarginPct:       s.targetMarginPct       ?? 50,
         filaments: Array.isArray(s.filaments) && s.filaments.length
                    ? s.filaments : [..._calcDefaultFilaments],
@@ -5541,9 +5562,11 @@
     } catch {
       // hors-ligne : on garde les defaults
     }
-    document.getElementById('calcElecRate').value   = _calcState.electricityRatePerKwh;
-    document.getElementById('calcLaborRate').value  = _calcState.laborRatePerHour;
-    document.getElementById('calcMarginPct').value  = _calcState.targetMarginPct;
+    document.getElementById('calcElecRate').value      = _calcState.electricityRatePerKwh;
+    document.getElementById('calcLaborRate').value     = _calcState.laborRatePerHour;
+    document.getElementById('calcLaborEnabled').checked = _calcState.laborEnabled;
+    document.getElementById('calcMarginPct').value     = _calcState.targetMarginPct;
+    onLaborToggle(); // applique la visibilité initiale des champs labor
     renderCalcFilamentList();
     renderCalcPrinterList();
     renderCalcSelects();
@@ -5651,6 +5674,7 @@
   async function saveCostSettings() {
     _calcState.electricityRatePerKwh = parseFloat(document.getElementById('calcElecRate').value)  || 0;
     _calcState.laborRatePerHour      = parseFloat(document.getElementById('calcLaborRate').value) || 0;
+    _calcState.laborEnabled          = document.getElementById('calcLaborEnabled').checked;
     _calcState.targetMarginPct       = parseFloat(document.getElementById('calcMarginPct').value) || 0;
     try {
       await api('PATCH', '/api/cost-settings', _calcState);
@@ -5661,15 +5685,72 @@
   }
   window.saveCostSettings = saveCostSettings;
 
+  // Toggle main d'œuvre : montre / cache le taux €/h et le champ minutes.
+  // Quand on désactive, on ne reset PAS la valeur saisie : si l'user
+  // retoggle ON, il retrouve son taux.
+  function onLaborToggle() {
+    const enabled = document.getElementById('calcLaborEnabled').checked;
+    document.getElementById('calcLaborRateGroup').style.display    = enabled ? '' : 'none';
+    document.getElementById('calcLaborMinutesGroup').style.display = enabled ? '' : 'none';
+    recomputeCalc();
+  }
+  window.onLaborToggle = onLaborToggle;
+
+  // Sync depuis Bambu : récupère les imprimantes liées au compte, infère
+  // leur puissance d'après le modèle, et les ajoute à la liste sans
+  // doublon (matching par nom). Si pas de compte Bambu configuré, on
+  // renvoie sur le setup.
+  async function syncBambuPrinters() {
+    try {
+      const r = await fetch('/api/bambu/printers');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Erreur');
+      if (!d.configured) {
+        showToast('Pas de compte Bambu lié — configuration…');
+        setTimeout(() => bambuReconfigure(), 600);
+        return;
+      }
+      const fetched = d.printers || [];
+      if (!fetched.length) {
+        showToast('Aucune imprimante détectée sur ton compte Bambu', 'error');
+        return;
+      }
+      // Merge : on n'écrase pas une imprimante existante (par nom). On
+      // ajoute uniquement celles qui ne sont pas encore dans la liste.
+      const existingNames = new Set(_calcState.printers.map(p => (p.name || '').toLowerCase().trim()));
+      let added = 0;
+      for (const p of fetched) {
+        const key = (p.name || '').toLowerCase().trim();
+        if (key && !existingNames.has(key)) {
+          _calcState.printers.push({ name: p.name, powerW: p.powerW });
+          existingNames.add(key);
+          added++;
+        }
+      }
+      renderCalcPrinterList();
+      renderCalcSelects();
+      recomputeCalc();
+      if (added > 0) showToast(`${added} imprimante(s) ajoutée(s) — pense à enregistrer`);
+      else           showToast('Tes imprimantes Bambu sont déjà dans la liste');
+    } catch (err) {
+      showToast('Échec sync Bambu : ' + (err.message || ''), 'error');
+    }
+  }
+  window.syncBambuPrinters = syncBambuPrinters;
+
   // Recalcul live : tire le prix du filament sélectionné et la puissance
   // de l'imprimante sélectionnée, applique élec + main d'œuvre + marge.
+  // Important : le temps de main d'œuvre est INDÉPENDANT du temps
+  // d'impression (un print de 10h ne demande pas 10h de manipulation).
   function recomputeCalc() {
     const fmt = n => isFinite(n) ? n.toFixed(2) + ' €' : '—';
-    const elecRate = parseFloat(document.getElementById('calcElecRate').value)  || 0;
-    const labor    = parseFloat(document.getElementById('calcLaborRate').value) || 0;
-    const margin   = parseFloat(document.getElementById('calcMarginPct').value) || 0;
-    const weight   = parseFloat(document.getElementById('calcWeight').value)    || 0;
-    const hours    = parseFloat(document.getElementById('calcHours').value)     || 0;
+    const elecRate    = parseFloat(document.getElementById('calcElecRate').value)    || 0;
+    const laborRate   = parseFloat(document.getElementById('calcLaborRate').value)   || 0;
+    const laborOn     = document.getElementById('calcLaborEnabled').checked;
+    const laborMin    = parseFloat(document.getElementById('calcLaborMinutes').value) || 0;
+    const margin      = parseFloat(document.getElementById('calcMarginPct').value)   || 0;
+    const weight      = parseFloat(document.getElementById('calcWeight').value)      || 0;
+    const hours       = parseFloat(document.getElementById('calcHours').value)       || 0;
 
     const filIdx = parseInt(document.getElementById('calcSelectFilament').value, 10);
     const prnIdx = parseInt(document.getElementById('calcSelectPrinter').value, 10);
@@ -5680,14 +5761,14 @@
 
     const filCost   = (weight / 1000) * filPrice;        // g → kg
     const elecCost  = (power / 1000) * hours * elecRate; // W → kW
-    const laborCost = labor * hours;
+    const laborCost = laborOn ? (laborMin / 60) * laborRate : 0;
     const total     = filCost + elecCost + laborCost;
     const price     = total * (1 + margin / 100);
     const profit    = price - total;
 
     document.getElementById('calcOutFilament').textContent    = fmt(filCost);
     document.getElementById('calcOutElec').textContent        = fmt(elecCost);
-    document.getElementById('calcOutLabor').textContent       = labor > 0 ? fmt(laborCost) : 'ignoré';
+    document.getElementById('calcOutLabor').textContent       = laborOn ? fmt(laborCost) : 'désactivé';
     document.getElementById('calcOutTotal').textContent       = fmt(total);
     document.getElementById('calcOutMarginPct').textContent   = `(marge ${margin}%)`;
     document.getElementById('calcOutPrice').textContent       = fmt(price);
