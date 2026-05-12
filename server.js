@@ -322,6 +322,55 @@ addColumnIfMissing('feedback', 'replied_at',  'TIMESTAMP');
 // son historique après la réponse.
 addColumnIfMissing('feedback', 'user_seen_reply_at', 'TIMESTAMP');
 
+// ── CONVERSATION (thread) sur chaque remontée ─────────────────────────
+// La table feedback_messages contient le fil complet : message initial
+// (auteur 'user') + tous les échanges suivants (admin / user). Le champ
+// feedback.message reste rempli (cohérence ancienne API) mais c'est la
+// table qui fait foi pour l'affichage du thread.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS feedback_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    feedback_id INTEGER NOT NULL,
+    author      TEXT NOT NULL,   -- 'user' | 'admin'
+    author_id   TEXT,            -- user_id de l'admin qui a écrit (audit)
+    message     TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_fb_msg_feedback ON feedback_messages(feedback_id);
+  CREATE INDEX IF NOT EXISTS idx_fb_msg_created  ON feedback_messages(created_at);
+`);
+// Marqueurs lu/non-lu par côté : timestamp de la dernière fois où le
+// côté concerné a ouvert le thread. Si NULL = jamais ouvert.
+addColumnIfMissing('feedback', 'user_last_read_at',  'TIMESTAMP');
+addColumnIfMissing('feedback', 'admin_last_read_at', 'TIMESTAMP');
+
+// Migration one-shot : seede feedback_messages depuis les colonnes
+// existantes (message initial + admin_reply éventuel) si elles ne sont
+// pas déjà migrées. Idempotent grâce au check d'existence.
+db.transaction(() => {
+  // 1. Message initial pour chaque feedback (auteur 'user')
+  db.prepare(`
+    INSERT INTO feedback_messages (feedback_id, author, message, created_at)
+    SELECT f.id, 'user', f.message, f.created_at
+    FROM feedback f
+    WHERE NOT EXISTS (
+      SELECT 1 FROM feedback_messages m
+      WHERE m.feedback_id = f.id AND m.author = 'user'
+    )
+  `).run();
+  // 2. Réponse admin si existante
+  db.prepare(`
+    INSERT INTO feedback_messages (feedback_id, author, message, created_at)
+    SELECT f.id, 'admin', f.admin_reply, COALESCE(f.replied_at, CURRENT_TIMESTAMP)
+    FROM feedback f
+    WHERE f.admin_reply IS NOT NULL AND TRIM(f.admin_reply) <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM feedback_messages m
+        WHERE m.feedback_id = f.id AND m.author = 'admin'
+      )
+  `).run();
+})();
+
 // Réglages globaux app (clé/valeur). Pour l'instant : webhook Discord
 // utilisé pour notifier les nouvelles remontées en direct.
 db.exec(`
@@ -597,7 +646,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v52';
+const CACHE_VERSION = 'bs-v53';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1490,49 +1539,106 @@ http.createServer(async (req, res) => {
       if (message.length > 5000) { json(res, { error: 'Message trop long (max 5000)' }, 400); return; }
       const pageUrl = (b.page_url || '').toString().slice(0, 500);
       const ua      = (req.headers['user-agent'] || '').slice(0, 240);
-      const info = db.prepare(`
-        INSERT INTO feedback (user_id, type, message, page_url, user_agent)
-        VALUES (?,?,?,?,?)
-      `).run(user.id, type, message, pageUrl || null, ua || null);
-      notifyDiscord({ id: info.lastInsertRowid, type, message, page_url: pageUrl }, user);
-      json(res, { ok: true, id: info.lastInsertRowid });
+      // On crée la remontée + son 1er message dans le thread en
+      // transaction pour garder les deux tables synchrones.
+      let feedbackId;
+      db.transaction(() => {
+        const info = db.prepare(`
+          INSERT INTO feedback (user_id, type, message, page_url, user_agent)
+          VALUES (?,?,?,?,?)
+        `).run(user.id, type, message, pageUrl || null, ua || null);
+        feedbackId = info.lastInsertRowid;
+        db.prepare(`
+          INSERT INTO feedback_messages (feedback_id, author, author_id, message)
+          VALUES (?, 'user', ?, ?)
+        `).run(feedbackId, user.id, message);
+      })();
+      notifyDiscord({ id: feedbackId, type, message, page_url: pageUrl }, user);
+      json(res, { ok: true, id: feedbackId });
+      return;
+    }
+
+    // POST /api/feedback/:id/messages → user répond dans le thread.
+    // Vérifie que c'est bien SON feedback. Notif Discord pour que l'admin
+    // soit prévenu de la nouvelle relance.
+    const fbReplyMatch = req.method === 'POST' && url.match(/^\/api\/feedback\/(\d+)\/messages$/);
+    if (fbReplyMatch) {
+      const user = getSessionUser(req);
+      if (!user) { json(res, { error: 'Connexion requise' }, 401); return; }
+      const fbId = Number(fbReplyMatch[1]);
+      const fb = db.prepare('SELECT id, user_id, type FROM feedback WHERE id=?').get(fbId);
+      if (!fb || fb.user_id !== user.id) { json(res, { error: 'Introuvable' }, 404); return; }
+      const b = await parseBody(req);
+      const message = (b.message || '').toString().trim();
+      if (message.length < 1)    { json(res, { error: 'Message vide' }, 400); return; }
+      if (message.length > 5000) { json(res, { error: 'Message trop long (max 5000)' }, 400); return; }
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO feedback_messages (feedback_id, author, author_id, message)
+          VALUES (?, 'user', ?, ?)
+        `).run(fbId, user.id, message);
+        // L'user a forcément vu son propre message → on update son last_read.
+        // Si le feedback était résolu, on le rouvre (statut 'read') pour
+        // que l'admin soit relancé.
+        db.prepare(`
+          UPDATE feedback
+          SET user_last_read_at = CURRENT_TIMESTAMP,
+              status = CASE WHEN status = 'resolved' THEN 'read' ELSE status END,
+              resolved_at = CASE WHEN status = 'resolved' THEN NULL ELSE resolved_at END
+          WHERE id=?
+        `).run(fbId);
+      })();
+      // Notif Discord pour signaler la relance.
+      notifyDiscord({ id: fbId, type: fb.type, message: '↩ Relance utilisateur : ' + message, page_url: '' }, user);
+      json(res, { ok: true });
       return;
     }
 
     // GET /api/feedback/mine → historique des remontées de l'utilisateur
-    // courant. On expose le statut (pour qu'il voie si c'est résolu) mais
-    // pas la note privée admin.
-    // Side-effect : marque toutes les réponses non encore vues comme vues
-    // (l'utilisateur a ouvert son historique → il a forcément vu les
-    // réponses). Ça clear la pastille notif.
+    // courant avec le thread complet de chaque conversation.
+    // Side-effect : update user_last_read_at sur tous les feedbacks du
+    // user (= il a ouvert son historique, donc lu les messages admin).
     if (req.method === 'GET' && url === '/api/feedback/mine') {
       const user = getSessionUser(req);
       if (!user) { json(res, { error: 'Connexion requise' }, 401); return; }
       const items = db.prepare(`
-        SELECT id, type, message, page_url, status, admin_reply, replied_at,
-               user_seen_reply_at, created_at, resolved_at
+        SELECT id, type, page_url, status, created_at, resolved_at,
+               user_last_read_at, admin_last_read_at
         FROM feedback WHERE user_id=?
         ORDER BY created_at DESC LIMIT 100
       `).all(user.id);
-      // Marque comme vues toutes les réponses pleines non encore vues.
+      const ids = items.map(i => i.id);
+      const messages = ids.length ? db.prepare(`
+        SELECT id, feedback_id, author, message, created_at
+        FROM feedback_messages
+        WHERE feedback_id IN (${ids.map(() => '?').join(',')})
+        ORDER BY created_at ASC
+      `).all(...ids) : [];
+      const byFb = {};
+      for (const m of messages) (byFb[m.feedback_id] = byFb[m.feedback_id] || []).push(m);
+      const out = items.map(it => ({ ...it, messages: byFb[it.id] || [] }));
+      // Marque tout comme vu côté user.
       db.prepare(`
-        UPDATE feedback SET user_seen_reply_at = CURRENT_TIMESTAMP
-        WHERE user_id=? AND admin_reply IS NOT NULL
-              AND TRIM(admin_reply) <> '' AND user_seen_reply_at IS NULL
+        UPDATE feedback SET user_last_read_at = CURRENT_TIMESTAMP
+        WHERE user_id=?
       `).run(user.id);
-      json(res, { items });
+      json(res, { items: out });
       return;
     }
 
-    // GET /api/feedback/unread_replies_count → utilisé pour la pastille
-    // notif sur l'entrée "Signaler un bug" du menu user. Polling léger.
+    // GET /api/feedback/unread_replies_count → pastille notif user :
+    // nombre de messages admin postés après la dernière fois où l'user
+    // a ouvert le thread en question. Polling léger.
     if (req.method === 'GET' && url === '/api/feedback/unread_replies_count') {
       const user = getSessionUser(req);
       if (!user) { json(res, { count: 0 }); return; }
       const c = db.prepare(`
-        SELECT COUNT(*) AS c FROM feedback
-        WHERE user_id=? AND admin_reply IS NOT NULL
-              AND TRIM(admin_reply) <> '' AND user_seen_reply_at IS NULL
+        SELECT COUNT(*) AS c
+        FROM feedback_messages m
+        JOIN feedback f ON f.id = m.feedback_id
+        WHERE f.user_id = ?
+          AND m.author = 'admin'
+          AND (f.user_last_read_at IS NULL OR m.created_at > f.user_last_read_at)
       `).get(user.id).c;
       json(res, { count: c });
       return;
@@ -2959,10 +3065,22 @@ http.createServer(async (req, res) => {
           // messages directement depuis sa fiche.
           const feedbacks = db.prepare(`
             SELECT id, type, message, page_url, status, admin_note,
-                   admin_reply, replied_at, created_at, resolved_at
+                   created_at, resolved_at
             FROM feedback WHERE user_id=?
             ORDER BY created_at DESC LIMIT 50
           `).all(targetId);
+          // Joindre les messages des threads pour avoir le fil complet
+          // accessible depuis la fiche user.
+          const fbIds = feedbacks.map(f => f.id);
+          const fbMsgs = fbIds.length ? db.prepare(`
+            SELECT id, feedback_id, author, message, created_at
+            FROM feedback_messages
+            WHERE feedback_id IN (${fbIds.map(() => '?').join(',')})
+            ORDER BY created_at ASC
+          `).all(...fbIds) : [];
+          const fbByMsg = {};
+          for (const m of fbMsgs) (fbByMsg[m.feedback_id] = fbByMsg[m.feedback_id] || []).push(m);
+          for (const f of feedbacks) f.messages = fbByMsg[f.id] || [];
 
           json(res, {
             user: {
@@ -3296,8 +3414,9 @@ http.createServer(async (req, res) => {
           const where = status === 'all' ? '' : 'WHERE f.status=?';
           const rows = db.prepare(`
             SELECT f.id, f.user_id, f.type, f.message, f.page_url, f.user_agent,
-                   f.status, f.admin_note, f.admin_reply, f.replied_at,
+                   f.status, f.admin_note,
                    f.created_at, f.resolved_at,
+                   f.admin_last_read_at, f.user_last_read_at,
                    u.email AS user_email, u.name AS user_name, u.plan AS user_plan
             FROM feedback f
             LEFT JOIN users u ON u.id = f.user_id
@@ -3305,31 +3424,53 @@ http.createServer(async (req, res) => {
             ORDER BY f.created_at DESC
             LIMIT 500
           `).all(...(status === 'all' ? [] : [status]));
+          const ids = rows.map(r => r.id);
+          const messages = ids.length ? db.prepare(`
+            SELECT id, feedback_id, author, message, created_at
+            FROM feedback_messages
+            WHERE feedback_id IN (${ids.map(() => '?').join(',')})
+            ORDER BY created_at ASC
+          `).all(...ids) : [];
+          const byFb = {};
+          for (const m of messages) (byFb[m.feedback_id] = byFb[m.feedback_id] || []).push(m);
+          const items = rows.map(r => {
+            const msgs = byFb[r.id] || [];
+            // has_unread_user_message : il y a au moins un message user
+            // que l'admin n'a pas encore vu (pas de last_read OU msg postérieur).
+            const hasUnread = msgs.some(m =>
+              m.author === 'user' && (!r.admin_last_read_at || m.created_at > r.admin_last_read_at)
+            );
+            return { ...r, messages: msgs, has_unread_user_message: hasUnread };
+          });
           const counts = db.prepare(`
             SELECT status, COUNT(*) AS c FROM feedback GROUP BY status
           `).all().reduce((acc, r) => (acc[r.status] = r.c, acc), {});
           json(res, {
-            items: rows,
+            items,
             counts: { new: counts.new || 0, read: counts.read || 0, resolved: counts.resolved || 0 },
           });
           return;
         }
 
-        // GET /api/admin/feedback/unread_count → utilisé par le polling SSE-light
-        // depuis l'app (badge sur l'icône admin) pour savoir s'il y a du nouveau.
+        // GET /api/admin/feedback/unread_count → badge admin :
+        // nombre de feedbacks ayant au moins un message user non lu
+        // (i.e. créé après admin_last_read_at, ou jamais lu).
         if (req.method === 'GET' && url === '/api/admin/feedback/unread_count') {
-          const c = db.prepare('SELECT COUNT(*) AS c FROM feedback WHERE status=?').get('new').c;
+          const c = db.prepare(`
+            SELECT COUNT(DISTINCT f.id) AS c
+            FROM feedback f
+            JOIN feedback_messages m ON m.feedback_id = f.id
+            WHERE m.author = 'user'
+              AND (f.admin_last_read_at IS NULL OR m.created_at > f.admin_last_read_at)
+          `).get().c;
           json(res, { count: c });
           return;
         }
 
-        // PATCH /api/admin/feedback/:id { status?, admin_note?, admin_reply? }
-        // admin_note = privé (admin uniquement)
-        // admin_reply = visible par l'utilisateur dans son historique
-        // Side-effects quand admin_reply est non-vide :
-        //   - status passe de 'new' à 'read' (on a forcément lu pour répondre)
-        //   - user_seen_reply_at est remis à NULL → pastille notif côté user
-        if (req.method === 'PATCH' && parts[2] === 'feedback' && parts[3]) {
+        // PATCH /api/admin/feedback/:id { status?, admin_note? }
+        // status / note privée admin. Les réponses passent par
+        // POST /api/admin/feedback/:id/messages (cf. plus bas).
+        if (req.method === 'PATCH' && parts[2] === 'feedback' && parts[3] && !parts[4]) {
           const id = parts[3];
           const b  = await parseBody(req);
           const current = db.prepare('SELECT status FROM feedback WHERE id=?').get(id);
@@ -3343,29 +3484,47 @@ http.createServer(async (req, res) => {
           if (typeof b.admin_note === 'string') {
             updates.push('admin_note=:n'); params.n = b.admin_note.slice(0, 4000);
           }
-          if (typeof b.admin_reply === 'string') {
-            const reply = b.admin_reply.slice(0, 4000);
-            const isNewReply = !!reply.trim();
-            updates.push('admin_reply=:rep'); params.rep = reply;
-            updates.push(isNewReply
-              ? "replied_at=CURRENT_TIMESTAMP"
-              : "replied_at=NULL");
-            // Réponse pleine = notif côté user : reset user_seen_reply_at.
-            // Effacement = on retire la notif aussi.
-            updates.push(isNewReply
-              ? "user_seen_reply_at=NULL"
-              : "user_seen_reply_at=CURRENT_TIMESTAMP");
-            // Auto-passe en "lu" si encore en "new" — répondre implique lire.
-            // Si l'admin a explicitement choisi un autre statut dans la même
-            // requête, on respecte ce choix (b.status > auto-bump).
-            if (isNewReply && current.status === 'new' && typeof b.status !== 'string') {
-              updates.push("status='read'");
-              updates.push("resolved_at=NULL");
-            }
-          }
           if (!updates.length) { json(res, { ok: true }); return; }
           params.id = id;
           db.prepare(`UPDATE feedback SET ${updates.join(', ')} WHERE id=:id`).run(params);
+          json(res, { ok: true });
+          return;
+        }
+
+        // POST /api/admin/feedback/:id/messages → l'admin poste un
+        // message dans le thread. Side-effects :
+        //   - status auto 'new' → 'read' si on répond, on a forcément lu
+        //   - admin_last_read_at = now (on a vu le thread aussi)
+        if (req.method === 'POST' && parts[2] === 'feedback' && parts[3] && parts[4] === 'messages') {
+          const fbId = parts[3];
+          const fb = db.prepare('SELECT id, status FROM feedback WHERE id=?').get(fbId);
+          if (!fb) { json(res, { error: 'Introuvable' }, 404); return; }
+          const b = await parseBody(req);
+          const message = (b.message || '').toString().trim();
+          if (message.length < 1)    { json(res, { error: 'Message vide' }, 400); return; }
+          if (message.length > 5000) { json(res, { error: 'Message trop long (max 5000)' }, 400); return; }
+          db.transaction(() => {
+            db.prepare(`
+              INSERT INTO feedback_messages (feedback_id, author, author_id, message)
+              VALUES (?, 'admin', ?, ?)
+            `).run(fbId, userId, message);
+            const bumpStatus = fb.status === 'new' ? ", status='read', resolved_at=NULL" : '';
+            db.prepare(`UPDATE feedback SET admin_last_read_at=CURRENT_TIMESTAMP${bumpStatus} WHERE id=?`).run(fbId);
+          })();
+          json(res, { ok: true });
+          return;
+        }
+
+        // POST /api/admin/feedback/:id/mark_read → admin a ouvert le
+        // thread (clic sur expand). Marque comme lu sans poster de msg.
+        if (req.method === 'POST' && parts[2] === 'feedback' && parts[3] && parts[4] === 'mark_read') {
+          const fbId = parts[3];
+          db.prepare(`
+            UPDATE feedback
+            SET admin_last_read_at = CURRENT_TIMESTAMP,
+                status = CASE WHEN status = 'new' THEN 'read' ELSE status END
+            WHERE id=?
+          `).run(fbId);
           json(res, { ok: true });
           return;
         }
