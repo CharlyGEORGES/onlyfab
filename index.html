@@ -1152,6 +1152,20 @@
 
     .modal-body { padding: 20px 24px 24px; }
 
+    /* Onglets admin */
+    .admin-tab-btn {
+      background: transparent; border: none; color: var(--text-muted);
+      padding: 12px 14px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -1px; transition: color .15s, border-color .15s;
+      font-family: inherit;
+    }
+    .admin-tab-btn:hover { color: var(--text); }
+    .admin-tab-btn[aria-selected="true"] {
+      color: var(--primary); border-bottom-color: var(--primary);
+    }
+    .admin-tab-panel[hidden] { display: none; }
+
     /* FORM */
     .form-group { margin-bottom: 16px; }
 
@@ -4584,22 +4598,37 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
+    <!-- Onglets : Stats / Utilisateurs / Partenaires. L'onglet actif est
+         persisté dans localStorage(adminTab) pour rouvrir au même endroit. -->
+    <div role="tablist" aria-label="Sections admin"
+         style="display:flex;gap:4px;padding:0 18px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:1">
+      <button type="button" role="tab" id="adminTabStatsBtn"     class="admin-tab-btn" data-tab="stats"     onclick="switchAdminTab('stats')">📊 Stats</button>
+      <button type="button" role="tab" id="adminTabUsersBtn"     class="admin-tab-btn" data-tab="users"     onclick="switchAdminTab('users')">👥 Utilisateurs</button>
+      <button type="button" role="tab" id="adminTabPartnersBtn"  class="admin-tab-btn" data-tab="partners"  onclick="switchAdminTab('partners')">🤝 Partenaires</button>
+    </div>
     <div class="modal-body">
-      <div id="adminStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:18px"></div>
-      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Utilisateurs</h3>
-      <div id="adminUsers" style="display:flex;flex-direction:column;gap:8px"></div>
-
-      <div style="height:1px;background:var(--border);margin:24px 0"></div>
-
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap">
-        <h3 style="font-size:0.92rem;font-weight:700;color:var(--text);margin:0">Programme partenaire</h3>
-        <button type="button" onclick="refreshAdminPartners()"
-                style="background:var(--surface2);color:var(--primary);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">
-          ⟳ Rafraîchir
-        </button>
+      <!-- Onglet Stats -->
+      <div id="adminTabStats" class="admin-tab-panel" role="tabpanel" aria-labelledby="adminTabStatsBtn">
+        <div id="adminStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px"></div>
       </div>
-      <div id="adminPartnersTotals" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px"></div>
-      <div id="adminPartners" style="display:flex;flex-direction:column;gap:8px"></div>
+
+      <!-- Onglet Utilisateurs -->
+      <div id="adminTabUsers" class="admin-tab-panel" role="tabpanel" aria-labelledby="adminTabUsersBtn" hidden>
+        <div id="adminUsers" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <!-- Onglet Partenaires -->
+      <div id="adminTabPartners" class="admin-tab-panel" role="tabpanel" aria-labelledby="adminTabPartnersBtn" hidden>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+          <h3 style="font-size:0.92rem;font-weight:700;color:var(--text);margin:0">Programme partenaire</h3>
+          <button type="button" onclick="refreshAdminPartners()"
+                  style="background:var(--surface2);color:var(--primary);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600;cursor:pointer">
+            ⟳ Rafraîchir
+          </button>
+        </div>
+        <div id="adminPartnersTotals" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px"></div>
+        <div id="adminPartners" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -6678,11 +6707,37 @@
   // ── ADMIN PANEL ───────────────────────────────────────────────────────────
   async function openAdminModal() {
     document.getElementById('adminModal').classList.add('open');
+    // Restaure l'onglet précédemment sélectionné (par défaut: stats)
+    const saved = localStorage.getItem('adminTab') || 'stats';
+    switchAdminTab(saved, /* skipPersist */ true);
     await refreshAdminPanel();
   }
   function closeAdminModal() {
     document.getElementById('adminModal').classList.remove('open');
   }
+  // Switch d'onglet : maj des attributs aria-selected + hidden. Si on bascule
+  // sur Partenaires et que le tableau est vide, on déclenche un fetch (cas
+  // où l'utilisateur ouvre le modal directement sur Stats puis va sur
+  // Partenaires sans avoir attendu refreshAdminPanel).
+  function switchAdminTab(tab, skipPersist) {
+    const tabs = ['stats', 'users', 'partners'];
+    if (!tabs.includes(tab)) tab = 'stats';
+    for (const t of tabs) {
+      const btn   = document.getElementById('adminTab' + t[0].toUpperCase() + t.slice(1) + 'Btn');
+      const panel = document.getElementById('adminTab' + t[0].toUpperCase() + t.slice(1));
+      if (!btn || !panel) continue;
+      const active = (t === tab);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      panel.hidden = !active;
+    }
+    if (!skipPersist) {
+      try { localStorage.setItem('adminTab', tab); } catch {}
+    }
+    if (tab === 'partners' && !document.getElementById('adminPartners')?.children?.length) {
+      refreshAdminPartners();
+    }
+  }
+  window.switchAdminTab = switchAdminTab;
   function escAttr(s) { return String(s ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
   function fmtUptime(s) {
     s = s || 0;
