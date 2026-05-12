@@ -3112,6 +3112,17 @@
       gap: 8px;
       align-items: center;
     }
+    .calc-row.calc-row-printer {
+      /* Imprimante : nom + W + €/h + supprimer. €/h plus court car la
+         valeur est usuellement entre 0.10 et 0.70 (4 caractères max). */
+      grid-template-columns: 1fr 78px 78px 32px;
+    }
+    @media (max-width: 480px) {
+      .calc-row.calc-row-printer {
+        grid-template-columns: 1fr 60px 60px 28px;
+        gap: 6px;
+      }
+    }
     .calc-row input {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -4109,10 +4120,6 @@
         <div class="form-group">
           <label for="calcElecRate">Électricité (€/kWh)</label>
           <input type="number" id="calcElecRate" min="0" step="0.01" inputmode="decimal" oninput="recomputeCalc()">
-        </div>
-        <div class="form-group">
-          <label for="calcMaintenance">Entretien & usure (€/h)</label>
-          <input type="number" id="calcMaintenance" min="0" step="0.05" inputmode="decimal" oninput="recomputeCalc()" title="Coût horaire pour amortir la machine, les nozzles, courroies, etc.">
         </div>
         <div class="form-group" style="grid-column:1 / -1">
           <label for="calcMarginPct">Marge cible (%) <span style="color:var(--text-muted);font-weight:400">— appliquée sur filament + impression, pas sur main d'œuvre</span></label>
@@ -5688,17 +5695,17 @@
     { name: 'ABS',  pricePerKg: 22 },
   ];
   // Puissance moyenne par modèle, en W, sur un print en régime établi.
-  // Basé sur mesures wattmètre communautaires (pas les pics de chauffe).
+  // wearCostPerHour : amortissement machine + nozzles + courroies / heure
+  // de print (basé sur prix d'achat / ~3000h + pièces d'usure).
   const _calcDefaultPrinters = [
-    { name: 'Bambu X1C', powerW: 170 },
-    { name: 'Bambu P1S', powerW: 140 },
-    { name: 'Bambu A1',  powerW: 130 },
+    { name: 'Bambu X1C', powerW: 170, wearCostPerHour: 0.40 },
+    { name: 'Bambu P1S', powerW: 140, wearCostPerHour: 0.20 },
+    { name: 'Bambu A1',  powerW: 130, wearCostPerHour: 0.15 },
   ];
   let _calcState = {
     electricityRatePerKwh:  0.20,
     laborRatePerHour:       30,
     laborEnabled:           false,
-    maintenanceCostPerHour: 0.20, // amortissement machine + consommables
     tvaEnabled:             false,
     tvaPct:                 20,
     targetMarginPct:        50,
@@ -5720,18 +5727,26 @@
     setCalcSaveStatus('idle');
     try {
       const s = await api('GET', '/api/cost-settings');
+      // Migration douce : si l'user avait l'ancien global maintenanceCostPerHour,
+      // on l'applique aux imprimantes qui n'ont pas encore de wearCostPerHour.
+      const legacyWear = s.maintenanceCostPerHour;
+      const migratedPrinters = (Array.isArray(s.printers) && s.printers.length
+        ? s.printers : [..._calcDefaultPrinters]).map(p => ({
+          ...p,
+          wearCostPerHour: (p.wearCostPerHour != null && p.wearCostPerHour > 0)
+            ? p.wearCostPerHour
+            : (legacyWear != null ? legacyWear : 0.20),
+        }));
       _calcState = {
         electricityRatePerKwh:  s.electricityRatePerKwh ?? 0.20,
         laborRatePerHour:       s.laborRatePerHour      ?? 30,
         laborEnabled:           s.laborEnabled === true,
-        maintenanceCostPerHour: s.maintenanceCostPerHour ?? 0.20,
         tvaEnabled:             s.tvaEnabled === true,
         tvaPct:                 s.tvaPct                ?? 20,
         targetMarginPct:        s.targetMarginPct       ?? 50,
         filaments: Array.isArray(s.filaments) && s.filaments.length
                    ? s.filaments : [..._calcDefaultFilaments],
-        printers:  Array.isArray(s.printers) && s.printers.length
-                   ? s.printers : [..._calcDefaultPrinters],
+        printers:  migratedPrinters,
       };
     } catch {
       // hors-ligne : on garde les defaults
@@ -5739,14 +5754,13 @@
     document.getElementById('calcElecRate').value       = _calcState.electricityRatePerKwh;
     document.getElementById('calcLaborRate').value      = _calcState.laborRatePerHour;
     document.getElementById('calcLaborEnabled').checked = _calcState.laborEnabled;
-    document.getElementById('calcMaintenance').value    = _calcState.maintenanceCostPerHour;
     document.getElementById('calcTvaEnabled').checked   = _calcState.tvaEnabled;
     document.getElementById('calcTvaPct').value         = _calcState.tvaPct;
     document.getElementById('calcMarginPct').value      = _calcState.targetMarginPct;
     // Branche l'auto-save sur les champs settings une seule fois ici :
     // les oninput="recomputeCalc()" déjà présents n'enclenchent pas le
     // save, on ajoute un listener dédié qui appelle scheduleAutoSave().
-    ['calcElecRate','calcLaborRate','calcMaintenance','calcMarginPct','calcTvaPct'].forEach(id => {
+    ['calcElecRate','calcLaborRate','calcMarginPct','calcTvaPct'].forEach(id => {
       const el = document.getElementById(id);
       if (el && !el.dataset.autoSaveBound) {
         el.addEventListener('input', scheduleAutoSave);
@@ -5817,19 +5831,23 @@
   function renderCalcPrinterList() {
     const list = document.getElementById('calcPrinterList');
     list.innerHTML = _calcState.printers.map((p, i) => `
-      <div class="calc-row">
+      <div class="calc-row calc-row-printer">
         <input type="text" value="${escHtml(p.name)}" placeholder="Nom"
                oninput="updateCalcPrinter(${i},'name',this.value)">
-        <div class="calc-row-suffix" data-suffix="W">
+        <div class="calc-row-suffix" data-suffix="W" title="Puissance moyenne en watts">
           <input type="number" value="${p.powerW}" min="0" step="10" inputmode="numeric"
                  oninput="updateCalcPrinter(${i},'powerW',this.value)">
+        </div>
+        <div class="calc-row-suffix" data-suffix="€/h" title="Entretien & usure (amortissement + consommables) par heure de print">
+          <input type="number" value="${p.wearCostPerHour ?? 0}" min="0" step="0.05" inputmode="decimal"
+                 oninput="updateCalcPrinter(${i},'wearCostPerHour',this.value)">
         </div>
         <button type="button" class="calc-remove-btn" onclick="removeCalcPrinter(${i})" aria-label="Supprimer l'imprimante">${_calcTrashSvg}</button>
       </div>
     `).join('');
   }
   function addCalcPrinter() {
-    _calcState.printers.push({ name: '', powerW: 150 });
+    _calcState.printers.push({ name: '', powerW: 150, wearCostPerHour: 0.20 });
     renderCalcPrinterList();
     renderCalcSelects();
     scheduleAutoSave();
@@ -5843,7 +5861,8 @@
   }
   function updateCalcPrinter(idx, key, val) {
     if (!_calcState.printers[idx]) return;
-    _calcState.printers[idx][key] = key === 'powerW' ? (parseFloat(val) || 0) : val;
+    const numKeys = ['powerW', 'wearCostPerHour'];
+    _calcState.printers[idx][key] = numKeys.includes(key) ? (parseFloat(val) || 0) : val;
     renderCalcSelects();
     recomputeCalc();
     scheduleAutoSave();
@@ -5910,7 +5929,6 @@
     _calcState.electricityRatePerKwh   = parseFloat(document.getElementById('calcElecRate').value)    || 0;
     _calcState.laborRatePerHour        = parseFloat(document.getElementById('calcLaborRate').value)   || 0;
     _calcState.laborEnabled            = document.getElementById('calcLaborEnabled').checked;
-    _calcState.maintenanceCostPerHour  = parseFloat(document.getElementById('calcMaintenance').value) || 0;
     _calcState.tvaEnabled              = document.getElementById('calcTvaEnabled').checked;
     _calcState.tvaPct                  = parseFloat(document.getElementById('calcTvaPct').value)      || 0;
     _calcState.targetMarginPct         = parseFloat(document.getElementById('calcMarginPct').value)   || 0;
@@ -5978,12 +5996,26 @@
         if (!key) continue;
         if (byName.has(key)) {
           const idx = byName.get(key);
+          let changed = false;
           if (_calcState.printers[idx].powerW !== p.powerW) {
             _calcState.printers[idx].powerW = p.powerW;
-            updated++;
+            changed = true;
           }
+          // wearCostPerHour : on n'écrase que si l'imprimante n'avait pas
+          // déjà une valeur custom (0 ou undefined). Sinon on respecte
+          // l'ajustement manuel de l'user.
+          const curWear = _calcState.printers[idx].wearCostPerHour;
+          if ((curWear == null || curWear === 0) && p.wearCostPerHour) {
+            _calcState.printers[idx].wearCostPerHour = p.wearCostPerHour;
+            changed = true;
+          }
+          if (changed) updated++;
         } else {
-          _calcState.printers.push({ name: p.name, powerW: p.powerW });
+          _calcState.printers.push({
+            name: p.name,
+            powerW: p.powerW,
+            wearCostPerHour: p.wearCostPerHour ?? 0.20,
+          });
           byName.set(key, _calcState.printers.length - 1);
           added++;
         }
@@ -6030,7 +6062,6 @@
   function recomputeCalc() {
     const fmt = n => isFinite(n) ? n.toFixed(2) + ' €' : '—';
     const elecRate  = parseFloat(document.getElementById('calcElecRate').value)    || 0;
-    const wearRate  = parseFloat(document.getElementById('calcMaintenance').value) || 0;
     const laborRate = parseFloat(document.getElementById('calcLaborRate').value)   || 0;
     const laborOn   = document.getElementById('calcLaborEnabled').checked;
     const laborMin  = parseFloat(document.getElementById('calcLaborMinutes').value) || 0;
@@ -6046,6 +6077,10 @@
     const prn    = _calcState.printers[prnIdx]  || null;
     const filPrice = fil ? fil.pricePerKg : 0;
     const power    = prn ? prn.powerW     : 0;
+    // Le taux d'entretien/usure vient maintenant de l'imprimante choisie
+    // (chaque machine s'amortit différemment, une X1C n'a pas la même
+    // usure qu'une A1 Mini). On garde le fallback 0 si pas de prn.
+    const wearRate = prn ? (prn.wearCostPerHour || 0) : 0;
 
     const filCost   = (weight / 1000) * filPrice;        // g → kg
     const elecCost  = (power / 1000) * hours * elecRate; // W → kW
