@@ -590,7 +590,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v48';
+const CACHE_VERSION = 'bs-v49';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2908,6 +2908,16 @@ http.createServer(async (req, res) => {
             ORDER BY ts DESC LIMIT 10
           `).all(targetId);
 
+          // Historique complet des remontées (bugs/suggestions/questions)
+          // envoyées par cet utilisateur, pour pouvoir contextualiser ses
+          // messages directement depuis sa fiche.
+          const feedbacks = db.prepare(`
+            SELECT id, type, message, page_url, status, admin_note,
+                   created_at, resolved_at
+            FROM feedback WHERE user_id=?
+            ORDER BY created_at DESC LIMIT 50
+          `).all(targetId);
+
           json(res, {
             user: {
               id: u.id, email: u.email, name: u.name, plan: u.plan,
@@ -2927,6 +2937,7 @@ http.createServer(async (req, res) => {
             provenance,
             referred_count: referredCount,
             recent_prints:  recentPrints,
+            feedbacks,
           });
           return;
         }
