@@ -3182,6 +3182,19 @@
           </svg>
           <span data-i18n="header.history">Historique</span>
         </button>
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();openCalculatorModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="4" y="3" width="16" height="18" rx="2"/>
+            <line x1="8" y1="7" x2="16" y2="7"/>
+            <line x1="8" y1="12" x2="10" y2="12"/>
+            <line x1="13" y1="12" x2="13" y2="12"/>
+            <line x1="16" y1="12" x2="16" y2="12"/>
+            <line x1="8" y1="16" x2="10" y2="16"/>
+            <line x1="13" y1="16" x2="13" y2="16"/>
+            <line x1="16" y1="16" x2="16" y2="16"/>
+          </svg>
+          <span data-i18n="header.calculator">Calculateur de coût</span>
+        </button>
 
         <div class="user-menu-divider" role="separator"></div>
 
@@ -3976,6 +3989,83 @@
   </div>
 </div>
 
+<!-- CALCULATOR MODAL -->
+<div class="modal-overlay" id="calculatorModal" role="dialog" aria-modal="true" aria-labelledby="calculatorModalTitle" aria-hidden="true">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <div class="modal-title" id="calculatorModalTitle">Calculateur de coût</div>
+      <button class="close-btn" onclick="closeCalculatorModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Paramètres de coût</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
+        <div class="form-group">
+          <label for="calcFilamentPrice">Filament (€/kg)</label>
+          <input type="number" id="calcFilamentPrice" min="0" step="0.5" inputmode="decimal" oninput="recomputeCalc()">
+        </div>
+        <div class="form-group">
+          <label for="calcElecRate">Électricité (€/kWh)</label>
+          <input type="number" id="calcElecRate" min="0" step="0.01" inputmode="decimal" oninput="recomputeCalc()">
+        </div>
+        <div class="form-group">
+          <label for="calcPrinterW">Puissance imprimante (W)</label>
+          <input type="number" id="calcPrinterW" min="0" step="10" inputmode="numeric" oninput="recomputeCalc()">
+        </div>
+        <div class="form-group">
+          <label for="calcLaborRate">Main d'œuvre (€/h, 0 = ignoré)</label>
+          <input type="number" id="calcLaborRate" min="0" step="1" inputmode="decimal" oninput="recomputeCalc()">
+        </div>
+        <div class="form-group" style="grid-column:1 / -1">
+          <label for="calcMarginPct">Marge cible (%)</label>
+          <input type="number" id="calcMarginPct" min="0" step="5" inputmode="numeric" oninput="recomputeCalc()">
+        </div>
+      </div>
+      <button type="button" onclick="saveCostSettings()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:0.82rem;font-weight:600;cursor:pointer;width:100%;margin-bottom:18px">
+        Enregistrer les paramètres
+      </button>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 18px">
+
+      <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:10px">Cette impression</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group">
+          <label for="calcWeight">Poids filament (g)</label>
+          <input type="number" id="calcWeight" min="0" step="1" inputmode="decimal" placeholder="ex. 45" oninput="recomputeCalc()">
+        </div>
+        <div class="form-group">
+          <label for="calcHours">Temps d'impression (h)</label>
+          <input type="number" id="calcHours" min="0" step="0.1" inputmode="decimal" placeholder="ex. 2.5" oninput="recomputeCalc()">
+        </div>
+      </div>
+
+      <div id="calcResult" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
+          <span>Filament</span><span id="calcOutFilament">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
+          <span>Électricité</span><span id="calcOutElec">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:10px">
+          <span>Main d'œuvre</span><span id="calcOutLabor">—</span>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:8px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:1rem;font-weight:800;color:var(--text);margin-bottom:14px">
+          <span>Coût total</span><span id="calcOutTotal">—</span>
+        </div>
+        <div style="background:var(--surface);border-radius:10px;padding:10px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;color:var(--text-muted);margin-bottom:4px">
+            <span>Prix conseillé <span id="calcOutMarginPct" style="color:var(--primary);font-weight:700"></span></span>
+            <span id="calcOutPrice" style="font-size:1.15rem;font-weight:800;color:var(--accent)">—</span>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted)" id="calcOutProfit">Saisis le poids et le temps pour démarrer.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN MODAL -->
 <div class="modal-overlay" id="adminModal" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle" aria-hidden="true">
   <div class="modal" style="max-width:760px">
@@ -4258,7 +4348,7 @@
     const candidates = [
       'printPopup', 'toast', 'historyPanel', 'historyOverlay',
       'formModal', 'detailModal', 'categoriesModal', 'bambuSetupModal',
-      'bambuHistoryModal', 'profileModal', 'adminModal',
+      'bambuHistoryModal', 'profileModal', 'adminModal', 'calculatorModal',
       'bambuStatusPill', 'tabBadge'
     ];
     candidates.forEach(id => {
@@ -5392,6 +5482,95 @@
       window.location.href = '/';
     } catch { showProfMsg('profileError', 'Erreur réseau.'); }
   }
+
+  // ── CALCULATEUR DE COÛT ───────────────────────────────────────────────────
+  // Defaults raisonnables si le user n'a jamais ouvert le modal.
+  const _calcDefaults = {
+    filamentPricePerKg:    20,    // ~20 €/kg pour du PLA basique
+    electricityRatePerKwh: 0.20,  // tarif moyen France 2024
+    printerPowerW:         150,   // X1C en moyenne
+    laborRatePerHour:      0,     // off par défaut
+    targetMarginPct:       50,
+  };
+
+  async function openCalculatorModal() {
+    document.getElementById('calculatorModal').classList.add('open');
+    // Charge les settings depuis le serveur, fallback sur defaults.
+    try {
+      const s = await api('GET', '/api/cost-settings');
+      const merged = { ..._calcDefaults, ...s };
+      document.getElementById('calcFilamentPrice').value = merged.filamentPricePerKg;
+      document.getElementById('calcElecRate').value      = merged.electricityRatePerKwh;
+      document.getElementById('calcPrinterW').value      = merged.printerPowerW;
+      document.getElementById('calcLaborRate').value     = merged.laborRatePerHour;
+      document.getElementById('calcMarginPct').value     = merged.targetMarginPct;
+    } catch {
+      // Si l'API échoue, on remplit les defaults pour que le formulaire soit
+      // utilisable hors-ligne (même si la sauvegarde échouera).
+      document.getElementById('calcFilamentPrice').value = _calcDefaults.filamentPricePerKg;
+      document.getElementById('calcElecRate').value      = _calcDefaults.electricityRatePerKwh;
+      document.getElementById('calcPrinterW').value      = _calcDefaults.printerPowerW;
+      document.getElementById('calcLaborRate').value     = _calcDefaults.laborRatePerHour;
+      document.getElementById('calcMarginPct').value     = _calcDefaults.targetMarginPct;
+    }
+    recomputeCalc();
+  }
+  window.openCalculatorModal = openCalculatorModal;
+
+  function closeCalculatorModal() {
+    document.getElementById('calculatorModal').classList.remove('open');
+  }
+  window.closeCalculatorModal = closeCalculatorModal;
+
+  async function saveCostSettings() {
+    const payload = {
+      filamentPricePerKg:    parseFloat(document.getElementById('calcFilamentPrice').value) || 0,
+      electricityRatePerKwh: parseFloat(document.getElementById('calcElecRate').value)      || 0,
+      printerPowerW:         parseFloat(document.getElementById('calcPrinterW').value)      || 0,
+      laborRatePerHour:      parseFloat(document.getElementById('calcLaborRate').value)     || 0,
+      targetMarginPct:       parseFloat(document.getElementById('calcMarginPct').value)     || 0,
+    };
+    try {
+      await api('PATCH', '/api/cost-settings', payload);
+      showToast('Paramètres enregistrés');
+    } catch (err) {
+      showToast('Échec sauvegarde : ' + (err.message || ''), 'error');
+    }
+  }
+  window.saveCostSettings = saveCostSettings;
+
+  // Recalcul live à chaque changement d'input. Tout en € sauf indication.
+  function recomputeCalc() {
+    const fmt = n => isFinite(n) ? n.toFixed(2) + ' €' : '—';
+    const filPrice = parseFloat(document.getElementById('calcFilamentPrice').value) || 0;
+    const elecRate = parseFloat(document.getElementById('calcElecRate').value)      || 0;
+    const power    = parseFloat(document.getElementById('calcPrinterW').value)      || 0;
+    const labor    = parseFloat(document.getElementById('calcLaborRate').value)     || 0;
+    const margin   = parseFloat(document.getElementById('calcMarginPct').value)     || 0;
+    const weight   = parseFloat(document.getElementById('calcWeight').value)        || 0;
+    const hours    = parseFloat(document.getElementById('calcHours').value)         || 0;
+
+    const filCost   = (weight / 1000) * filPrice;     // g → kg
+    const elecCost  = (power / 1000) * hours * elecRate; // W → kW
+    const laborCost = labor * hours;
+    const total     = filCost + elecCost + laborCost;
+    const price     = total * (1 + margin / 100);
+    const profit    = price - total;
+
+    document.getElementById('calcOutFilament').textContent = fmt(filCost);
+    document.getElementById('calcOutElec').textContent     = fmt(elecCost);
+    document.getElementById('calcOutLabor').textContent    = labor > 0 ? fmt(laborCost) : 'ignoré';
+    document.getElementById('calcOutTotal').textContent    = fmt(total);
+    document.getElementById('calcOutMarginPct').textContent = `(marge ${margin}%)`;
+    document.getElementById('calcOutPrice').textContent    = fmt(price);
+    const profEl = document.getElementById('calcOutProfit');
+    if (weight > 0 || hours > 0) {
+      profEl.textContent = `Profit estimé : ${fmt(profit)} par impression`;
+    } else {
+      profEl.textContent = 'Saisis le poids et le temps pour démarrer.';
+    }
+  }
+  window.recomputeCalc = recomputeCalc;
 
   // ── ADMIN PANEL ───────────────────────────────────────────────────────────
   async function openAdminModal() {

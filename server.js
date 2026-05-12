@@ -207,6 +207,11 @@ addColumnIfMissing('history', 'before_state', 'TEXT');
 // régulièrement) sans demander à l'utilisateur de se re-login.
 addColumnIfMissing('users', 'bambu_refresh_token', 'TEXT');
 
+// Paramètres de coût (calculateur rentabilité) stockés en JSON :
+// { filamentPricePerKg, electricityRatePerKwh, printerPowerW,
+//   laborRatePerHour, targetMarginPct, currency }
+addColumnIfMissing('users', 'cost_settings', 'TEXT');
+
 // Indexes pour requêtes fréquentes (créés après TOUTES les migrations
 // pour garantir que colonnes et tables existent) :
 // - history.item_id   : timeline d'un item (déjà existant)
@@ -457,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v20';
+const CACHE_VERSION = 'bs-v21';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2297,6 +2302,37 @@ http.createServer(async (req, res) => {
         params.id = userId;
         db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id=:id`).run(params);
         json(res, { ok: true });
+        return;
+      }
+
+      // GET/PATCH /api/cost-settings → paramètres calculateur de rentabilité.
+      // Stockés en JSON dans users.cost_settings. Valeurs absentes ⇒ defaults
+      // côté UI (le client gère le rendu d'un formulaire vide).
+      if (req.method === 'GET' && url === '/api/cost-settings') {
+        const row = db.prepare('SELECT cost_settings FROM users WHERE id=?').get(userId);
+        const cs  = row?.cost_settings ? safeParseJson(row.cost_settings, {}) : {};
+        json(res, cs);
+        return;
+      }
+      if (req.method === 'PATCH' && url === '/api/cost-settings') {
+        const b = await parseBody(req);
+        // On clamp/sanitise pour éviter NaN ou valeurs absurdes en base.
+        const num = (v, min = 0, max = 1e6) => {
+          const n = Number(v);
+          if (!isFinite(n)) return null;
+          return Math.max(min, Math.min(max, n));
+        };
+        const clean = {
+          filamentPricePerKg:    num(b.filamentPricePerKg, 0, 10000) ?? 0,
+          electricityRatePerKwh: num(b.electricityRatePerKwh, 0, 100) ?? 0,
+          printerPowerW:         num(b.printerPowerW, 0, 5000) ?? 0,
+          laborRatePerHour:      num(b.laborRatePerHour, 0, 10000) ?? 0,
+          targetMarginPct:       num(b.targetMarginPct, 0, 10000) ?? 50,
+          currency:              (typeof b.currency === 'string' && b.currency.length <= 5) ? b.currency : 'EUR',
+        };
+        db.prepare('UPDATE users SET cost_settings=? WHERE id=?')
+          .run(JSON.stringify(clean), userId);
+        json(res, { ok: true, settings: clean });
         return;
       }
 
