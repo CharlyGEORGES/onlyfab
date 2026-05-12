@@ -1238,6 +1238,19 @@
     #adminModal .modal-body { flex: 1; overflow-y: auto; min-height: 0; }
     #adminModal #adminFooter { flex-shrink: 0; }
 
+    /* Modal détail utilisateur : même pattern (hauteur fixe + sous-onglets
+       internes pour éviter le scroll empilé). */
+    #userDetailModal .modal {
+      height: min(85vh, 720px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #userDetailModal .modal-header { flex-shrink: 0; }
+    #userDetailModal > .modal > [role="tablist"] { flex-shrink: 0; }
+    #userDetailModal .modal-body { flex: 1; overflow-y: auto; min-height: 0; }
+    .ud-tab-panel[hidden] { display: none; }
+
     /* Onglets admin */
     .admin-tab-btn {
       background: transparent; border: none; color: var(--text-muted);
@@ -4802,6 +4815,14 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
+    <!-- Sous-onglets : regroupent les sections pour ne plus dérouler tout -->
+    <div role="tablist" aria-label="Sections fiche utilisateur"
+         style="display:flex;gap:4px;padding:0 18px;border-bottom:1px solid var(--border);background:var(--surface);overflow-x:auto">
+      <button type="button" role="tab" id="udTabProfilBtn"    class="admin-tab-btn" data-tab="profil"    onclick="switchUserDetailTab('profil')">🪪 Profil</button>
+      <button type="button" role="tab" id="udTabActiviteBtn"  class="admin-tab-btn" data-tab="activite"  onclick="switchUserDetailTab('activite')">📊 Activité</button>
+      <button type="button" role="tab" id="udTabRemonteesBtn" class="admin-tab-btn" data-tab="remontees" onclick="switchUserDetailTab('remontees')">💬 Remontées <span id="udTabRemonteesBadge" style="display:none;background:var(--text-muted);color:#000;font-size:0.6rem;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:4px;vertical-align:middle">0</span></button>
+      <button type="button" role="tab" id="udTabActionsBtn"   class="admin-tab-btn" data-tab="actions"   onclick="switchUserDetailTab('actions')">⚙ Actions</button>
+    </div>
     <div class="modal-body" id="userDetailBody">
       <div style="text-align:center;color:var(--text-muted);padding:30px">Chargement…</div>
     </div>
@@ -7444,144 +7465,202 @@
           </div>`
         : '';
 
-      body.innerHTML = `
-        <div style="margin-bottom:16px">
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-            <span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">${escHtml(u.plan || 'beta')}</span>
-            ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:2px 8px;border-radius:4px">ADMIN</span>' : ''}
-            ${u.is_influencer ? '<span style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:0.65rem;padding:2px 8px;border-radius:4px">★ Partenaire</span>' : ''}
-            ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.65rem;padding:2px 8px;border-radius:4px">BAMBU ✓</span>' : (u.bambu_email ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Bambu déconnecté</span>' : '')}
-            ${u.onboarding_completed ? '' : '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Onboarding incomplet</span>'}
-          </div>
-          <div style="font-size:0.78rem;color:var(--text-muted)">${escHtml(u.email)} · inscrit ${created}</div>
-          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px" title="${escAttr(seenAbs)}">
-            🟢 Dernière ouverture : <strong style="color:var(--text)">${seenStr}</strong>${seenAbs ? ` <span style="opacity:.6">· ${escHtml(seenAbs)}</span>` : ''}
-          </div>
-        </div>
-
-        <!-- Stats grid -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:6px;margin-bottom:18px">
-          ${[
-            ['Articles',       d.stats.items_count,      'var(--text)'],
-            ['Catégories',     d.stats.categories_count, 'var(--text-muted)'],
-            ['Prints (tot)',   d.stats.prints_total,     'var(--text)'],
-            ['Prints 30j',     d.stats.prints_30d,       'var(--accent)'],
-            ['Prints 7j',      d.stats.prints_7d,        'var(--accent)'],
-            ['Sessions',       d.stats.active_sessions,  'var(--primary)'],
-          ].map(([l, v, color]) => `
-            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 6px;text-align:center">
-              <div style="font-size:1.1rem;font-weight:800;color:${color}">${v ?? 0}</div>
-              <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">${l}</div>
-            </div>`).join('')}
-        </div>
-
-        <!-- Provenance -->
-        ${(provHtml || referredHtml) ? `
-          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Provenance</h3>
+      // Panels par onglet — un seul visible à la fois (switchUserDetailTab).
+      const panelProfil = `
+        <div class="ud-tab-panel" data-ud-tab="profil">
           <div style="margin-bottom:16px">
-            ${provHtml}
-            ${referredHtml}
-          </div>` : ''}
-
-        <!-- Note privée admin -->
-        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Note privée admin</h3>
-        <textarea id="userDetailNote" rows="3" onblur="saveUserDetailNote()" placeholder="Contexte, rappel d'échange, signalement…"
-                  style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:0.82rem;font-family:inherit;resize:vertical;box-sizing:border-box;margin-bottom:18px">${escHtml(u.admin_note || '')}</textarea>
-
-        <!-- Activité d'impression -->
-        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Dernières impressions</h3>
-        ${d.recent_prints && d.recent_prints.length ? `
-          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:18px">
-            ${d.recent_prints.map((p, i) => {
-              const when = p.started_at ? _fmtRelTime(p.started_at) : '—';
-              const statusIc = p.status === 'done' ? '✅' : p.status === 'pending' ? '⏳' : '🗑';
-              return `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;${i ? 'border-top:1px solid var(--border)' : ''};gap:10px">
-                  <div style="flex:1;min-width:0">
-                    <div style="font-size:0.82rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${statusIc} ${escHtml(p.label || 'Impression')}</div>
-                    <div style="font-size:0.7rem;color:var(--text-muted)">${escHtml(p.printer || '—')}</div>
-                  </div>
-                  <div style="font-size:0.72rem;color:var(--text-muted);flex-shrink:0">${when}</div>
-                </div>`;
-            }).join('')}
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+              <span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">${escHtml(u.plan || 'beta')}</span>
+              ${u.is_admin ? '<span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:2px 8px;border-radius:4px">ADMIN</span>' : ''}
+              ${u.is_influencer ? '<span style="background:transparent;border:1px solid var(--primary);color:var(--primary);font-size:0.65rem;padding:2px 8px;border-radius:4px">★ Partenaire</span>' : ''}
+              ${u.bambu_connected === 'connected' ? '<span style="background:var(--accent);color:#000;font-size:0.65rem;padding:2px 8px;border-radius:4px">BAMBU ✓</span>' : (u.bambu_email ? '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Bambu déconnecté</span>' : '')}
+              ${u.onboarding_completed ? '' : '<span style="background:var(--surface);color:var(--text-muted);font-size:0.65rem;padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Onboarding incomplet</span>'}
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-muted)">${escHtml(u.email)} · inscrit ${created}</div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px" title="${escAttr(seenAbs)}">
+              🟢 Dernière ouverture : <strong style="color:var(--text)">${seenStr}</strong>${seenAbs ? ` <span style="opacity:.6">· ${escHtml(seenAbs)}</span>` : ''}
+            </div>
           </div>
-        ` : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;color:var(--text-muted);font-size:0.8rem;margin-bottom:18px">Aucune impression enregistrée.</div>'}
+          ${(provHtml || referredHtml) ? `
+            <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Provenance</h3>
+            <div style="margin-bottom:16px">
+              ${provHtml}
+              ${referredHtml}
+            </div>` : ''}
+          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Note privée admin</h3>
+          <textarea id="userDetailNote" rows="3" onblur="saveUserDetailNote()" placeholder="Contexte, rappel d'échange, signalement…"
+                    style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:0.82rem;font-family:inherit;resize:vertical;box-sizing:border-box">${escHtml(u.admin_note || '')}</textarea>
+        </div>`;
 
-        <!-- Historique des remontées de cet user (bugs, suggestions, questions) -->
-        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">
-          Remontées envoyées ${d.feedbacks && d.feedbacks.length ? `<span style="opacity:.6">(${d.feedbacks.length})</span>` : ''}
-        </h3>
-        ${d.feedbacks && d.feedbacks.length ? `
-          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:18px">
-            ${d.feedbacks.map((f, i) => {
-              const meta = {
-                bug:        { ic: '🐛', label: 'Bug',        color: 'var(--danger)' },
-                suggestion: { ic: '💡', label: 'Suggestion', color: 'var(--primary)' },
-                question:   { ic: '❓', label: 'Question',   color: 'var(--accent)' },
-                other:      { ic: '💬', label: 'Autre',      color: 'var(--text-muted)' },
-              }[f.type] || { ic: '💬', label: f.type, color: 'var(--text-muted)' };
-              const statusBadge =
-                f.status === 'new'      ? '<span style="background:var(--danger);color:#fff;font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em">NOUVEAU</span>' :
-                f.status === 'resolved' ? '<span style="background:var(--accent);color:#000;font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em">RÉSOLU</span>'  :
-                '<span style="background:var(--surface);color:var(--text-muted);font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;border:1px solid var(--border)">LU</span>';
-              const when = f.created_at ? _fmtRelTime(f.created_at) : '—';
-              const absWhen = f.created_at ? new Date(f.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
-              const fbMsgs = f.messages || [];
-              // On affiche tous les messages du thread, compactés.
-              return `
-                <div style="padding:10px 12px;${i ? 'border-top:1px solid var(--border)' : ''}">
-                  <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-                    <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;font-weight:700">
-                      <span style="color:${meta.color}">${meta.ic} ${meta.label}</span>
-                      ${statusBadge}
-                      ${fbMsgs.length > 1 ? `<span style="font-size:0.62rem;color:var(--text-muted);font-weight:500">${fbMsgs.length} messages</span>` : ''}
+      const panelActivite = `
+        <div class="ud-tab-panel" data-ud-tab="activite" hidden>
+          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Statistiques</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:6px;margin-bottom:18px">
+            ${[
+              ['Articles',       d.stats.items_count,      'var(--text)'],
+              ['Catégories',     d.stats.categories_count, 'var(--text-muted)'],
+              ['Prints (tot)',   d.stats.prints_total,     'var(--text)'],
+              ['Prints 30j',     d.stats.prints_30d,       'var(--accent)'],
+              ['Prints 7j',      d.stats.prints_7d,        'var(--accent)'],
+              ['Sessions',       d.stats.active_sessions,  'var(--primary)'],
+            ].map(([l, v, color]) => `
+              <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 6px;text-align:center">
+                <div style="font-size:1.1rem;font-weight:800;color:${color}">${v ?? 0}</div>
+                <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">${l}</div>
+              </div>`).join('')}
+          </div>
+          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Dernières impressions</h3>
+          ${d.recent_prints && d.recent_prints.length ? `
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+              ${d.recent_prints.map((p, i) => {
+                const when = p.started_at ? _fmtRelTime(p.started_at) : '—';
+                const statusIc = p.status === 'done' ? '✅' : p.status === 'pending' ? '⏳' : '🗑';
+                return `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;${i ? 'border-top:1px solid var(--border)' : ''};gap:10px">
+                    <div style="flex:1;min-width:0">
+                      <div style="font-size:0.82rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${statusIc} ${escHtml(p.label || 'Impression')}</div>
+                      <div style="font-size:0.7rem;color:var(--text-muted)">${escHtml(p.printer || '—')}</div>
                     </div>
-                    <div style="font-size:0.68rem;color:var(--text-muted)" title="${escAttr(absWhen)}">${when}</div>
-                  </div>
-                  ${f.page_url ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-bottom:4px" title="${escAttr(f.page_url)}">📍 ${escHtml((f.page_url || '').split('/').slice(3).join('/').slice(0, 60) || '/')}</div>` : ''}
-                  <div class="fb-thread" style="gap:6px">
-                    ${(fbMsgs.length ? fbMsgs : [{ author:'user', message: f.message, created_at: f.created_at }]).map(mm => {
-                      const mine = mm.author === 'admin';
-                      return `
-                        <div class="fb-msg ${mine ? 'from-me' : 'from-them'}">
-                          <div class="fb-bubble" style="font-size:0.78rem;padding:6px 10px">${escHtml(mm.message)}</div>
-                          <div class="fb-meta">${mine ? 'Admin' : 'User'} · ${_fmtRelTime(mm.created_at)}</div>
-                        </div>`;
-                    }).join('')}
-                  </div>
-                </div>`;
-            }).join('')}
-          </div>
-        ` : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;color:var(--text-muted);font-size:0.8rem;margin-bottom:18px">Aucune remontée envoyée.</div>'}
+                    <div style="font-size:0.72rem;color:var(--text-muted);flex-shrink:0">${when}</div>
+                  </div>`;
+              }).join('')}
+            </div>
+          ` : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;color:var(--text-muted);font-size:0.8rem">Aucune impression enregistrée.</div>'}
+        </div>`;
 
-        <!-- Actions admin -->
-        <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Actions</h3>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer">
-            Plan
-            <select onchange="adminSetPlan('${escAttr(u.id)}', this.value).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:0.78rem">
-              <option value="beta"${u.plan==='beta'?' selected':''}>beta</option>
-              <option value="free"${u.plan==='free'?' selected':''}>free</option>
-              <option value="pro"${u.plan==='pro'?' selected':''}>pro</option>
-              <option value="studio"${u.plan==='studio'?' selected':''}>studio</option>
-            </select>
-          </label>
-          <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin}).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 12px;font-size:0.78rem;cursor:pointer">
-            ${u.is_admin ? '↓ Retirer admin' : '↑ Promouvoir admin'}
+      // Remontées regroupées par type pour scanner plus vite
+      const fbs = d.feedbacks || [];
+      const fbByType = { bug: [], suggestion: [], question: [], other: [] };
+      for (const f of fbs) (fbByType[f.type] || fbByType.other).push(f);
+      const typeMeta = {
+        bug:        { ic: '🐛', label: 'Bugs',        color: 'var(--danger)' },
+        suggestion: { ic: '💡', label: 'Suggestions', color: 'var(--primary)' },
+        question:   { ic: '❓', label: 'Questions',   color: 'var(--accent)' },
+        other:      { ic: '💬', label: 'Autres',      color: 'var(--text-muted)' },
+      };
+      const renderFb = (f, i, group) => {
+        const itemMeta = {
+          bug:        { color: 'var(--danger)' },
+          suggestion: { color: 'var(--primary)' },
+          question:   { color: 'var(--accent)' },
+          other:      { color: 'var(--text-muted)' },
+        }[f.type] || { color: 'var(--text-muted)' };
+        const statusBadge =
+          f.status === 'new'      ? '<span style="background:var(--danger);color:#fff;font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em">NOUVEAU</span>' :
+          f.status === 'resolved' ? '<span style="background:var(--accent);color:#000;font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em">RÉSOLU</span>'  :
+          '<span style="background:var(--surface);color:var(--text-muted);font-size:0.55rem;padding:1px 5px;border-radius:3px;letter-spacing:0.04em;border:1px solid var(--border)">LU</span>';
+        const when = f.created_at ? _fmtRelTime(f.created_at) : '—';
+        const absWhen = f.created_at ? new Date(f.created_at).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+        const fbMsgs = f.messages || [];
+        const lastMsg = fbMsgs.length ? fbMsgs[fbMsgs.length - 1] : { author:'user', message: f.message, created_at: f.created_at };
+        const preview = (lastMsg.message || '').slice(0, 80) + ((lastMsg.message || '').length > 80 ? '…' : '');
+        return `
+          <details style="background:var(--surface);${i ? 'border-top:1px solid var(--border)' : ''}">
+            <summary style="cursor:pointer;padding:10px 12px;list-style:none;user-select:none">
+              <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+                <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;font-weight:600">
+                  ${statusBadge}
+                  ${fbMsgs.length > 1 ? `<span style="font-size:0.62rem;color:var(--text-muted)">${fbMsgs.length} msg</span>` : ''}
+                </div>
+                <div style="font-size:0.68rem;color:var(--text-muted)" title="${escAttr(absWhen)}">${when}</div>
+              </div>
+              <div style="font-size:0.78rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                ${lastMsg.author === 'admin' ? '↩ ' : ''}${escHtml(preview)}
+              </div>
+            </summary>
+            <div style="padding:6px 12px 10px">
+              ${f.page_url ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-bottom:6px" title="${escAttr(f.page_url)}">📍 ${escHtml((f.page_url || '').split('/').slice(3).join('/').slice(0, 60) || '/')}</div>` : ''}
+              <div class="fb-thread" style="gap:6px">
+                ${(fbMsgs.length ? fbMsgs : [{ author:'user', message: f.message, created_at: f.created_at }]).map(mm => {
+                  const mine = mm.author === 'admin';
+                  return `
+                    <div class="fb-msg ${mine ? 'from-me' : 'from-them'}">
+                      <div class="fb-bubble" style="font-size:0.78rem;padding:6px 10px">${escHtml(mm.message)}</div>
+                      <div class="fb-meta">${mine ? 'Admin' : 'User'} · ${_fmtRelTime(mm.created_at)}</div>
+                    </div>`;
+                }).join('')}
+              </div>
+            </div>
+          </details>`;
+      };
+
+      const panelRemontees = `
+        <div class="ud-tab-panel" data-ud-tab="remontees" hidden>
+          ${fbs.length ? Object.keys(fbByType).filter(k => fbByType[k].length).map(k => {
+            const tm = typeMeta[k];
+            const list = fbByType[k];
+            return `
+              <details open style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px">
+                <summary style="cursor:pointer;padding:10px 12px;font-weight:700;font-size:0.85rem;color:${tm.color};list-style:none;user-select:none;display:flex;justify-content:space-between;align-items:center">
+                  <span>${tm.ic} ${tm.label}</span>
+                  <span style="background:${tm.color};color:#fff;font-size:0.62rem;padding:1px 6px;border-radius:8px">${list.length}</span>
+                </summary>
+                <div>${list.map((f, i) => renderFb(f, i, k)).join('')}</div>
+              </details>`;
+          }).join('') : '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--text-muted);font-size:0.85rem">Aucune remontée envoyée.</div>'}
+        </div>`;
+
+      const panelActions = `
+        <div class="ud-tab-panel" data-ud-tab="actions" hidden>
+          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 8px">Actions admin</h3>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer">
+              Plan
+              <select onchange="adminSetPlan('${escAttr(u.id)}', this.value).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:0.78rem">
+                <option value="beta"${u.plan==='beta'?' selected':''}>beta</option>
+                <option value="free"${u.plan==='free'?' selected':''}>free</option>
+                <option value="pro"${u.plan==='pro'?' selected':''}>pro</option>
+                <option value="studio"${u.plan==='studio'?' selected':''}>studio</option>
+              </select>
+            </label>
+            <button onclick="adminToggleAdmin('${escAttr(u.id)}', ${!u.is_admin}).then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 12px;font-size:0.78rem;cursor:pointer">
+              ${u.is_admin ? '↓ Retirer admin' : '↑ Promouvoir admin'}
+            </button>
+            <button onclick="adminEditInfluencer('${escAttr(u.id)}', '${escAttr(u.referral_code || '')}').then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid ${u.referral_code ? 'var(--primary)' : 'var(--border)'};border-radius:6px;color:${u.referral_code ? 'var(--primary)' : 'var(--text)'};padding:6px 12px;font-size:0.78rem;cursor:pointer">
+              ${u.referral_code ? '★ Modifier code partenaire' : '+ Activer comme partenaire'}
+            </button>
+          </div>
+          <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--danger);margin:0 0 8px">Zone sensible</h3>
+          <button onclick="closeUserDetailModal();adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:8px 14px;font-size:0.82rem;cursor:pointer">
+            ✕ Supprimer ce compte
           </button>
-          <button onclick="adminEditInfluencer('${escAttr(u.id)}', '${escAttr(u.referral_code || '')}').then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface2);border:1px solid ${u.referral_code ? 'var(--primary)' : 'var(--border)'};border-radius:6px;color:${u.referral_code ? 'var(--primary)' : 'var(--text)'};padding:6px 12px;font-size:0.78rem;cursor:pointer">
-            ${u.referral_code ? '★ Modifier code partenaire' : '+ Activer comme partenaire'}
-          </button>
-          <button onclick="closeUserDetailModal();adminDeleteUser('${escAttr(u.id)}', '${escAttr(u.email)}')" style="background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);padding:6px 12px;font-size:0.78rem;cursor:pointer;margin-left:auto">
-            ✕ Supprimer
-          </button>
-        </div>
-      `;
+        </div>`;
+
+      body.innerHTML = panelProfil + panelActivite + panelRemontees + panelActions;
+
+      // Badge sur l'onglet Remontées (compte total)
+      const tabBadge = document.getElementById('udTabRemonteesBadge');
+      if (tabBadge) {
+        tabBadge.textContent = fbs.length;
+        tabBadge.style.display = fbs.length ? 'inline-block' : 'none';
+      }
+
+      // Restaure l'onglet précédent (par défaut: profil)
+      const savedTab = localStorage.getItem('userDetailTab') || 'profil';
+      switchUserDetailTab(savedTab, /* skipPersist */ true);
     } catch (e) {
       body.innerHTML = '<div style="color:var(--danger);padding:18px">Erreur : ' + (e.message || e) + '</div>';
     }
   }
   window.openUserDetail = openUserDetail;
+
+  function switchUserDetailTab(tab, skipPersist) {
+    const tabs = ['profil', 'activite', 'remontees', 'actions'];
+    if (!tabs.includes(tab)) tab = 'profil';
+    for (const t of tabs) {
+      const btn   = document.getElementById('udTab' + t[0].toUpperCase() + t.slice(1) + 'Btn');
+      const panel = document.querySelector(`.ud-tab-panel[data-ud-tab="${t}"]`);
+      if (btn)   btn.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+      if (panel) panel.hidden = (t !== tab);
+    }
+    if (!skipPersist) {
+      try { localStorage.setItem('userDetailTab', tab); } catch {}
+    }
+    // Scroll en haut à chaque switch
+    const body = document.getElementById('userDetailBody');
+    if (body) body.scrollTop = 0;
+  }
+  window.switchUserDetailTab = switchUserDetailTab;
 
   function closeUserDetailModal() {
     document.getElementById('userDetailModal').classList.remove('open');
