@@ -1152,6 +1152,43 @@
 
     .modal-body { padding: 20px 24px 24px; }
 
+    /* Thread de messages (style chat) — utilisé côté user (modal Signaler
+       un bug) et côté admin (onglet Remontées). Méta auteur+date hors
+       bulle pour un rendu propre, bulles qui huggent leur contenu. */
+    .fb-thread { display: flex; flex-direction: column; gap: 10px; margin: 4px 0; }
+    .fb-msg    { display: flex; flex-direction: column; max-width: 80%; }
+    .fb-msg.from-me   { align-self: flex-end;   align-items: flex-end;   }
+    .fb-msg.from-them { align-self: flex-start; align-items: flex-start; }
+    .fb-bubble {
+      padding: 8px 12px;
+      border-radius: 14px;
+      font-size: 0.85rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .fb-msg.from-me .fb-bubble {
+      background: var(--primary);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .fb-msg.from-them .fb-bubble {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+    .fb-msg.unread .fb-bubble { box-shadow: 0 0 0 2px rgba(108, 71, 255, 0.35); }
+    .fb-meta {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+      padding: 0 6px;
+      letter-spacing: 0.02em;
+    }
+
     /* Radios "type de feedback" — pilule cliquable */
     .feedback-type-radio { cursor: pointer; }
     .feedback-type-radio input { position: absolute; opacity: 0; pointer-events: none; }
@@ -6989,18 +7026,16 @@
               </div>
               <span style="font-size:0.7rem;color:var(--text-muted)">${when}</span>
             </div>
-            <!-- Thread : messages user à droite (en accent), admin à gauche -->
-            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+            <!-- Thread : messages user à droite (primaire), admin à gauche -->
+            <div class="fb-thread">
               ${msgs.map(mm => {
                 const mine = mm.author === 'user';
                 const mWhen = mm.created_at ? _fmtRelTime(mm.created_at) : '';
                 return `
-                <div style="display:flex;${mine ? 'justify-content:flex-end' : 'justify-content:flex-start'}">
-                  <div style="max-width:85%;background:${mine ? 'var(--primary)' : 'var(--surface)'};color:${mine ? '#fff' : 'var(--text)'};border:1px solid ${mine ? 'var(--primary)' : 'var(--border)'};border-radius:8px;padding:7px 10px;font-size:0.82rem;white-space:pre-wrap;line-height:1.4">
-                    <div style="font-size:0.62rem;opacity:.75;margin-bottom:2px;font-weight:600;letter-spacing:0.04em">${mine ? 'TOI' : '✉ ÉQUIPE'} · ${mWhen}</div>
-                    ${escHtml(mm.message)}
-                  </div>
-                </div>`;
+                  <div class="fb-msg ${mine ? 'from-me' : 'from-them'}">
+                    <div class="fb-bubble">${escHtml(mm.message)}</div>
+                    <div class="fb-meta">${mine ? 'Toi' : '✉ Équipe'} · ${mWhen}</div>
+                  </div>`;
               }).join('')}
             </div>
             <!-- Reply user dans le thread -->
@@ -7504,15 +7539,13 @@
                     <div style="font-size:0.68rem;color:var(--text-muted)" title="${escAttr(absWhen)}">${when}</div>
                   </div>
                   ${f.page_url ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-bottom:4px" title="${escAttr(f.page_url)}">📍 ${escHtml((f.page_url || '').split('/').slice(3).join('/').slice(0, 60) || '/')}</div>` : ''}
-                  <div style="display:flex;flex-direction:column;gap:4px">
+                  <div class="fb-thread" style="gap:6px">
                     ${(fbMsgs.length ? fbMsgs : [{ author:'user', message: f.message, created_at: f.created_at }]).map(mm => {
                       const mine = mm.author === 'admin';
                       return `
-                        <div style="display:flex;${mine ? 'justify-content:flex-end' : 'justify-content:flex-start'}">
-                          <div style="max-width:90%;background:${mine ? 'var(--primary)' : 'var(--surface)'};color:${mine ? '#fff' : 'var(--text)'};border:1px solid ${mine ? 'var(--primary)' : 'var(--border)'};border-radius:6px;padding:6px 8px;font-size:0.74rem;white-space:pre-wrap;line-height:1.4">
-                            <div style="font-size:0.58rem;opacity:.7;font-weight:600;letter-spacing:0.04em;margin-bottom:1px">${mine ? 'ADMIN' : 'USER'} · ${_fmtRelTime(mm.created_at)}</div>
-                            ${escHtml(mm.message)}
-                          </div>
+                        <div class="fb-msg ${mine ? 'from-me' : 'from-them'}">
+                          <div class="fb-bubble" style="font-size:0.78rem;padding:6px 10px">${escHtml(mm.message)}</div>
+                          <div class="fb-meta">${mine ? 'Admin' : 'User'} · ${_fmtRelTime(mm.created_at)}</div>
                         </div>`;
                     }).join('')}
                   </div>
@@ -7962,18 +7995,16 @@
             </div>
 
             <!-- Thread de conversation (user à gauche, admin à droite) -->
-            <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="fb-thread">
               ${msgs.map(m => {
                 const mine  = m.author === 'admin';
                 const when  = m.created_at ? _fmtRelTime(m.created_at) : '';
                 const unread = m.author === 'user' && (!f.admin_last_read_at || m.created_at > f.admin_last_read_at);
                 return `
-                <div style="display:flex;${mine ? 'justify-content:flex-end' : 'justify-content:flex-start'}">
-                  <div style="max-width:85%;background:${mine ? 'var(--primary)' : 'var(--surface)'};color:${mine ? '#fff' : 'var(--text)'};border:1px solid ${mine ? 'var(--primary)' : 'var(--border)'};border-radius:8px;padding:7px 10px;font-size:0.82rem;white-space:pre-wrap;line-height:1.4${unread ? ';box-shadow:0 0 0 2px var(--primary)44' : ''}">
-                    <div style="font-size:0.62rem;opacity:.7;margin-bottom:2px;font-weight:600;letter-spacing:0.04em">${mine ? 'TOI' : 'UTILISATEUR'} · ${when}${unread ? ' · NOUVEAU' : ''}</div>
-                    ${escHtml(m.message)}
-                  </div>
-                </div>`;
+                  <div class="fb-msg ${mine ? 'from-me' : 'from-them'}${unread ? ' unread' : ''}">
+                    <div class="fb-bubble">${escHtml(m.message)}</div>
+                    <div class="fb-meta">${mine ? 'Toi' : 'Utilisateur'} · ${when}${unread ? ' · NON LU' : ''}</div>
+                  </div>`;
               }).join('')}
             </div>
 
