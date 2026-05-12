@@ -462,7 +462,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v31';
+const CACHE_VERSION = 'bs-v32';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2331,7 +2331,11 @@ http.createServer(async (req, res) => {
           .map(f => ({ name: cleanStr(f?.name), pricePerKg: num(f?.pricePerKg, 0, 10000) ?? 0 }))
           .filter(f => f.name) : [];
         const printers = Array.isArray(b.printers) ? b.printers.slice(0, 50)
-          .map(p => ({ name: cleanStr(p?.name), powerW: num(p?.powerW, 0, 5000) ?? 0 }))
+          .map(p => ({
+            name:            cleanStr(p?.name),
+            powerW:          num(p?.powerW, 0, 5000) ?? 0,
+            wearCostPerHour: num(p?.wearCostPerHour, 0, 100) ?? 0,
+          }))
           .filter(p => p.name) : [];
         const clean = {
           electricityRatePerKwh:   num(b.electricityRatePerKwh, 0, 100) ?? 0,
@@ -2378,11 +2382,27 @@ http.createServer(async (req, res) => {
           if (s.includes('P1'))                       return 140; // P1P, P1S
           return 140;
         };
+        // Coût horaire d'entretien et d'usure (amortissement machine +
+        // nozzles + courroies + build plate). Calculé à partir du prix
+        // d'achat divisé par ~3000h de durée de vie utile + pièces
+        // d'usure régulières. Valeurs indicatives, l'user peut ajuster.
+        const inferWearCostPerHour = (name = '', model = '') => {
+          const s = (name + ' ' + model).toUpperCase();
+          if (s.includes('H2D'))                      return 0.70; // machine premium
+          if (s.includes('A1') && s.includes('MINI')) return 0.10;
+          if (s.includes('A1'))                       return 0.15;
+          if (s.includes('X1E'))                      return 0.55;
+          if (s.includes('X1'))                       return 0.40; // X1, X1C
+          if (s.includes('P2S') || s.includes('P2P')) return 0.25;
+          if (s.includes('P1'))                       return 0.20;
+          return 0.20;
+        };
         const out = stored.map(p => ({
-          name:   p.name || p.serial,
-          serial: p.serial,
-          model:  p.model || null,
-          powerW: inferPowerW(p.name, p.model),
+          name:            p.name || p.serial,
+          serial:          p.serial,
+          model:           p.model || null,
+          powerW:          inferPowerW(p.name, p.model),
+          wearCostPerHour: inferWearCostPerHour(p.name, p.model),
         }));
         json(res, { configured, printers: out });
         return;
