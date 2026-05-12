@@ -7441,11 +7441,19 @@
     list.appendChild(row);
   }
 
-  // Click sur le swatch principal d'une variante : ouvre notre picker
-  // custom (modal). Au callback, applique la couleur + auto-fill nom.
+  // Click sur le swatch d'une variante : on déplie la palette inline
+  // juste en-dessous (si cachée) ou on la replie (si visible). C'est
+  // ce que le user attend en édition : pas de modal qui surgit, juste
+  // un dépliement discret pour modifier la couleur. Si l'user veut un
+  // hex custom (rare), il peut utiliser le modal via long-press —
+  // mais pour l'instant la palette de presets couvre 99% des cas.
   function _openVariantPicker(btn) {
-    const cur = btn.dataset.color || '#6c47ff';
-    openColorPicker(cur, (hex, name) => _applyVariantColor(btn, hex, name));
+    const wrap = btn.closest('.variant-row-wrap');
+    if (!wrap) return;
+    const palette = wrap.querySelector('.color-palette');
+    if (!palette) return;
+    const isHidden = palette.style.display === 'none' || getComputedStyle(palette).display === 'none';
+    palette.style.display = isHidden ? '' : 'none';
   }
 
   // Mutualise la maj swatch + nom + sélection palette (utilisé par le
