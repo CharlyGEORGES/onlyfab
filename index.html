@@ -4654,6 +4654,7 @@
       <!-- Onglet Stats -->
       <div id="adminTabStats" class="admin-tab-panel" role="tabpanel" aria-labelledby="adminTabStatsBtn">
         <div id="adminStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px"></div>
+        <div id="adminStatsActivity" style="margin-top:18px"></div>
       </div>
 
       <!-- Onglet Utilisateurs -->
@@ -4685,8 +4686,6 @@
           <button type="button" class="user-filter-chip"        data-filter="active"  onclick="setUserFilter('active')">🟢 Actifs 7j</button>
           <button type="button" class="user-filter-chip"        data-filter="dormant" onclick="setUserFilter('dormant')">💤 Inactifs &gt;30j</button>
         </div>
-        <!-- Activité récente (rendu par refreshAdminPanel) -->
-        <div id="adminUsersActivity"></div>
         <!-- Liste -->
         <div id="adminUsers" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
@@ -7054,11 +7053,11 @@
           </div>`).join('')}
       `;
 
-      // Section activité récente — rendue dans un conteneur dédié au-dessus
-      // de la liste utilisateurs (pas dans #adminUsers, sinon le filtre la balaye).
+      // Section activité récente — rendue dans l'onglet Stats (overview),
+      // pas dans Utilisateurs où elle polluait la liste filtrable.
       let activityHtml = '<div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin:0 0 8px">Activité récente</div>';
       if (Array.isArray(activity) && activity.length) {
-        activityHtml += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px">';
+        activityHtml += '<div style="display:flex;flex-direction:column;gap:6px">';
         activityHtml += activity.map(a => {
           const when = a.ts ? new Date(a.ts).toLocaleString('fr-FR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
           if (a.type === 'register') {
@@ -7074,8 +7073,11 @@
           </div>`;
         }).join('');
         activityHtml += '</div>';
+      } else {
+        activityHtml += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;color:var(--text-muted);font-size:0.82rem">Pas d\'activité récente.</div>';
       }
-      document.getElementById('adminUsersActivity').innerHTML = activityHtml;
+      const actEl = document.getElementById('adminStatsActivity');
+      if (actEl) actEl.innerHTML = activityHtml;
 
       // Cache les users + render via la fonction filtrable.
       _adminUsersCache = Array.isArray(users) ? users : [];
