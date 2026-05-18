@@ -1427,6 +1427,72 @@
     .feedback-filter-btn:hover { color: var(--text); }
     .feedback-filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
+    /* Modal picker d'article Bambu — même pattern que les autres modals
+       à hauteur fixe, scroll dans la grille seulement. */
+    #bambuItemPickerModal .modal {
+      height: min(80vh, 680px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #bambuItemPickerModal .modal-header { flex-shrink: 0; }
+    #bambuItemPickerModal .modal-body   { flex: 1; min-height: 0; }
+    #bambuItemPickerSearch:focus { outline: none; border-color: var(--primary); }
+
+    /* Grille de cards d'articles */
+    .bip-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 10px;
+    }
+    .bip-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; cursor: pointer;
+      transition: border-color .15s, transform .15s;
+      display: flex; flex-direction: column;
+    }
+    .bip-card:hover { border-color: var(--primary); transform: translateY(-1px); }
+    .bip-card.active {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(108,71,255,0.25);
+    }
+    .bip-card-photo {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover;
+      background: var(--surface); display: block;
+    }
+    .bip-card-photo-ph {
+      width: 100%; aspect-ratio: 4/3; background: var(--surface);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+    }
+    .bip-card-body {
+      padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .bip-card-name {
+      font-size: 0.88rem; font-weight: 700; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .bip-card-meta {
+      display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+      font-size: 0.7rem; color: var(--text-muted);
+    }
+    .bip-card-cat {
+      background: var(--surface); padding: 1px 6px; border-radius: 4px;
+      border: 1px solid var(--border); font-size: 0.62rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 100%;
+    }
+    .bip-card-qty {
+      background: var(--primary); color: #fff; padding: 1px 7px;
+      border-radius: 999px; font-size: 0.62rem; font-weight: 700;
+      font-family: ui-monospace, monospace;
+    }
+    .bip-card-multi { color: var(--accent); font-size: 0.65rem; font-weight: 600; }
+    .bip-empty {
+      grid-column: 1 / -1; text-align: center; padding: 40px 20px;
+      color: var(--text-muted); font-size: 0.88rem;
+    }
+
     /* Modal admin : hauteur fixe + flex column pour que les tabs ne
        sautent pas en changeant d'onglet, et que le footer (version)
        reste collé en bas. Sur mobile, la règle @media max-width:480px
@@ -5089,6 +5155,29 @@
     <div id="adminFooter" style="border-top:1px solid var(--border);padding:8px 16px;font-size:0.7rem;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface)">
       <span style="font-family:ui-monospace,monospace" id="adminFooterVersion">v—</span>
       <span id="adminFooterUptime"></span>
+    </div>
+  </div>
+</div>
+
+<!-- BAMBU ITEM PICKER MODAL — choisir un article existant pour rattacher
+     une impression. Modal plein écran avec grille + recherche. -->
+<div class="modal-overlay" id="bambuItemPickerModal" role="dialog" aria-modal="true" aria-labelledby="bambuItemPickerTitle" aria-hidden="true">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-title" id="bambuItemPickerTitle">Choisir un article existant</div>
+      <button class="close-btn" onclick="closeBambuItemPickerModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:0;padding:0">
+      <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);background:var(--surface)">
+        <input type="search" id="bambuItemPickerSearch"
+               placeholder="🔍 Rechercher par nom ou catégorie…"
+               oninput="bambuFilterModalPicker()"
+               style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:0.9rem;font-family:inherit;box-sizing:border-box">
+        <div id="bambuItemPickerCount" style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;font-family:ui-monospace,monospace"></div>
+      </div>
+      <div id="bambuItemPickerGrid" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px"></div>
     </div>
   </div>
 </div>
@@ -12383,25 +12472,20 @@
               Ajouter à un article existant
             </button>
             <div class="pj-add-existing" id="pj-add-${job.id}">
-              <!-- Niveau 1 : choix de l'article (picker custom avec photo,
-                   catégorie, qty pour distinguer les doublons de nom) -->
+              <!-- Niveau 1 : choix de l'article. Le clic ouvre un modal
+                   plein écran (grille de cards + recherche) pour gérer
+                   correctement le scroll et bien distinguer les doublons. -->
               <div class="pj-cascade-row">
                 <div class="pj-cascade-label">Article</div>
                 <div class="pj-itempicker">
                   <input type="hidden" id="pj-item-${job.id}" value="">
-                  <button type="button" id="pj-itembtn-${job.id}" class="pj-itempicker-btn" onclick="bambuToggleItemPicker(${job.id})">
+                  <button type="button" id="pj-itembtn-${job.id}" class="pj-itempicker-btn" onclick="openBambuItemPickerModal(${job.id})">
                     <div class="thumb-ph" aria-hidden="true">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
                     </div>
                     <span class="placeholder">Choisir un article</span>
                     <svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
-                  <div class="pj-itempicker-panel" id="pj-itempicker-panel-${job.id}" hidden>
-                    <input type="search" class="pj-itempicker-search" id="pj-itempicker-search-${job.id}"
-                           placeholder="Rechercher par nom ou catégorie…"
-                           oninput="bambuFilterItemPicker(${job.id})">
-                    <div class="pj-itempicker-list" id="pj-itempicker-list-${job.id}"></div>
-                  </div>
                 </div>
               </div>
               <!-- Niveau 2 : choix de la pièce (multi-pièces uniquement, affiché dynamiquement) -->
@@ -12436,80 +12520,87 @@
   }
 
   function bambuToggleAddExisting(jobId) {
-    const el = document.getElementById(`pj-add-${jobId}`);
-    const willShow = !el.classList.contains('show');
-    el.classList.toggle('show');
-    if (willShow) bambuRenderItemPicker(jobId);
+    document.getElementById(`pj-add-${jobId}`).classList.toggle('show');
   }
 
-  // ── Item picker custom ───────────────────────────────────────────────────
-  // Affiche la liste d'articles sous forme de cards (photo + nom + cat + qty)
-  // pour distinguer les doublons de nom impossibles à différencier dans
-  // un <select> classique.
+  // ── Item picker — modal plein écran ──────────────────────────────────────
+  // On track le jobId en cours pour savoir quel hidden input remplir
+  // quand l'user clique sur une card.
+  let _bambuPickerJobId = null;
 
-  function bambuRenderItemPicker(jobId, filter = '') {
-    const list = document.getElementById(`pj-itempicker-list-${jobId}`);
-    if (!list) return;
+  function openBambuItemPickerModal(jobId) {
+    _bambuPickerJobId = jobId;
+    document.getElementById('bambuItemPickerModal').classList.add('open');
+    const search = document.getElementById('bambuItemPickerSearch');
+    if (search) search.value = '';
+    bambuRenderModalPicker('');
+    setTimeout(() => search?.focus(), 30);
+  }
+  window.openBambuItemPickerModal = openBambuItemPickerModal;
+
+  function closeBambuItemPickerModal() {
+    document.getElementById('bambuItemPickerModal').classList.remove('open');
+    _bambuPickerJobId = null;
+  }
+  window.closeBambuItemPickerModal = closeBambuItemPickerModal;
+
+  function bambuFilterModalPicker() {
+    const q = document.getElementById('bambuItemPickerSearch')?.value || '';
+    bambuRenderModalPicker(q);
+  }
+  window.bambuFilterModalPicker = bambuFilterModalPicker;
+
+  function bambuRenderModalPicker(filter) {
+    const grid = document.getElementById('bambuItemPickerGrid');
+    if (!grid) return;
     const q = (filter || '').trim().toLowerCase();
-    const filtered = (items || []).filter(it => {
+    const all = items || [];
+    const filtered = all.filter(it => {
       if (!q) return true;
       return (it.name || '').toLowerCase().includes(q)
           || (it.category || '').toLowerCase().includes(q);
     });
+    // Compteur "X / N"
+    const cntEl = document.getElementById('bambuItemPickerCount');
+    if (cntEl) cntEl.textContent = filtered.length + ' / ' + all.length;
+
     if (!filtered.length) {
-      list.innerHTML = `<div class="pj-itempicker-empty">Aucun article ne correspond.</div>`;
+      grid.innerHTML = '<div class="bip-empty">Aucun article ne correspond à ta recherche.</div>';
       return;
     }
-    const selected = document.getElementById(`pj-item-${jobId}`)?.value || '';
-    list.innerHTML = filtered.map(it => {
+    const selected = _bambuPickerJobId
+      ? (document.getElementById('pj-item-' + _bambuPickerJobId)?.value || '')
+      : '';
+    grid.innerHTML = '<div class="bip-grid">' + filtered.map(it => {
       const pts = parseParts(it);
-      const thumb = it.photo
-        ? `<img class="row-thumb" src="${escAttr(it.photo)}" alt="" loading="lazy">`
-        : `<div class="row-thumb-ph" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`;
-      const qty = (it.qty != null) ? `× ${it.qty}` : '';
+      const photo = it.photo
+        ? `<img class="bip-card-photo" src="${escAttr(it.photo)}" alt="" loading="lazy">`
+        : `<div class="bip-card-photo-ph" aria-hidden="true"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`;
       return `
-        <div class="pj-itempicker-row${it.id === selected ? ' active' : ''}"
-             onclick="bambuSelectItem(${jobId}, '${escAttr(it.id)}')">
-          ${thumb}
-          <div class="row-body">
-            <div class="row-name">${escHtml(it.name || '—')}</div>
-            <div class="row-meta">
-              ${it.category ? `<span class="row-cat">${escHtml(it.category)}</span>` : ''}
-              ${qty ? `<span>${qty}</span>` : ''}
-              ${pts.length ? `<span class="row-multipart">⬡ ${pts.length} pièce${pts.length>1?'s':''}</span>` : ''}
+        <div class="bip-card${it.id === selected ? ' active' : ''}"
+             onclick="bambuSelectItem('${escAttr(it.id)}')">
+          ${photo}
+          <div class="bip-card-body">
+            <div class="bip-card-name">${escHtml(it.name || '—')}</div>
+            <div class="bip-card-meta">
+              ${it.category ? `<span class="bip-card-cat">${escHtml(it.category)}</span>` : ''}
+              ${(it.qty != null) ? `<span class="bip-card-qty">${it.qty}</span>` : ''}
+              ${pts.length ? `<span class="bip-card-multi">⬡ ${pts.length} pièce${pts.length>1?'s':''}</span>` : ''}
             </div>
           </div>
         </div>`;
-    }).join('');
+    }).join('') + '</div>';
   }
-  window.bambuRenderItemPicker = bambuRenderItemPicker;
 
-  function bambuToggleItemPicker(jobId) {
-    const panel = document.getElementById(`pj-itempicker-panel-${jobId}`);
-    if (!panel) return;
-    const willShow = panel.hidden;
-    panel.hidden = !willShow;
-    if (willShow) {
-      bambuRenderItemPicker(jobId);
-      const search = document.getElementById(`pj-itempicker-search-${jobId}`);
-      if (search) { search.value = ''; setTimeout(() => search.focus(), 0); }
-    }
-  }
-  window.bambuToggleItemPicker = bambuToggleItemPicker;
-
-  function bambuFilterItemPicker(jobId) {
-    const q = document.getElementById(`pj-itempicker-search-${jobId}`)?.value || '';
-    bambuRenderItemPicker(jobId, q);
-  }
-  window.bambuFilterItemPicker = bambuFilterItemPicker;
-
-  function bambuSelectItem(jobId, itemId) {
+  function bambuSelectItem(itemId) {
+    const jobId = _bambuPickerJobId;
+    if (jobId == null) return;
     // Maj du hidden input pour que la cascade JS existante continue de marcher.
-    const hidden = document.getElementById(`pj-item-${jobId}`);
+    const hidden = document.getElementById('pj-item-' + jobId);
     if (hidden) hidden.value = itemId;
     // Maj du visuel du bouton avec un résumé de la sélection.
-    const it = items.find(i => i.id === itemId);
-    const btn = document.getElementById(`pj-itembtn-${jobId}`);
+    const it = (items || []).find(i => i.id === itemId);
+    const btn = document.getElementById('pj-itembtn-' + jobId);
     if (btn && it) {
       const thumb = it.photo
         ? `<img class="thumb" src="${escAttr(it.photo)}" alt="">`
@@ -12521,9 +12612,7 @@
         <svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       `;
     }
-    // Ferme le panel et déclenche la cascade existante.
-    const panel = document.getElementById(`pj-itempicker-panel-${jobId}`);
-    if (panel) panel.hidden = true;
+    closeBambuItemPickerModal();
     bambuOnItemChange(jobId);
   }
   window.bambuSelectItem = bambuSelectItem;
