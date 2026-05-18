@@ -3127,6 +3127,87 @@
       border-radius: 8px; color: var(--text); font-size: 0.82rem; cursor: pointer;
     }
     .pj-add-existing select:focus { outline: none; border-color: var(--primary); }
+
+    /* Item picker custom (remplace le <select> Article pour gérer les
+       doublons de nom : photo + catégorie + qty visibles par ligne) */
+    .pj-itempicker {
+      position: relative;
+    }
+    .pj-itempicker-btn {
+      width: 100%; display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 0.82rem; cursor: pointer;
+      text-align: left; font-family: inherit;
+    }
+    .pj-itempicker-btn:hover { border-color: var(--primary); }
+    .pj-itempicker-btn .placeholder { color: var(--text-muted); flex: 1; }
+    .pj-itempicker-btn .chev { margin-left: auto; opacity: 0.6; flex-shrink: 0; }
+    .pj-itempicker-btn .thumb {
+      width: 28px; height: 28px; border-radius: 6px; object-fit: cover;
+      background: var(--surface2); flex-shrink: 0;
+    }
+    .pj-itempicker-btn .thumb-ph {
+      width: 28px; height: 28px; border-radius: 6px; background: var(--surface2);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .pj-itempicker-btn .sel-name { font-weight: 600; flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pj-itempicker-btn .sel-meta { font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0; }
+
+    .pj-itempicker-panel {
+      margin-top: 4px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden;
+      display: flex; flex-direction: column;
+      max-height: 320px;
+    }
+    .pj-itempicker-search {
+      padding: 8px 10px; background: var(--surface2); border: none;
+      border-bottom: 1px solid var(--border); color: var(--text);
+      font-size: 0.82rem; font-family: inherit; outline: none;
+    }
+    .pj-itempicker-search:focus { background: var(--surface); }
+    .pj-itempicker-list {
+      flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .pj-itempicker-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .pj-itempicker-row:last-child { border-bottom: none; }
+    .pj-itempicker-row:hover { background: var(--surface2); }
+    .pj-itempicker-row.active { background: var(--surface2); border-left: 3px solid var(--primary); padding-left: 7px; }
+    .pj-itempicker-row .row-thumb {
+      width: 36px; height: 36px; border-radius: 6px; object-fit: cover;
+      background: var(--surface2); flex-shrink: 0;
+    }
+    .pj-itempicker-row .row-thumb-ph {
+      width: 36px; height: 36px; border-radius: 6px; background: var(--surface2);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .pj-itempicker-row .row-body { flex: 1; min-width: 0; }
+    .pj-itempicker-row .row-name {
+      font-size: 0.85rem; font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pj-itempicker-row .row-meta {
+      font-size: 0.7rem; color: var(--text-muted); display: flex; gap: 6px;
+      align-items: center; flex-wrap: wrap; margin-top: 2px;
+    }
+    .pj-itempicker-row .row-cat {
+      background: var(--surface); padding: 1px 6px; border-radius: 4px;
+      border: 1px solid var(--border); font-size: 0.62rem;
+    }
+    .pj-itempicker-row .row-multipart {
+      color: var(--accent); font-size: 0.65rem;
+    }
+    .pj-itempicker-empty {
+      padding: 20px; text-align: center; color: var(--text-muted);
+      font-size: 0.82rem;
+    }
+
     .pj-cascade-row { display: flex; flex-direction: column; gap: 5px; }
     .pj-cascade-label {
       font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
@@ -12302,16 +12383,26 @@
               Ajouter à un article existant
             </button>
             <div class="pj-add-existing" id="pj-add-${job.id}">
-              <!-- Niveau 1 : choix de l'article -->
+              <!-- Niveau 1 : choix de l'article (picker custom avec photo,
+                   catégorie, qty pour distinguer les doublons de nom) -->
               <div class="pj-cascade-row">
                 <div class="pj-cascade-label">Article</div>
-                <select id="pj-item-${job.id}" onchange="bambuOnItemChange(${job.id})">
-                  <option value="">— Choisir un article —</option>
-                  ${items.map(it => {
-                    const pts = parseParts(it);
-                    return `<option value="${escHtml(it.id)}">${escHtml(it.name)}${pts.length ? ' ⬡' : ''}</option>`;
-                  }).join('')}
-                </select>
+                <div class="pj-itempicker">
+                  <input type="hidden" id="pj-item-${job.id}" value="">
+                  <button type="button" id="pj-itembtn-${job.id}" class="pj-itempicker-btn" onclick="bambuToggleItemPicker(${job.id})">
+                    <div class="thumb-ph" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                    </div>
+                    <span class="placeholder">Choisir un article</span>
+                    <svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <div class="pj-itempicker-panel" id="pj-itempicker-panel-${job.id}" hidden>
+                    <input type="search" class="pj-itempicker-search" id="pj-itempicker-search-${job.id}"
+                           placeholder="Rechercher par nom ou catégorie…"
+                           oninput="bambuFilterItemPicker(${job.id})">
+                    <div class="pj-itempicker-list" id="pj-itempicker-list-${job.id}"></div>
+                  </div>
+                </div>
               </div>
               <!-- Niveau 2 : choix de la pièce (multi-pièces uniquement, affiché dynamiquement) -->
               <div id="pj-part-row-${job.id}" style="display:none" class="pj-cascade-row">
@@ -12345,8 +12436,97 @@
   }
 
   function bambuToggleAddExisting(jobId) {
-    document.getElementById(`pj-add-${jobId}`).classList.toggle('show');
+    const el = document.getElementById(`pj-add-${jobId}`);
+    const willShow = !el.classList.contains('show');
+    el.classList.toggle('show');
+    if (willShow) bambuRenderItemPicker(jobId);
   }
+
+  // ── Item picker custom ───────────────────────────────────────────────────
+  // Affiche la liste d'articles sous forme de cards (photo + nom + cat + qty)
+  // pour distinguer les doublons de nom impossibles à différencier dans
+  // un <select> classique.
+
+  function bambuRenderItemPicker(jobId, filter = '') {
+    const list = document.getElementById(`pj-itempicker-list-${jobId}`);
+    if (!list) return;
+    const q = (filter || '').trim().toLowerCase();
+    const filtered = (items || []).filter(it => {
+      if (!q) return true;
+      return (it.name || '').toLowerCase().includes(q)
+          || (it.category || '').toLowerCase().includes(q);
+    });
+    if (!filtered.length) {
+      list.innerHTML = `<div class="pj-itempicker-empty">Aucun article ne correspond.</div>`;
+      return;
+    }
+    const selected = document.getElementById(`pj-item-${jobId}`)?.value || '';
+    list.innerHTML = filtered.map(it => {
+      const pts = parseParts(it);
+      const thumb = it.photo
+        ? `<img class="row-thumb" src="${escAttr(it.photo)}" alt="" loading="lazy">`
+        : `<div class="row-thumb-ph" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`;
+      const qty = (it.qty != null) ? `× ${it.qty}` : '';
+      return `
+        <div class="pj-itempicker-row${it.id === selected ? ' active' : ''}"
+             onclick="bambuSelectItem(${jobId}, '${escAttr(it.id)}')">
+          ${thumb}
+          <div class="row-body">
+            <div class="row-name">${escHtml(it.name || '—')}</div>
+            <div class="row-meta">
+              ${it.category ? `<span class="row-cat">${escHtml(it.category)}</span>` : ''}
+              ${qty ? `<span>${qty}</span>` : ''}
+              ${pts.length ? `<span class="row-multipart">⬡ ${pts.length} pièce${pts.length>1?'s':''}</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+  window.bambuRenderItemPicker = bambuRenderItemPicker;
+
+  function bambuToggleItemPicker(jobId) {
+    const panel = document.getElementById(`pj-itempicker-panel-${jobId}`);
+    if (!panel) return;
+    const willShow = panel.hidden;
+    panel.hidden = !willShow;
+    if (willShow) {
+      bambuRenderItemPicker(jobId);
+      const search = document.getElementById(`pj-itempicker-search-${jobId}`);
+      if (search) { search.value = ''; setTimeout(() => search.focus(), 0); }
+    }
+  }
+  window.bambuToggleItemPicker = bambuToggleItemPicker;
+
+  function bambuFilterItemPicker(jobId) {
+    const q = document.getElementById(`pj-itempicker-search-${jobId}`)?.value || '';
+    bambuRenderItemPicker(jobId, q);
+  }
+  window.bambuFilterItemPicker = bambuFilterItemPicker;
+
+  function bambuSelectItem(jobId, itemId) {
+    // Maj du hidden input pour que la cascade JS existante continue de marcher.
+    const hidden = document.getElementById(`pj-item-${jobId}`);
+    if (hidden) hidden.value = itemId;
+    // Maj du visuel du bouton avec un résumé de la sélection.
+    const it = items.find(i => i.id === itemId);
+    const btn = document.getElementById(`pj-itembtn-${jobId}`);
+    if (btn && it) {
+      const thumb = it.photo
+        ? `<img class="thumb" src="${escAttr(it.photo)}" alt="">`
+        : `<div class="thumb-ph" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`;
+      btn.innerHTML = `
+        ${thumb}
+        <span class="sel-name">${escHtml(it.name || '—')}</span>
+        ${it.category ? `<span class="sel-meta">${escHtml(it.category)}</span>` : ''}
+        <svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      `;
+    }
+    // Ferme le panel et déclenche la cascade existante.
+    const panel = document.getElementById(`pj-itempicker-panel-${jobId}`);
+    if (panel) panel.hidden = true;
+    bambuOnItemChange(jobId);
+  }
+  window.bambuSelectItem = bambuSelectItem;
 
   async function bambuDismiss(jobId) {
     await fetch(`/api/print-jobs/${jobId}`, { method: 'DELETE' });
