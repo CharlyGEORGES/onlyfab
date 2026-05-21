@@ -1427,17 +1427,101 @@
     .feedback-filter-btn:hover { color: var(--text); }
     .feedback-filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
-    /* Modal picker d'article Bambu — même pattern que les autres modals
-       à hauteur fixe, scroll dans la grille seulement. */
-    #bambuItemPickerModal .modal {
+    /* Modal "Ajouter au stock" Bambu — hauteur fixe, scroll interne. */
+    #bambuAddModal .modal {
       height: min(80vh, 680px);
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
-    #bambuItemPickerModal .modal-header { flex-shrink: 0; }
-    #bambuItemPickerModal .modal-body   { flex: 1; min-height: 0; }
-    #bambuItemPickerSearch:focus { outline: none; border-color: var(--primary); }
+    #bambuAddModal .modal-header { flex-shrink: 0; }
+    #bambuAddModal .modal-body   { flex: 1; min-height: 0; }
+    #bambuAddSearch:focus { outline: none; border-color: var(--primary); }
+
+    /* Étape 2 : sections de config */
+    .bac-section { margin-bottom: 18px; }
+    .bac-label {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); font-weight: 700; margin-bottom: 8px;
+    }
+    /* Résumé impression */
+    .bac-print {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; margin-bottom: 18px;
+    }
+    .bac-print-thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; background: var(--surface); }
+    .bac-print-name { font-size: 0.85rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bac-print-meta { font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+    .bac-print-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border); flex-shrink: 0; }
+    /* Article sélectionné */
+    .bac-article {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 8px 10px;
+    }
+    .bac-article-thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: var(--surface); }
+    .bac-article-body { flex: 1; min-width: 0; }
+    .bac-article-name { font-size: 0.88rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bac-article-meta { font-size: 0.7rem; color: var(--text-muted); }
+    .bac-change-btn {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--primary); font-size: 0.74rem; font-weight: 600;
+      padding: 5px 10px; cursor: pointer; flex-shrink: 0; font-family: inherit;
+    }
+    /* Chips (pièces) */
+    .bac-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .bac-chip {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 8px 12px;
+      font-size: 0.82rem; cursor: pointer; font-family: inherit;
+      display: flex; flex-direction: column; gap: 1px; min-width: 0;
+    }
+    .bac-chip:hover { border-color: var(--primary); }
+    .bac-chip.active { border-color: var(--primary); background: rgba(108,71,255,0.12); }
+    .bac-chip-name { font-weight: 600; }
+    .bac-chip-sub { font-size: 0.66rem; color: var(--text-muted); }
+    /* Swatches couleur */
+    .bac-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+    .bac-swatch {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      cursor: pointer; width: 72px; padding: 8px 4px; border-radius: 10px;
+      border: 2px solid transparent; background: var(--surface2); font-family: inherit;
+    }
+    .bac-swatch:hover { border-color: var(--border); }
+    .bac-swatch.active { border-color: var(--primary); background: rgba(108,71,255,0.1); }
+    .bac-swatch-dot { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    .bac-swatch-name { font-size: 0.66rem; color: var(--text); text-align: center; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bac-swatch-qty { font-size: 0.62rem; color: var(--text-muted); }
+    .bac-swatch.is-match .bac-swatch-name { color: var(--accent); font-weight: 700; }
+    .bac-swatch-new .bac-swatch-dot {
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface); border: 1px dashed var(--text-muted); color: var(--text-muted); font-size: 1.2rem;
+    }
+    /* Nouvelle couleur form */
+    .bac-newcolor {
+      display: flex; gap: 8px; align-items: center; margin-top: 10px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px;
+    }
+    .bac-newcolor input[type="color"] { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); background: none; cursor: pointer; padding: 1px; flex-shrink: 0; }
+    .bac-newcolor input[type="text"] { flex: 1; padding: 9px 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.85rem; font-family: inherit; }
+    /* Quantité stepper */
+    .bac-qty { display: flex; align-items: center; gap: 0; width: fit-content; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .bac-qty button {
+      width: 44px; height: 44px; background: var(--surface2); border: none;
+      color: var(--text); font-size: 1.3rem; cursor: pointer; font-family: inherit;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .bac-qty button:hover { background: var(--surface); color: var(--primary); }
+    .bac-qty button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .bac-qty input {
+      width: 56px; height: 44px; text-align: center; background: var(--surface);
+      border: none; border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+      color: var(--text); font-size: 1.05rem; font-weight: 700; font-family: ui-monospace, monospace;
+    }
+    .bac-qty input::-webkit-outer-spin-button, .bac-qty input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .bac-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
 
     /* Grille de cards d'articles */
     .bip-grid {
@@ -3209,119 +3293,6 @@
     .pj-btn-create { color: var(--primary) !important; }
     .pj-btn-dismiss { color: var(--text-muted) !important; font-size: 0.8rem !important; }
     .pj-btn-dismiss:hover { color: var(--danger) !important; }
-
-    .pj-add-existing {
-      padding: 10px 14px;
-      border-top: 1px solid var(--border);
-      background: var(--surface2);
-      display: none; gap: 6px; flex-direction: column;
-    }
-    .pj-add-existing.show { display: flex; }
-    .pj-add-existing select {
-      width: 100%; padding: 7px 8px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; color: var(--text); font-size: 0.82rem; cursor: pointer;
-    }
-    .pj-add-existing select:focus { outline: none; border-color: var(--primary); }
-
-    /* Item picker custom (remplace le <select> Article pour gérer les
-       doublons de nom : photo + catégorie + qty visibles par ligne) */
-    .pj-itempicker {
-      position: relative;
-    }
-    .pj-itempicker-btn {
-      width: 100%; display: flex; align-items: center; gap: 8px;
-      padding: 7px 10px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; color: var(--text); font-size: 0.82rem; cursor: pointer;
-      text-align: left; font-family: inherit;
-    }
-    .pj-itempicker-btn:hover { border-color: var(--primary); }
-    .pj-itempicker-btn .placeholder { color: var(--text-muted); flex: 1; }
-    .pj-itempicker-btn .chev { margin-left: auto; opacity: 0.6; flex-shrink: 0; }
-    .pj-itempicker-btn .thumb {
-      width: 28px; height: 28px; border-radius: 6px; object-fit: cover;
-      background: var(--surface2); flex-shrink: 0;
-    }
-    .pj-itempicker-btn .thumb-ph {
-      width: 28px; height: 28px; border-radius: 6px; background: var(--surface2);
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-      color: var(--text-muted);
-    }
-    .pj-itempicker-btn .sel-name { font-weight: 600; flex: 1; min-width: 0;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pj-itempicker-btn .sel-meta { font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0; }
-
-    .pj-itempicker-panel {
-      margin-top: 4px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; overflow: hidden;
-      display: flex; flex-direction: column;
-      max-height: 320px;
-    }
-    .pj-itempicker-search {
-      padding: 8px 10px; background: var(--surface2); border: none;
-      border-bottom: 1px solid var(--border); color: var(--text);
-      font-size: 0.82rem; font-family: inherit; outline: none;
-    }
-    .pj-itempicker-search:focus { background: var(--surface); }
-    .pj-itempicker-list {
-      flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    }
-    .pj-itempicker-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 10px; cursor: pointer;
-      border-bottom: 1px solid var(--border);
-    }
-    .pj-itempicker-row:last-child { border-bottom: none; }
-    .pj-itempicker-row:hover { background: var(--surface2); }
-    .pj-itempicker-row.active { background: var(--surface2); border-left: 3px solid var(--primary); padding-left: 7px; }
-    .pj-itempicker-row .row-thumb {
-      width: 36px; height: 36px; border-radius: 6px; object-fit: cover;
-      background: var(--surface2); flex-shrink: 0;
-    }
-    .pj-itempicker-row .row-thumb-ph {
-      width: 36px; height: 36px; border-radius: 6px; background: var(--surface2);
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-      color: var(--text-muted);
-    }
-    .pj-itempicker-row .row-body { flex: 1; min-width: 0; }
-    .pj-itempicker-row .row-name {
-      font-size: 0.85rem; font-weight: 600; color: var(--text);
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .pj-itempicker-row .row-meta {
-      font-size: 0.7rem; color: var(--text-muted); display: flex; gap: 6px;
-      align-items: center; flex-wrap: wrap; margin-top: 2px;
-    }
-    .pj-itempicker-row .row-cat {
-      background: var(--surface); padding: 1px 6px; border-radius: 4px;
-      border: 1px solid var(--border); font-size: 0.62rem;
-    }
-    .pj-itempicker-row .row-multipart {
-      color: var(--accent); font-size: 0.65rem;
-    }
-    .pj-itempicker-empty {
-      padding: 20px; text-align: center; color: var(--text-muted);
-      font-size: 0.82rem;
-    }
-
-    .pj-cascade-row { display: flex; flex-direction: column; gap: 5px; }
-    .pj-cascade-label {
-      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--text-muted); font-weight: 600;
-    }
-    .pj-newvar-row { display: flex; gap: 6px; align-items: center; }
-    .pj-newvar-row input[type="color"] {
-      width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border);
-      background: none; cursor: pointer; padding: 1px; flex-shrink: 0;
-    }
-    .pj-newvar-row input[type="text"] {
-      flex: 1; padding: 6px 9px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; color: var(--text); font-size: 0.82rem;
-    }
-    .pj-confirm-btn {
-      border-radius: 8px !important; border: none !important;
-      background: var(--primary) !important; color: #fff !important;
-      justify-content: center !important; margin-top: 2px;
-    }
 
     /* RESPONSIVE */
     @media (max-width: 768px) {
@@ -5188,25 +5159,41 @@
   </div>
 </div>
 
-<!-- BAMBU ITEM PICKER MODAL — choisir un article existant pour rattacher
-     une impression. Modal plein écran avec grille + recherche. -->
-<div class="modal-overlay" id="bambuItemPickerModal" role="dialog" aria-modal="true" aria-labelledby="bambuItemPickerTitle" aria-hidden="true">
+<!-- BAMBU "AJOUTER AU STOCK" MODAL — flux guidé en 2 étapes :
+     1) choisir l'article  2) configurer pièce / couleur / quantité. -->
+<div class="modal-overlay" id="bambuAddModal" role="dialog" aria-modal="true" aria-labelledby="bambuAddTitle" aria-hidden="true">
   <div class="modal" style="max-width:640px">
     <div class="modal-header">
-      <div class="modal-title" id="bambuItemPickerTitle">Choisir un article existant</div>
-      <button class="close-btn" onclick="closeBambuItemPickerModal()" aria-label="Fermer">
+      <button id="bambuAddBack" onclick="bambuAddGotoStep(1)" aria-label="Retour" style="display:none;background:none;border:none;color:var(--text);cursor:pointer;padding:4px;margin-right:4px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </button>
+      <div class="modal-title" id="bambuAddTitle">Choisir un article</div>
+      <button class="close-btn" onclick="closeBambuAddModal()" aria-label="Fermer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="modal-body" style="display:flex;flex-direction:column;gap:0;padding:0">
+
+    <!-- ÉTAPE 1 : choix de l'article -->
+    <div class="modal-body" id="bambuAddStep1" style="display:flex;flex-direction:column;gap:0;padding:0">
       <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);background:var(--surface)">
-        <input type="search" id="bambuItemPickerSearch"
+        <input type="search" id="bambuAddSearch"
                placeholder="🔍 Rechercher par nom ou catégorie…"
-               oninput="bambuFilterModalPicker()"
+               oninput="bambuAddFilter()"
                style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:0.9rem;font-family:inherit;box-sizing:border-box">
-        <div id="bambuItemPickerCount" style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;font-family:ui-monospace,monospace"></div>
+        <div id="bambuAddCount" style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;font-family:ui-monospace,monospace"></div>
       </div>
-      <div id="bambuItemPickerGrid" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px"></div>
+      <div id="bambuAddGrid" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px"></div>
+    </div>
+
+    <!-- ÉTAPE 2 : configuration (pièce / couleur / quantité) -->
+    <div class="modal-body" id="bambuAddStep2" hidden style="display:flex;flex-direction:column;padding:0">
+      <div id="bambuAddConfig" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px"></div>
+      <div style="flex-shrink:0;border-top:1px solid var(--border);padding:12px 16px;background:var(--surface)">
+        <button id="bambuAddConfirmBtn" onclick="bambuAddConfirm()"
+                style="width:100%;background:var(--primary);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:0.95rem;font-weight:700;cursor:pointer;font-family:inherit">
+          ✓ Ajouter au stock
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -12493,47 +12480,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="15" height="15"><path d="M12 5v14M5 12h14"/></svg>
               Créer un nouvel article
             </button>
-            <button onclick="bambuToggleAddExisting(${job.id})">
+            <button onclick="openBambuAddModal(${job.id})">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               Ajouter à un article existant
             </button>
-            <div class="pj-add-existing" id="pj-add-${job.id}">
-              <!-- Niveau 1 : choix de l'article. Le clic ouvre un modal
-                   plein écran (grille de cards + recherche) pour gérer
-                   correctement le scroll et bien distinguer les doublons. -->
-              <div class="pj-cascade-row">
-                <div class="pj-cascade-label">Article</div>
-                <div class="pj-itempicker">
-                  <input type="hidden" id="pj-item-${job.id}" value="">
-                  <button type="button" id="pj-itembtn-${job.id}" class="pj-itempicker-btn" onclick="openBambuItemPickerModal(${job.id})">
-                    <div class="thumb-ph" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                    </div>
-                    <span class="placeholder">Choisir un article</span>
-                    <svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                </div>
-              </div>
-              <!-- Niveau 2 : choix de la pièce (multi-pièces uniquement, affiché dynamiquement) -->
-              <div id="pj-part-row-${job.id}" style="display:none" class="pj-cascade-row">
-                <div class="pj-cascade-label">Pièce</div>
-                <select id="pj-part-${job.id}" onchange="bambuOnPartChange(${job.id})">
-                  <option value="">— Choisir une pièce —</option>
-                </select>
-              </div>
-              <!-- Niveau 3 : choix couleur/variante (affiché dynamiquement) -->
-              <div id="pj-var-row-${job.id}" style="display:none" class="pj-cascade-row">
-                <div class="pj-cascade-label">Couleur / variante</div>
-                <select id="pj-var-${job.id}" onchange="bambuOnVariantChange(${job.id})">
-                  <option value="__new__">➕ Nouvelle couleur</option>
-                </select>
-                <div id="pj-newvar-${job.id}" class="pj-newvar-row">
-                  <input type="color" id="pj-newcolor-${job.id}" value="${normColor(job.filament_color)||'#888888'}">
-                  <input type="text"  id="pj-newname-${job.id}"  placeholder="Nom couleur" value="${escHtml(job.filament_type||'')}">
-                </div>
-              </div>
-              <button class="pj-confirm-btn" onclick="bambuAddToExisting(${job.id})">✓ Confirmer</button>
-            </div>
             <button class="pj-btn-dismiss" onclick="bambuDismiss(${job.id})">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 6 6 18M6 6l12 12"/></svg>
               Ignorer
@@ -12546,66 +12496,86 @@
 
   }
 
-  function bambuToggleAddExisting(jobId) {
-    document.getElementById(`pj-add-${jobId}`).classList.toggle('show');
+  // ════════════════════════════════════════════════════════════════════════
+  // MODAL "AJOUTER AU STOCK" — flux guidé 2 étapes
+  //   Étape 1 : choisir l'article (recherche + grille)
+  //   Étape 2 : configurer pièce (si multi) / couleur (swatches) / quantité
+  // État courant dans _bambuAdd ; reconstruit à chaque ouverture.
+  // ════════════════════════════════════════════════════════════════════════
+  let _bambuAdd = null;
+
+  function openBambuAddModal(jobId) {
+    const job = printJobs.find(j => j.id === jobId);
+    if (!job) return;
+    _bambuAdd = {
+      jobId,
+      itemId: null,
+      partIndex: null,     // index de pièce (multi-part), sinon null
+      variantSel: null,    // index variante existante, ou '__new__'
+      newColor: normColor(job.filament_color) || '#888888',
+      newName:  job.filament_type || '',
+      qty: 1,
+    };
+    document.getElementById('bambuAddModal').classList.add('open');
+    bambuAddGotoStep(1);
   }
+  window.openBambuAddModal = openBambuAddModal;
 
-  // ── Item picker — modal plein écran ──────────────────────────────────────
-  // On track le jobId en cours pour savoir quel hidden input remplir
-  // quand l'user clique sur une card.
-  let _bambuPickerJobId = null;
-
-  function openBambuItemPickerModal(jobId) {
-    _bambuPickerJobId = jobId;
-    document.getElementById('bambuItemPickerModal').classList.add('open');
-    const search = document.getElementById('bambuItemPickerSearch');
-    if (search) search.value = '';
-    bambuRenderModalPicker('');
-    setTimeout(() => search?.focus(), 30);
+  function closeBambuAddModal() {
+    document.getElementById('bambuAddModal').classList.remove('open');
+    _bambuAdd = null;
   }
-  window.openBambuItemPickerModal = openBambuItemPickerModal;
+  window.closeBambuAddModal = closeBambuAddModal;
 
-  function closeBambuItemPickerModal() {
-    document.getElementById('bambuItemPickerModal').classList.remove('open');
-    _bambuPickerJobId = null;
+  function bambuAddGotoStep(step) {
+    const s1 = document.getElementById('bambuAddStep1');
+    const s2 = document.getElementById('bambuAddStep2');
+    const back = document.getElementById('bambuAddBack');
+    const title = document.getElementById('bambuAddTitle');
+    if (step === 1) {
+      s1.hidden = false; s2.hidden = true;
+      back.style.display = 'none';
+      title.textContent = 'Choisir un article';
+      const search = document.getElementById('bambuAddSearch');
+      if (search) search.value = '';
+      bambuAddRenderGrid('');
+      setTimeout(() => search?.focus(), 30);
+    } else {
+      s1.hidden = true; s2.hidden = false;
+      back.style.display = '';
+      title.textContent = 'Ajouter au stock';
+      bambuAddRenderConfig();
+    }
   }
-  window.closeBambuItemPickerModal = closeBambuItemPickerModal;
+  window.bambuAddGotoStep = bambuAddGotoStep;
 
-  function bambuFilterModalPicker() {
-    const q = document.getElementById('bambuItemPickerSearch')?.value || '';
-    bambuRenderModalPicker(q);
+  // ── Étape 1 : grille d'articles ──────────────────────────────────────────
+  function bambuAddFilter() {
+    bambuAddRenderGrid(document.getElementById('bambuAddSearch')?.value || '');
   }
-  window.bambuFilterModalPicker = bambuFilterModalPicker;
+  window.bambuAddFilter = bambuAddFilter;
 
-  function bambuRenderModalPicker(filter) {
-    const grid = document.getElementById('bambuItemPickerGrid');
+  function bambuAddRenderGrid(filter) {
+    const grid = document.getElementById('bambuAddGrid');
     if (!grid) return;
     const q = (filter || '').trim().toLowerCase();
     const all = items || [];
-    const filtered = all.filter(it => {
-      if (!q) return true;
-      return (it.name || '').toLowerCase().includes(q)
-          || (it.category || '').toLowerCase().includes(q);
-    });
-    // Compteur "X / N"
-    const cntEl = document.getElementById('bambuItemPickerCount');
+    const filtered = all.filter(it => !q
+      || (it.name || '').toLowerCase().includes(q)
+      || (it.category || '').toLowerCase().includes(q));
+    const cntEl = document.getElementById('bambuAddCount');
     if (cntEl) cntEl.textContent = filtered.length + ' / ' + all.length;
-
     if (!filtered.length) {
       grid.innerHTML = '<div class="bip-empty">Aucun article ne correspond à ta recherche.</div>';
       return;
     }
-    const selected = _bambuPickerJobId
-      ? (document.getElementById('pj-item-' + _bambuPickerJobId)?.value || '')
-      : '';
     grid.innerHTML = '<div class="bip-grid">' + filtered.map(it => {
       const pts = parseParts(it);
       const photo = it.photo
         ? `<img class="bip-card-photo" src="${escAttr(it.photo)}" alt="" loading="lazy">`
         : `<div class="bip-card-photo-ph" aria-hidden="true"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`;
       return `
-        <div class="bip-card${it.id === selected ? ' active' : ''}"
-             onclick="bambuSelectItem('${escAttr(it.id)}')">
+        <div class="bip-card" onclick="bambuAddSelectArticle('${escAttr(it.id)}')">
           ${photo}
           <div class="bip-card-body">
             <div class="bip-card-name">${escHtml(it.name || '—')}</div>
@@ -12619,30 +12589,272 @@
     }).join('') + '</div>';
   }
 
-  function bambuSelectItem(itemId) {
-    const jobId = _bambuPickerJobId;
-    if (jobId == null) return;
-    // Maj du hidden input pour que la cascade JS existante continue de marcher.
-    const hidden = document.getElementById('pj-item-' + jobId);
-    if (hidden) hidden.value = itemId;
-    // Maj du visuel du bouton avec un résumé de la sélection.
-    const it = (items || []).find(i => i.id === itemId);
-    const btn = document.getElementById('pj-itembtn-' + jobId);
-    if (btn && it) {
-      const thumb = it.photo
-        ? `<img class="thumb" src="${escAttr(it.photo)}" alt="">`
-        : `<div class="thumb-ph" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`;
-      btn.innerHTML = `
-        ${thumb}
-        <span class="sel-name">${escHtml(it.name || '—')}</span>
-        ${it.category ? `<span class="sel-meta">${escHtml(it.category)}</span>` : ''}
-        <svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      `;
-    }
-    closeBambuItemPickerModal();
-    bambuOnItemChange(jobId);
+  function bambuAddSelectArticle(itemId) {
+    if (!_bambuAdd) return;
+    _bambuAdd.itemId = itemId;
+    const item = items.find(i => i.id === itemId);
+    const parts = parseParts(item);
+    // Multi-pièces : on ne présélectionne pas la pièce (l'user doit choisir).
+    // Simple : pas de pièce, on présélectionne la couleur qui matche le print.
+    _bambuAdd.partIndex = null;
+    _bambuAdd.variantSel = null;
+    if (!parts.length) bambuAddAutoPickColor();
+    bambuAddGotoStep(2);
   }
-  window.bambuSelectItem = bambuSelectItem;
+  window.bambuAddSelectArticle = bambuAddSelectArticle;
+
+  // Présélectionne la variante dont la couleur correspond à celle du print
+  // (sinon "nouvelle couleur" par défaut).
+  function bambuAddAutoPickColor() {
+    const a = _bambuAdd; if (!a) return;
+    const item = items.find(i => i.id === a.itemId);
+    const job  = printJobs.find(j => j.id === a.jobId);
+    const variants = bambuAddCurrentVariants();
+    const printColor = (normColor(job?.filament_color) || '').toLowerCase();
+    const matchIdx = variants.findIndex(v => (v.color || '').toLowerCase() === printColor && printColor);
+    a.variantSel = matchIdx >= 0 ? matchIdx : '__new__';
+  }
+
+  // Variantes pertinentes selon l'état (pièce choisie ou article simple)
+  function bambuAddCurrentVariants() {
+    const a = _bambuAdd; if (!a) return [];
+    const item = items.find(i => i.id === a.itemId);
+    if (!item) return [];
+    if (a.partIndex !== null) {
+      return parseParts(item)?.[a.partIndex]?.variants || [];
+    }
+    return parseVariants(item);
+  }
+
+  // ── Étape 2 : rendu de la config ─────────────────────────────────────────
+  function bambuAddRenderConfig() {
+    const a = _bambuAdd; if (!a) return;
+    const box = document.getElementById('bambuAddConfig');
+    const item = items.find(i => i.id === a.itemId);
+    const job  = printJobs.find(j => j.id === a.jobId);
+    if (!box || !item || !job) return;
+    const parts = parseParts(item);
+    const printColor = normColor(job.filament_color) || '#888888';
+
+    // -- Résumé impression --
+    const printThumb = job.thumbnail
+      ? `<img class="bac-print-thumb" src="${escAttr(job.thumbnail)}" alt="">`
+      : `<div class="bac-print-thumb" style="display:flex;align-items:center;justify-content:center"><span class="bac-print-dot" style="background:${printColor}"></span></div>`;
+    const printMetaBits = [
+      job.filament_type ? escHtml(job.filament_type) : '',
+      job.weight ? `${Math.round(job.weight)}g` : '',
+    ].filter(Boolean).join(' · ');
+    let html = `
+      <div class="bac-print">
+        ${printThumb}
+        <div style="flex:1;min-width:0">
+          <div class="bac-print-name">${escHtml(job.file_name || 'Impression')}</div>
+          <div class="bac-print-meta"><span class="bac-print-dot" style="background:${printColor}"></span>${printMetaBits || 'Impression terminée'}</div>
+        </div>
+      </div>`;
+
+    // -- Article sélectionné + changer --
+    const artThumb = item.photo
+      ? `<img class="bac-article-thumb" src="${escAttr(item.photo)}" alt="">`
+      : `<div class="bac-article-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`;
+    html += `
+      <div class="bac-section">
+        <div class="bac-label">Article</div>
+        <div class="bac-article">
+          ${artThumb}
+          <div class="bac-article-body">
+            <div class="bac-article-name">${escHtml(item.name || '—')}</div>
+            <div class="bac-article-meta">${item.category ? escHtml(item.category)+' · ' : ''}${item.qty != null ? item.qty+' en stock' : ''}</div>
+          </div>
+          <button class="bac-change-btn" onclick="bambuAddGotoStep(1)">Changer</button>
+        </div>
+      </div>`;
+
+    // -- Pièce (multi-part uniquement) --
+    if (parts.length) {
+      html += `
+        <div class="bac-section">
+          <div class="bac-label">Quelle pièce ? <span style="text-transform:none;font-weight:400">(article en ${parts.length} pièces)</span></div>
+          <div class="bac-chips">
+            ${parts.map((p, pi) => `
+              <button class="bac-chip${a.partIndex === pi ? ' active' : ''}" onclick="bambuAddSelectPart(${pi})">
+                <span class="bac-chip-name">${escHtml(p.name || ('Pièce '+(pi+1)))}${(p.count||1)>1?` ×${p.count}`:''}</span>
+                <span class="bac-chip-sub">${partTotalQty(p)} en stock</span>
+              </button>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    // -- Couleur (seulement si pièce choisie OU article simple) --
+    const showColors = !parts.length || a.partIndex !== null;
+    if (showColors) {
+      const variants = bambuAddCurrentVariants();
+      const printColorLc = printColor.toLowerCase();
+      html += `
+        <div class="bac-section">
+          <div class="bac-label">Couleur</div>
+          <div class="bac-swatches">
+            ${variants.map((v, vi) => {
+              const isMatch = (v.color || '').toLowerCase() === printColorLc;
+              return `
+                <button class="bac-swatch${a.variantSel === vi ? ' active' : ''}${isMatch ? ' is-match' : ''}" onclick="bambuAddSelectVariant(${vi})">
+                  <span class="bac-swatch-dot" style="background:${escAttr(v.color || '#888')}"></span>
+                  <span class="bac-swatch-name">${escHtml(v.colorName || v.color || '—')}${isMatch ? ' ✓' : ''}</span>
+                  <span class="bac-swatch-qty">${v.qty || 0} en stock</span>
+                </button>`;
+            }).join('')}
+            <button class="bac-swatch bac-swatch-new${a.variantSel === '__new__' ? ' active' : ''}" onclick="bambuAddSelectVariant('__new__')">
+              <span class="bac-swatch-dot">+</span>
+              <span class="bac-swatch-name">Nouvelle</span>
+              <span class="bac-swatch-qty">couleur</span>
+            </button>
+          </div>
+          ${a.variantSel === '__new__' ? `
+            <div class="bac-newcolor">
+              <input type="color" id="bambuAddNewColor" value="${escAttr(a.newColor)}" oninput="_bambuAdd.newColor=this.value">
+              <input type="text" id="bambuAddNewName" placeholder="Nom de la couleur (ex: Bleu nuit)" value="${escAttr(a.newName)}" oninput="_bambuAdd.newName=this.value">
+            </div>
+            ${variants.some(v => (v.color||'').toLowerCase() === printColorLc) ? '' : `<div class="bac-hint">💡 La couleur de l'impression (${escHtml(printColor)}) n'existe pas encore sur cet article.</div>`}
+          ` : ''}
+        </div>`;
+    } else {
+      html += `<div class="bac-hint" style="margin-bottom:18px">👆 Choisis d'abord la pièce concernée par cette impression.</div>`;
+    }
+
+    // -- Quantité (seulement si couleur sélectionnable) --
+    if (showColors) {
+      html += `
+        <div class="bac-section">
+          <div class="bac-label">Quantité imprimée</div>
+          <div class="bac-qty">
+            <button onclick="bambuAddQty(-1)" ${a.qty <= 1 ? 'disabled' : ''}>−</button>
+            <input type="number" id="bambuAddQtyInput" value="${a.qty}" min="1" max="999"
+                   onchange="bambuAddQtySet(this.value)">
+            <button onclick="bambuAddQty(1)">+</button>
+          </div>
+          <div class="bac-hint">Combien d'exemplaires cette impression a produit (ex: une plaque de 4).</div>
+        </div>`;
+    }
+
+    box.innerHTML = html;
+    bambuAddUpdateConfirm();
+  }
+
+  function bambuAddSelectPart(pi) {
+    if (!_bambuAdd) return;
+    _bambuAdd.partIndex = pi;
+    _bambuAdd.variantSel = null;
+    bambuAddAutoPickColor();
+    bambuAddRenderConfig();
+  }
+  window.bambuAddSelectPart = bambuAddSelectPart;
+
+  function bambuAddSelectVariant(sel) {
+    if (!_bambuAdd) return;
+    _bambuAdd.variantSel = sel;
+    bambuAddRenderConfig();
+  }
+  window.bambuAddSelectVariant = bambuAddSelectVariant;
+
+  function bambuAddQty(delta) {
+    if (!_bambuAdd) return;
+    _bambuAdd.qty = Math.max(1, Math.min(999, (_bambuAdd.qty || 1) + delta));
+    bambuAddRenderConfig();
+  }
+  window.bambuAddQty = bambuAddQty;
+
+  function bambuAddQtySet(val) {
+    if (!_bambuAdd) return;
+    const n = parseInt(val);
+    _bambuAdd.qty = (isNaN(n) || n < 1) ? 1 : Math.min(999, n);
+    bambuAddRenderConfig();
+  }
+  window.bambuAddQtySet = bambuAddQtySet;
+
+  // Met à jour le label du bouton confirmer + son état activé/désactivé.
+  function bambuAddUpdateConfirm() {
+    const a = _bambuAdd; if (!a) return;
+    const btn = document.getElementById('bambuAddConfirmBtn');
+    if (!btn) return;
+    const item = items.find(i => i.id === a.itemId);
+    const parts = parseParts(item);
+    const needPart = parts.length && a.partIndex === null;
+    const needColor = !needPart && a.variantSel === null;
+    if (needPart || needColor) {
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'not-allowed';
+      btn.textContent = needPart ? 'Choisis une pièce' : 'Choisis une couleur';
+      return;
+    }
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+    // Résumé : "✓ Ajouter 2 × Bleu"
+    let colorName = 'nouvelle couleur';
+    if (a.variantSel === '__new__') {
+      colorName = a.newName || 'nouvelle couleur';
+    } else if (a.variantSel !== null) {
+      const v = bambuAddCurrentVariants()[a.variantSel];
+      colorName = v?.colorName || v?.color || 'couleur';
+    }
+    btn.textContent = `✓ Ajouter ${a.qty} × ${colorName}`;
+  }
+
+  async function bambuAddConfirm() {
+    const a = _bambuAdd; if (!a) return;
+    const job  = printJobs.find(j => j.id === a.jobId);
+    const item = items.find(i => i.id === a.itemId);
+    if (!job || !item) return;
+    const parts = parseParts(item);
+    const qty = a.qty || 1;
+
+    if (parts.length) {
+      // ── Article multi-pièces ──
+      if (a.partIndex === null) { showToast('Sélectionne une pièce', 'error'); return; }
+      if (a.variantSel === null) { showToast('Sélectionne une couleur', 'error'); return; }
+      parts[a.partIndex].variants = parts[a.partIndex].variants || [];
+      if (a.variantSel === '__new__') {
+        parts[a.partIndex].variants.push({ id: genId(), color: a.newColor || '#888888', colorName: a.newName || '', qty });
+      } else {
+        parts[a.partIndex].variants[a.variantSel].qty = (parts[a.partIndex].variants[a.variantSel].qty || 0) + qty;
+      }
+      item.parts = JSON.stringify(parts);
+      const asm  = possibleAssemblies(parts);
+      item.qty   = asm;
+      item.variants = JSON.stringify([{ id: genId(), color: parts[0]?.variants?.[0]?.color || '#888', colorName: '', qty: asm }]);
+      await opUpdate(item);
+    } else {
+      // ── Article simple ──
+      if (a.variantSel === null) { showToast('Sélectionne une couleur', 'error'); return; }
+      const variants = parseVariants(item);
+      if (a.variantSel === '__new__') {
+        const color = a.newColor || '#888888';
+        const matchIdx = variants.findIndex(v => (v.color || '').toLowerCase() === color.toLowerCase());
+        if (matchIdx >= 0) variants[matchIdx].qty = (variants[matchIdx].qty || 0) + qty;
+        else variants.push({ id: genId(), color, colorName: a.newName || '', qty });
+      } else {
+        variants[a.variantSel].qty = (variants[a.variantSel].qty || 0) + qty;
+      }
+      item.variants = JSON.stringify(variants);
+      item.qty = variants.reduce((s, v) => s + (v.qty || 0), 0);
+      await fetch(`/api/items/${item.id}/variants`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variants }),
+      });
+    }
+
+    const jobId = a.jobId;
+    const itemName = item.name;
+    closeBambuAddModal();
+    await fetch(`/api/print-jobs/${jobId}/done`, { method: 'PATCH' });
+    printJobs = printJobs.filter(j => j.id !== jobId);
+    renderPrintJobs();
+    updateBambuBadge();
+    render();
+    showToast(`+${qty} ajouté à "${itemName}" !`);
+  }
+  window.bambuAddConfirm = bambuAddConfirm;
 
   async function bambuDismiss(jobId) {
     await fetch(`/api/print-jobs/${jobId}`, { method: 'DELETE' });
@@ -12741,130 +12953,6 @@
     }
 
     document.getElementById('itemForm').dataset.bambuJobId = jobId;
-  }
-
-  // ── Cascade sélecteurs Bambu "Ajouter à un article existant" ────────────
-  function bambuOnItemChange(jobId) {
-    const itemId   = document.getElementById(`pj-item-${jobId}`)?.value;
-    const partRow  = document.getElementById(`pj-part-row-${jobId}`);
-    const varRow   = document.getElementById(`pj-var-row-${jobId}`);
-    if (!itemId) { partRow.style.display = 'none'; varRow.style.display = 'none'; return; }
-
-    const item  = items.find(i => i.id === itemId);
-    const parts = parseParts(item);
-
-    if (!parts.length) {
-      // Article simple : pas de pièce à choisir, on montre directement les variantes
-      partRow.style.display = 'none';
-      _bambuPopulateVariants(jobId, null);
-      return;
-    }
-
-    // Article multi-pièces : afficher le sélecteur de pièce
-    const partSel = document.getElementById(`pj-part-${jobId}`);
-    partSel.innerHTML = `<option value="">— Choisir une pièce —</option>` +
-      parts.map((p, pi) => `<option value="${pi}">${escHtml(p.name||`Pièce ${pi+1}`)}${(p.count||1)>1?` ×${p.count}`:''} (${partTotalQty(p)} en stock)</option>`).join('');
-    partRow.style.display = '';
-    varRow.style.display  = 'none';
-  }
-
-  function bambuOnPartChange(jobId) {
-    const pi = parseInt(document.getElementById(`pj-part-${jobId}`)?.value);
-    if (isNaN(pi)) { document.getElementById(`pj-var-row-${jobId}`).style.display = 'none'; return; }
-    _bambuPopulateVariants(jobId, pi);
-  }
-
-  function _bambuPopulateVariants(jobId, pi) {
-    const job    = printJobs.find(j => j.id === jobId);
-    const itemId = document.getElementById(`pj-item-${jobId}`)?.value;
-    const item   = items.find(i => i.id === itemId);
-    const varRow = document.getElementById(`pj-var-row-${jobId}`);
-    const varSel = document.getElementById(`pj-var-${jobId}`);
-    const color  = normColor(job?.filament_color) || '#888888';
-
-    let variants = [];
-    if (pi !== null) {
-      variants = parseParts(item)?.[pi]?.variants || [];
-    } else {
-      variants = parseVariants(item);
-    }
-
-    varSel.innerHTML = `<option value="__new__">➕ Nouvelle couleur</option>` +
-      variants.map((v, vi) => {
-        const selected = v.color?.toLowerCase() === color?.toLowerCase() ? 'selected' : '';
-        return `<option value="${vi}" ${selected}>${escHtml(v.colorName||v.color||'—')} (${v.qty||0} en stock)</option>`;
-      }).join('');
-    varRow.style.display = '';
-    bambuOnVariantChange(jobId);
-  }
-
-  function bambuOnVariantChange(jobId) {
-    const val    = document.getElementById(`pj-var-${jobId}`)?.value;
-    const newDiv = document.getElementById(`pj-newvar-${jobId}`);
-    if (newDiv) newDiv.style.display = val === '__new__' ? '' : 'none';
-  }
-
-  async function bambuAddToExisting(jobId) {
-    const job    = printJobs.find(j => j.id === jobId);
-    const itemId = document.getElementById(`pj-item-${jobId}`)?.value;
-    if (!job || !itemId) { showToast('Sélectionne un article', 'error'); return; }
-
-    const item  = items.find(i => i.id === itemId);
-    if (!item) return;
-    const parts = parseParts(item);
-
-    if (parts.length) {
-      // ── Article multi-pièces ──────────────────────────────────────────
-      const pi = parseInt(document.getElementById(`pj-part-${jobId}`)?.value);
-      if (isNaN(pi) || pi < 0) { showToast('Sélectionne une pièce', 'error'); return; }
-
-      const varVal = document.getElementById(`pj-var-${jobId}`)?.value;
-      if (!varVal) { showToast('Sélectionne une couleur', 'error'); return; }
-
-      if (varVal === '__new__') {
-        const color = document.getElementById(`pj-newcolor-${jobId}`)?.value || '#888888';
-        const name  = document.getElementById(`pj-newname-${jobId}`)?.value  || '';
-        parts[pi].variants = parts[pi].variants || [];
-        parts[pi].variants.push({ id: genId(), color, colorName: name, qty: 1 });
-      } else {
-        const vi = parseInt(varVal);
-        parts[pi].variants[vi].qty = (parts[pi].variants[vi].qty || 0) + 1;
-      }
-
-      item.parts = JSON.stringify(parts);
-      const asm  = possibleAssemblies(parts);
-      item.qty   = asm;
-      item.variants = JSON.stringify([{ id: genId(), color: parts[0]?.variants?.[0]?.color || '#888', colorName: '', qty: asm }]);
-      await opUpdate(item);
-
-    } else {
-      // ── Article simple ────────────────────────────────────────────────
-      const varVal = document.getElementById(`pj-var-${jobId}`)?.value;
-      const variants = parseVariants(item);
-
-      if (varVal === '__new__' || !varVal) {
-        const color = document.getElementById(`pj-newcolor-${jobId}`)?.value || job.filament_color || '#888888';
-        const name  = document.getElementById(`pj-newname-${jobId}`)?.value  || job.filament_type || '';
-        const matchIdx = variants.findIndex(v => v.color?.toLowerCase() === color?.toLowerCase());
-        if (matchIdx >= 0) variants[matchIdx].qty++;
-        else variants.push({ id: genId(), color, colorName: name, qty: 1 });
-      } else {
-        variants[parseInt(varVal)].qty++;
-      }
-      item.variants = JSON.stringify(variants);
-      item.qty = variants.reduce((s, v) => s + (v.qty || 0), 0);
-      await fetch(`/api/items/${itemId}/variants`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variants }),
-      });
-    }
-
-    await fetch(`/api/print-jobs/${jobId}/done`, { method: 'PATCH' });
-    printJobs = printJobs.filter(j => j.id !== jobId);
-    renderPrintJobs();
-    updateBambuBadge();
-    render();
-    showToast(`+1 ajouté à "${item.name}" !`);
   }
 
   // Marquer le job Bambu quand on crée un article depuis le formulaire
