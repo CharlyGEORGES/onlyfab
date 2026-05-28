@@ -80,10 +80,10 @@ const MAX_BETA_USERS = parseInt(process.env.BETA_MAX_USERS || '20', 10);
 // Faux compteur d'affichage public pour la landing (sentiment de rareté).
 // REMAINING = nombre de places affichées comme dispo.
 // MAX      = total affiché (le "sur N").
-// → message "7 places disponibles sur 10 en bêta".
+// → message "7 places disponibles sur 100 en bêta".
 // Mettre BETA_FAKE_REMAINING=0 pour désactiver et afficher le vrai.
 const FAKE_BETA_REMAINING = parseInt(process.env.BETA_FAKE_REMAINING || '7',  10);
-const FAKE_BETA_MAX       = parseInt(process.env.BETA_FAKE_MAX       || '10', 10);
+const FAKE_BETA_MAX       = parseInt(process.env.BETA_FAKE_MAX       || '100', 10);
 const HTML_FILE     = path.join(__dirname, 'index.html');
 const LANDING_FILE  = path.join(__dirname, 'landing.html');
 
@@ -667,7 +667,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v76';
+const CACHE_VERSION = 'bs-v77';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
