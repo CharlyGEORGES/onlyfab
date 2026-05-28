@@ -1143,8 +1143,8 @@
           <div class="hero-stat-label">Gratuit en bêta</div>
         </div>
         <div class="hero-stat">
-          <div class="hero-stat-val">10</div>
-          <div class="hero-stat-label">Places en bêta</div>
+          <div class="hero-stat-val" id="heroSeats">7</div>
+          <div class="hero-stat-label">Places restantes</div>
         </div>
         <div class="hero-stat">
           <div class="hero-stat-val">🇫🇷</div>
@@ -1543,7 +1543,7 @@
   <div class="container">
     <div class="register-card">
       <h2>Créer votre compte</h2>
-      <p>Rejoignez la bêta gratuite. <strong>10 places maximum</strong> pendant la phase de test. Premiers arrivés, premiers servis. Données hébergées en France 🇫🇷.</p>
+      <p>Rejoignez la bêta gratuite. <strong>100 places maximum</strong> pendant la phase de test, et il n'en reste déjà que quelques-unes. Premiers arrivés, premiers servis. Données hébergées en France 🇫🇷.</p>
 
       <div id="seatsRemaining" style="display:none;background:rgba(0,212,170,0.08);border:1px solid rgba(0,212,170,0.25);color:var(--accent);padding:8px 12px;border-radius:8px;font-size:0.82rem;margin-bottom:14px;text-align:center;font-weight:600"></div>
       <div id="register-alert" class="alert" style="display:none;"></div>
@@ -1679,6 +1679,9 @@
     try {
       const r = await fetch('/api/auth/seats').then(r => r.json());
       const el = document.getElementById('seatsRemaining');
+      // Met à jour le compteur de places restantes dans le hero.
+      const hero = document.getElementById('heroSeats');
+      if (hero && r.remaining >= 0) hero.textContent = r.remaining;
       if (!el) return;
       el.style.display = 'block';
       if (r.remaining <= 0) {
@@ -1689,7 +1692,18 @@
         const btn = document.getElementById('reg-submit');
         if (btn) { btn.disabled = true; btn.textContent = 'Bêta complète'; }
       } else {
-        el.textContent = `${r.remaining} place${r.remaining>1?'s':''} disponible${r.remaining>1?'s':''} sur ${r.max} en bêta`;
+        const s = r.remaining > 1 ? 's' : '';
+        // Sous un certain seuil de rareté, on force un ton d'urgence (couleur
+        // orange + formulation "Plus que N places") pour pousser à l'action.
+        const scarce = r.remaining <= Math.max(10, Math.round(r.max * 0.15));
+        if (scarce) {
+          el.style.background = 'rgba(245,158,11,0.1)';
+          el.style.borderColor = 'rgba(245,158,11,0.45)';
+          el.style.color = '#f59e0b';
+          el.innerHTML = `Plus que <strong>${r.remaining} place${s}</strong> sur ${r.max} — dépêchez-vous !`;
+        } else {
+          el.textContent = `${r.remaining} place${s} disponible${s} sur ${r.max} en bêta`;
+        }
       }
     } catch { /* silent */ }
   })();
