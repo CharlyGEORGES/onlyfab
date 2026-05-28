@@ -667,7 +667,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v74';
+const CACHE_VERSION = 'bs-v75';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2895,6 +2895,78 @@ http.createServer(async (req, res) => {
         return;
       }
 
+      // POST /api/items/:id/sell { qty, unitPrice?, variantColor? }
+      // Enregistre une vente : décrémente le stock (variante pour un objet
+      // simple, quantité assemblée pour un multi-pièces) et journalise
+      // l'opération avec le prix éventuel (action 'sale').
+      if (req.method === 'POST' && parts[1] === 'items' && id && sub === 'sell') {
+        const b = await parseBody(req);
+        const qty = Math.max(1, Math.floor(Number(b.qty) || 1));
+        const unitPrice = (b.unitPrice !== undefined && b.unitPrice !== null && b.unitPrice !== '')
+          ? Math.max(0, Number(b.unitPrice)) : null;
+        if (unitPrice !== null && !isFinite(unitPrice)) { json(res, { error: 'Prix invalide' }, 400); return; }
+        const before = snapshotItem(id);
+        if (!before || before.user_id !== userId) { json(res, { error: 'Introuvable' }, 404); return; }
+
+        const partsArr = safeParseJson(before.parts, []);
+        const now = new Date().toISOString();
+        let soldLabel = '';
+
+        if (partsArr.length > 0) {
+          // Multi-pièces : on vend des objets déjà assemblés.
+          const avail = before.assembledQty || 0;
+          if (qty > avail) { json(res, { error: `Stock assemblé insuffisant (${avail} disponible(s))` }, 400); return; }
+          const asmArr = safeParseJson(before.assembledItems, []);
+          asmArr.splice(Math.max(0, asmArr.length - qty), qty);
+          db.prepare('UPDATE items SET assembledQty=:a, assembledItems=:ai, updatedAt=:u WHERE id=:id AND user_id=:uid')
+            .run({ a: asmArr.length, ai: JSON.stringify(asmArr), u: now, id, uid: userId });
+          soldLabel = 'assemblage';
+        } else {
+          // Objet simple : on décrémente une variante (couleur).
+          const variants = safeParseJson(before.variants, []);
+          if (!variants.length) { json(res, { error: 'Aucun stock à vendre' }, 400); return; }
+          let vi = -1;
+          if (b.variantColor) vi = variants.findIndex(v => v.color === b.variantColor);
+          if (vi < 0) vi = variants.findIndex(v => (v.qty || 0) >= qty);
+          if (vi < 0) vi = variants.findIndex(v => (v.qty || 0) > 0);
+          if (vi < 0) vi = 0;
+          const avail = variants[vi].qty || 0;
+          if (qty > avail) { json(res, { error: `Stock insuffisant (${avail} disponible(s))` }, 400); return; }
+          variants[vi].qty = avail - qty;
+          soldLabel = variants[vi].colorName || variants[vi].color || '';
+          const newVariantsJson = JSON.stringify(variants);
+          db.prepare('UPDATE items SET variants=:v, qty=:q, updatedAt=:u WHERE id=:id AND user_id=:uid')
+            .run({ v: newVariantsJson, q: totalQty(newVariantsJson), u: now, id, uid: userId });
+        }
+
+        const total = unitPrice !== null ? +(unitPrice * qty).toFixed(2) : null;
+        logHistory(id, before.name, 'sale', { qty, unitPrice, total, label: soldLabel }, before, userId);
+        const updated = db.prepare('SELECT * FROM items WHERE id=:id').get({ id });
+        json(res, { ok: true, item: updated });
+        return;
+      }
+
+      // GET /api/sales/summary → agrégat des ventes (depuis l'historique).
+      if (req.method === 'GET' && url === '/api/sales/summary') {
+        const rows = db.prepare(
+          "SELECT item_name, detail, ts FROM history WHERE user_id=? AND action='sale' ORDER BY ts DESC"
+        ).all(userId);
+        let units = 0, revenue = 0;
+        const recent = [];
+        for (const r of rows) {
+          const d = safeParseJson(r.detail, {}) || {};
+          const q = d.qty || 0;
+          units += q;
+          if (typeof d.total === 'number') revenue += d.total;
+          if (recent.length < 100) {
+            recent.push({ name: r.item_name, qty: q, unitPrice: d.unitPrice ?? null,
+                          total: (typeof d.total === 'number' ? d.total : null), label: d.label || '', ts: r.ts });
+          }
+        }
+        json(res, { count: rows.length, units, revenue: +revenue.toFixed(2), recent });
+        return;
+      }
+
       if (req.method === 'DELETE' && id && !sub) {
         // Snapshot complet avant suppression pour pouvoir undo le delete.
         const beforeDel = snapshotItem(id);
@@ -3908,9 +3980,9 @@ http.createServer(async (req, res) => {
           // Undo d'un delete = on ré-insère l'item depuis le snapshot.
           const exists = db.prepare('SELECT id FROM items WHERE id=?').get(before.id);
           if (exists) { json(res, { error: 'Article restauré déjà présent' }, 409); return; }
-          db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
-            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
-            .run({ ...before, uid: userId });
+          db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,sku,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:sku,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
+            .run({ ...before, sku: before.sku ?? null, uid: userId });
           logHistory(before.id, before.name, 'undo-delete', { undoneHistoryId: histRow.id }, null, userId);
           json(res, { ok: true, action: 'restored' });
           return;
