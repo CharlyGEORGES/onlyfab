@@ -782,6 +782,15 @@
       text-overflow: ellipsis;
     }
 
+    .card-sku {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      letter-spacing: 0.02em;
+      margin-bottom: 6px;
+      opacity: 0.8;
+    }
+
     .card-desc {
       font-size: 0.8rem;
       color: var(--text-muted);
@@ -2339,6 +2348,22 @@
     }
 
     .detail-name-input:focus { border-bottom-color: var(--primary); }
+
+    .detail-sku-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.8rem;
+      letter-spacing: 0.02em;
+      padding: 2px 0;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 8px;
+    }
+    .detail-sku-input:focus { border-bottom-color: var(--primary); color: var(--text); }
 
     .detail-desc-input {
       width: 100%;
@@ -4120,6 +4145,12 @@
           <input type="text" id="modalName" placeholder="ex: Dragon" required data-i18n-attr="placeholder:form.namePlaceholder">
         </div>
 
+        <!-- SKU / RÉFÉRENCE -->
+        <div class="form-group">
+          <label for="modalSku" data-i18n="form.sku">SKU / Référence</label>
+          <input type="text" id="modalSku" placeholder="ex: DRG-001" autocomplete="off" data-i18n-attr="placeholder:form.skuPlaceholder">
+        </div>
+
         <!-- DESCRIPTION -->
         <div class="form-group">
           <label for="modalDesc" data-i18n="form.description">Description</label>
@@ -4281,6 +4312,9 @@
 
       <!-- Nom éditable -->
       <input type="text" class="detail-name-input" id="detailNameInput" placeholder="Nom de l'objet">
+
+      <!-- SKU / Référence éditable -->
+      <input type="text" class="detail-sku-input" id="detailSkuInput" placeholder="SKU / Référence" autocomplete="off">
 
       <!-- Description éditable -->
       <textarea class="detail-desc-input" id="detailDescInput" placeholder="Description..." rows="2"></textarea>
@@ -5884,6 +5918,8 @@
       'form.photoRemove': 'Supprimer la photo',
       'form.name': "Nom de l'objet *",
       'form.namePlaceholder': 'ex: Dragon',
+      'form.sku': 'SKU / Référence',
+      'form.skuPlaceholder': 'ex: DRG-001',
       'form.description': 'Description',
       'form.descPlaceholder': 'Utilisation, notes, dimensions…',
       'form.filament': 'Filament',
@@ -6011,6 +6047,8 @@
       'form.photoRemove': 'Remove photo',
       'form.name': 'Item name *',
       'form.namePlaceholder': 'e.g. Dragon',
+      'form.sku': 'SKU / Reference',
+      'form.skuPlaceholder': 'e.g. DRG-001',
       'form.description': 'Description',
       'form.descPlaceholder': 'Use, notes, dimensions…',
       'form.filament': 'Filament',
@@ -6138,6 +6176,8 @@
       'form.photoRemove': 'Eliminar foto',
       'form.name': 'Nombre del objeto *',
       'form.namePlaceholder': 'ej: Dragón',
+      'form.sku': 'SKU / Referencia',
+      'form.skuPlaceholder': 'ej: DRG-001',
       'form.description': 'Descripción',
       'form.descPlaceholder': 'Uso, notas, dimensiones…',
       'form.filament': 'Filamento',
@@ -6265,6 +6305,8 @@
       'form.photoRemove': 'Foto entfernen',
       'form.name': 'Name des Objekts *',
       'form.namePlaceholder': 'z.B. Drache',
+      'form.sku': 'SKU / Referenz',
+      'form.skuPlaceholder': 'z.B. DRG-001',
       'form.description': 'Beschreibung',
       'form.descPlaceholder': 'Nutzung, Notizen, Abmessungen…',
       'form.filament': 'Filament',
@@ -6392,6 +6434,8 @@
       'form.photoRemove': 'Rimuovi foto',
       'form.name': "Nome dell'oggetto *",
       'form.namePlaceholder': 'es: Drago',
+      'form.sku': 'SKU / Riferimento',
+      'form.skuPlaceholder': 'es: DRG-001',
       'form.description': 'Descrizione',
       'form.descPlaceholder': 'Uso, note, dimensioni…',
       'form.filament': 'Filamento',
@@ -6519,6 +6563,8 @@
       'form.photoRemove': 'Remover foto',
       'form.name': 'Nome do objeto *',
       'form.namePlaceholder': 'ex: Dragão',
+      'form.sku': 'SKU / Referência',
+      'form.skuPlaceholder': 'ex: DRG-001',
       'form.description': 'Descrição',
       'form.descPlaceholder': 'Utilização, notas, dimensões…',
       'form.filament': 'Filamento',
@@ -9641,6 +9687,7 @@
       const q = currentSearchQuery.toLowerCase();
       result = result.filter(i =>
         i.name.toLowerCase().includes(q) ||
+        (i.sku && i.sku.toLowerCase().includes(q)) ||
         (i.desc && i.desc.toLowerCase().includes(q))
       );
     }
@@ -9769,6 +9816,7 @@
           : `<div class="card-img-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>`}
         <div class="card-body">
           <div class="card-name">${escHtml(item.name)}</div>
+          ${item.sku ? `<div class="card-sku">${escHtml(item.sku)}</div>` : ''}
           ${item.desc ? `<div class="card-desc">${escHtml(item.desc)}</div>` : ''}
           <div class="card-meta">${renderItemBadges(item)}</div>
           <div class="card-variants">${variantsHtml}</div>
@@ -11028,6 +11076,7 @@
     editingId = id;
     currentPhotoUrl = item.photo || null;
     document.getElementById('modalName').value = item.name;
+    document.getElementById('modalSku').value = item.sku || '';
     document.getElementById('modalDesc').value = item.desc || '';
     document.getElementById('modalFilament').value = item.filament || '';
     document.getElementById('modalCategory').value = item.category || '';
@@ -11118,6 +11167,7 @@
     }
     const data = {
       name,
+      sku: document.getElementById('modalSku').value.trim(),
       desc: document.getElementById('modalDesc').value.trim(),
       filament: document.getElementById('modalFilament').value,
       category: document.getElementById('modalCategory').value,
@@ -11177,6 +11227,7 @@
     const updated = {
       ...item,
       name: document.getElementById('detailNameInput').value.trim() || item.name,
+      sku: document.getElementById('detailSkuInput').value.trim(),
       desc: document.getElementById('detailDescInput').value.trim(),
       filament: document.getElementById('detailFilamentInput').value,
       category: document.getElementById('detailCategoryInput').value,
@@ -11317,6 +11368,7 @@
 
     // Champs éditables
     document.getElementById('detailNameInput').value = item.name || '';
+    document.getElementById('detailSkuInput').value = item.sku || '';
     document.getElementById('detailDescInput').value = item.desc || '';
     document.getElementById('detailFilamentInput').value = item.filament || '';
     document.getElementById('detailCategoryInput').value = item.category || '';
@@ -11370,7 +11422,7 @@
     if (body) body.scrollTop = 0;
 
     // Listeners auto-save
-    ['detailNameInput','detailDescInput','detailFilamentInput','detailCategoryInput','detailThresholdInput'].forEach(elId => {
+    ['detailNameInput','detailSkuInput','detailDescInput','detailFilamentInput','detailCategoryInput','detailThresholdInput'].forEach(elId => {
       const el = document.getElementById(elId);
       if (elId === 'detailCategoryInput') {
         // Catégorie : intercepte d'abord le cas "+ Nouvelle catégorie…",

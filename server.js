@@ -206,6 +206,10 @@ addColumnIfMissing('users', 'last_seen', 'TEXT');
 // Tags multiples sur items (JSON array) — complète category (single).
 addColumnIfMissing('items', 'tags', 'TEXT');
 
+// Référence / SKU saisie librement par l'utilisateur (code catalogue,
+// référence boutique…). Optionnel, indexé dans la recherche et l'export.
+addColumnIfMissing('items', 'sku', 'TEXT');
+
 // Snapshot avant action pour pouvoir undo : on stocke la version sérialisée
 // de l'item juste avant l'update/delete pour pouvoir le restaurer.
 addColumnIfMissing('history', 'before_state', 'TEXT');
@@ -663,7 +667,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v73';
+const CACHE_VERSION = 'bs-v74';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -2541,7 +2545,7 @@ http.createServer(async (req, res) => {
       // BOM UTF-8 en tête pour qu'Excel affiche les accents correctement.
       if (req.method === 'GET' && url === '/api/export') {
         const rows = db.prepare('SELECT * FROM items WHERE user_id=? ORDER BY createdAt DESC').all(userId);
-        const HEADERS = ['id','name','desc','filament','category','tags','threshold','trackStock','photo','variants','parts','assembledQty','createdAt','updatedAt'];
+        const HEADERS = ['id','name','sku','desc','filament','category','tags','threshold','trackStock','photo','variants','parts','assembledQty','createdAt','updatedAt'];
         const csvCell = v => {
           if (v === null || v === undefined) return '';
           const s = String(v);
@@ -2564,7 +2568,7 @@ http.createServer(async (req, res) => {
         const lines = [HEADERS.join(',')];
         for (const r of rows) {
           lines.push([
-            r.id, r.name, r.desc, r.filament, r.category,
+            r.id, r.name, r.sku, r.desc, r.filament, r.category,
             encodeTags(r.tags), r.threshold, r.trackStock, r.photo,
             encodeVariants(r.variants), encodeParts(r.parts),
             r.assembledQty, r.createdAt, r.updatedAt,
@@ -2633,6 +2637,7 @@ http.createServer(async (req, res) => {
           return {
             id: get('id') || (Math.random().toString(36).slice(2, 9) + Date.now().toString(36)),
             name: get('name') || 'Sans nom',
+            sku: (get('sku') || '').trim() || null,
             desc: get('desc') || null,
             filament: get('filament') || null,
             category: get('category') || null,
@@ -2651,8 +2656,8 @@ http.createServer(async (req, res) => {
         const importAll = db.transaction(items => {
           db.prepare('DELETE FROM items WHERE user_id=?').run(userId);
           const stmt = db.prepare(`INSERT INTO items
-            (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
-            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`);
+            (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,sku,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+            VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:sku,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`);
           for (const b of items) {
             const vJson = JSON.stringify(b.variants);
             const pJson = JSON.stringify(b.parts);
@@ -2662,6 +2667,7 @@ http.createServer(async (req, res) => {
               color: '', colorName: '',
               qty, threshold: b.threshold, photo: b.photo,
               category: b.category, tags: JSON.stringify(b.tags),
+              sku: b.sku,
               trackStock: b.trackStock,
               variants: vJson, parts: pJson,
               assembledQty: b.assembledQty, assembledItems: '[]',
@@ -2692,8 +2698,8 @@ http.createServer(async (req, res) => {
         const effectiveQty = partsArr.length > 0
           ? Math.min(...partsArr.map(partSum))
           : totalQty(variantsJson);
-        db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
-          VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
+        db.prepare(`INSERT INTO items (id,name,"desc",filament,color,colorName,qty,threshold,photo,category,tags,sku,trackStock,variants,parts,assembledQty,assembledItems,createdAt,updatedAt,user_id)
+          VALUES (:id,:name,:desc,:filament,:color,:colorName,:qty,:threshold,:photo,:category,:tags,:sku,:trackStock,:variants,:parts,:assembledQty,:assembledItems,:createdAt,:updatedAt,:uid)`)
           .run({
             id: b.id,
             name: b.name,
@@ -2706,6 +2712,7 @@ http.createServer(async (req, res) => {
             photo: b.photo || null,
             category: b.category || null,
             tags: JSON.stringify(tagsArr),
+            sku: (b.sku || '').trim() || null,
             trackStock: b.trackStock !== false ? 1 : 0,
             variants: variantsJson,
             parts: partsJson,
@@ -2739,7 +2746,7 @@ http.createServer(async (req, res) => {
           : (before.assembledItems || null);
         db.prepare(`UPDATE items SET name=:name,"desc"=:desc,filament=:filament,color=:color,
           colorName=:colorName,qty=:qty,threshold=:threshold,photo=:photo,
-          category=:category,tags=:tags,trackStock=:trackStock,variants=:variants,parts=:parts,
+          category=:category,tags=:tags,sku=:sku,trackStock=:trackStock,variants=:variants,parts=:parts,
           assembledQty=:assembledQty,assembledItems=:assembledItems,updatedAt=:updatedAt
           WHERE id=:id AND user_id=:uid`)
           .run({
@@ -2755,6 +2762,8 @@ http.createServer(async (req, res) => {
             photo: b.photo || null,
             category: b.category || null,
             tags: JSON.stringify(tagsArrUpd),
+            // sku absent du payload (update partiel) → on conserve l'existant.
+            sku: b.sku !== undefined ? ((b.sku || '').trim() || null) : (before.sku || null),
             trackStock: b.trackStock !== false ? 1 : 0,
             variants: variantsJson,
             parts: partsJsonUpd,
