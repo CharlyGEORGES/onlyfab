@@ -248,6 +248,16 @@ addColumnIfMissing('referral_visits', 'user_agent', 'TEXT');
 addColumnIfMissing('users', 'referral_note',           'TEXT');
 addColumnIfMissing('users', 'referral_commission_pct', 'REAL DEFAULT 0');
 
+// ── Vérification email ───────────────────────────────────────────────────
+// email_verified : 0 = pas confirmé, 1 = confirmé. On ajoute la colonne
+// SANS default pour que les lignes existantes soient NULL → on les
+// backfill à 1 (comptes déjà actifs = grandfathered, jamais verrouillés).
+// Les NOUVEAUX comptes inséreront explicitement email_verified=0.
+addColumnIfMissing('users', 'email_verified',       'INTEGER');
+addColumnIfMissing('users', 'email_verify_token',   'TEXT');
+addColumnIfMissing('users', 'email_verify_sent_at', 'TEXT');
+db.prepare("UPDATE users SET email_verified=1 WHERE email_verified IS NULL").run();
+
 // Note privée admin générique sur n'importe quel utilisateur (contexte,
 // rappel d'échange, signalement). Visible uniquement dans la fiche admin.
 addColumnIfMissing('users', 'admin_note', 'TEXT');
@@ -613,9 +623,9 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
   <div id="alert" class="alert"></div>
   <form id="form">
     <label for="pw">Nouveau mot de passe</label>
-    <input id="pw" type="password" required minlength="8" autocomplete="new-password" placeholder="8 caractères minimum">
+    <input id="pw" type="password" required minlength="10" autocomplete="new-password" placeholder="10 caractères minimum">
     <label for="pw2">Confirmer</label>
-    <input id="pw2" type="password" required minlength="8" autocomplete="new-password" placeholder="Retaper le mot de passe">
+    <input id="pw2" type="password" required minlength="10" autocomplete="new-password" placeholder="Retaper le mot de passe">
     <button id="submit" type="submit">Réinitialiser le mot de passe</button>
   </form>
   <p style="margin-top:18px;text-align:center"><a href="/">← Retour à l'accueil</a></p>
@@ -631,7 +641,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
     const pw = document.getElementById('pw').value;
     const pw2 = document.getElementById('pw2').value;
     if (pw !== pw2){ showAlert('error', 'Les mots de passe ne correspondent pas.'); return; }
-    if (pw.length < 8){ showAlert('error', 'Mot de passe trop court (8 caractères minimum).'); return; }
+    if (pw.length < 10){ showAlert('error', 'Mot de passe trop court (10 caractères minimum).'); return; }
     const btn = document.getElementById('submit');
     btn.disabled = true; btn.textContent = 'En cours...';
     try {
@@ -653,7 +663,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v71';
+const CACHE_VERSION = 'bs-v72';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -1353,6 +1363,117 @@ function recordCodeChange(userId, newCode, reason) {
   tx();
 }
 
+// ── EMAIL (Resend) ───────────────────────────────────────────────────────
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const EMAIL_FROM      = process.env.EMAIL_FROM || 'BambuStock <onboarding@resend.dev>';
+const PUBLIC_BASE     = (process.env.PUBLIC_URL || 'https://bambustock.com').replace(/\/$/, '');
+
+// Envoie un email via l'API Resend. Si RESEND_API_KEY n'est pas définie,
+// on log le contenu (mode dev) sans planter — l'app reste fonctionnelle.
+async function sendEmail(to, subject, html) {
+  if (!RESEND_API_KEY) {
+    console.log(`  [email:DEV] → ${to} | ${subject} (RESEND_API_KEY absente, non envoyé)`);
+    return { ok: false, dev: true };
+  }
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: EMAIL_FROM, to, subject, html }),
+    });
+    if (!r.ok) {
+      console.warn('  [email] Resend HTTP', r.status, (await r.text().catch(() => '')).slice(0, 300));
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.warn('  [email] erreur réseau:', e.message);
+    return { ok: false };
+  }
+}
+
+// Gabarit HTML simple et neutre (compatible clients mail).
+function emailLayout(heading, bodyHtml, ctaUrl, ctaLabel) {
+  const btn = ctaUrl ? `
+    <tr><td style="padding:8px 0 22px">
+      <a href="${ctaUrl}" style="display:inline-block;background:#6c47ff;color:#fff;text-decoration:none;font-weight:700;padding:13px 26px;border-radius:10px;font-size:15px">${ctaLabel || 'Continuer'}</a>
+    </td></tr>
+    <tr><td style="font-size:12px;color:#888;padding-bottom:8px">Ou copie ce lien dans ton navigateur :<br><span style="color:#6c47ff;word-break:break-all">${ctaUrl}</span></td></tr>` : '';
+  return `<!DOCTYPE html><html><body style="margin:0;background:#f4f4f8;font-family:-apple-system,Segoe UI,sans-serif">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f8;padding:28px 0">
+      <tr><td align="center">
+        <table role="presentation" width="460" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;padding:32px;max-width:460px">
+          <tr><td style="font-size:20px;font-weight:800;color:#1a1a24;padding-bottom:6px">Bambu<span style="color:#6c47ff">Stock</span></td></tr>
+          <tr><td style="font-size:17px;font-weight:700;color:#1a1a24;padding:16px 0 10px">${heading}</td></tr>
+          <tr><td style="font-size:14px;color:#444;line-height:1.55;padding-bottom:18px">${bodyHtml}</td></tr>
+          ${btn}
+          <tr><td style="border-top:1px solid #eee;padding-top:16px;font-size:11px;color:#aaa">Si tu n'es pas à l'origine de cette demande, ignore simplement cet email.</td></tr>
+        </table>
+      </td></tr>
+    </table></body></html>`;
+}
+
+// ── POLITIQUE MOT DE PASSE ───────────────────────────────────────────────
+// Liste réduite des mots de passe les plus courants (top FR + EN). On la
+// garde courte : le but est de bloquer les évidences, pas d'être exhaustif.
+const COMMON_PASSWORDS = new Set([
+  'password','password1','password123','12345678','123456789','1234567890',
+  'azerty123','azertyuiop','qwertyuiop','motdepasse','motdepasse1','iloveyou',
+  'sunshine','princess','admin123','welcome1','11111111','00000000','abc12345',
+  'football','baseball','monkey123','dragon123','letmein1','bonjour1','soleil123',
+]);
+// Retourne un message d'erreur si invalide, sinon null.
+function validatePassword(pw) {
+  if (typeof pw !== 'string' || pw.length < 10) return 'Mot de passe trop court (10 caractères minimum)';
+  if (pw.length > 200) return 'Mot de passe trop long';
+  if (COMMON_PASSWORDS.has(pw.toLowerCase())) return 'Mot de passe trop courant, choisis-en un moins évident';
+  let classes = 0;
+  if (/[a-z]/.test(pw)) classes++;
+  if (/[A-Z]/.test(pw)) classes++;
+  if (/[0-9]/.test(pw)) classes++;
+  if (/[^a-zA-Z0-9]/.test(pw)) classes++;
+  if (classes < 2) return 'Mélange au moins 2 types : minuscules, majuscules, chiffres ou symboles';
+  return null;
+}
+
+// ── RATE LIMITING (en mémoire, par clé) ──────────────────────────────────
+// Reset au redémarrage du serveur — acceptable pour de la protection
+// anti-brute-force basique. Pour du multi-instance il faudrait Redis.
+const _rateBuckets = new Map(); // clé → [timestamps ms]
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const arr = (_rateBuckets.get(key) || []).filter(t => now - t < windowMs);
+  arr.push(now);
+  _rateBuckets.set(key, arr);
+  return arr.length <= max; // true = autorisé, false = bloqué
+}
+function clientIp(req) {
+  return ((req.headers['x-forwarded-for'] || '').split(',')[0].trim())
+      || req.socket?.remoteAddress || 'unknown';
+}
+// Purge périodique des buckets vides/anciens (évite la fuite mémoire).
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, arr] of _rateBuckets) {
+    const fresh = arr.filter(t => now - t < 3600_000);
+    if (fresh.length) _rateBuckets.set(k, fresh); else _rateBuckets.delete(k);
+  }
+}, 600_000);
+
+// Génère + envoie l'email de vérification pour un user donné.
+async function sendVerificationEmail(userId, email, name) {
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare('UPDATE users SET email_verify_token=?, email_verify_sent_at=? WHERE id=?')
+    .run(token, new Date().toISOString(), userId);
+  const url = `${PUBLIC_BASE}/api/auth/verify?token=${token}`;
+  const html = emailLayout(
+    'Confirme ton adresse email',
+    `Bonjour${name ? ' ' + name : ''},<br><br>Bienvenue sur BambuStock ! Confirme ton adresse pour sécuriser ton compte.`,
+    url, 'Confirmer mon email'
+  );
+  await sendEmail(email, 'Confirme ton email · BambuStock', html);
+}
+
 // ── APP SETTINGS / DISCORD WEBHOOK ───────────────────────────────────────
 function getSetting(key) {
   return db.prepare('SELECT value FROM app_settings WHERE key=?').get(key)?.value || '';
@@ -1495,7 +1616,37 @@ http.createServer(async (req, res) => {
         id: user.id, email: user.email, name: user.name, plan: user.plan,
         is_admin: !!user.is_admin, created_at: user.created_at,
         onboarding_completed: !!user.onboarding_completed,
+        email_verified: !!user.email_verified,
       }});
+      return;
+    }
+
+    // GET /api/auth/verify?token=XXX → confirme l'email puis redirige.
+    if (req.method === 'GET' && url === '/api/auth/verify') {
+      const qs = new URLSearchParams((req.url.split('?')[1] || ''));
+      const vtok = qs.get('token') || '';
+      const row = vtok ? db.prepare('SELECT id FROM users WHERE email_verify_token=?').get(vtok) : null;
+      if (row) {
+        db.prepare('UPDATE users SET email_verified=1, email_verify_token=NULL WHERE id=?').run(row.id);
+      }
+      // Redirige vers l'app avec un flag (succès ou échec) pour afficher
+      // un message côté client.
+      res.writeHead(302, { Location: '/app?verified=' + (row ? '1' : '0') });
+      res.end();
+      return;
+    }
+
+    // POST /api/auth/resend-verification (auth requise) → renvoie l'email.
+    if (req.method === 'POST' && url === '/api/auth/resend-verification') {
+      const user = getSessionUser(req);
+      if (!user) { json(res, { error: 'Connexion requise' }, 401); return; }
+      if (user.email_verified) { json(res, { ok: true, already: true }); return; }
+      // Rate limit : max 3 renvois / 15 min / user.
+      if (!rateLimit('resend:' + user.id, 3, 15 * 60_000)) {
+        json(res, { error: 'Trop de demandes. Patiente quelques minutes.' }, 429); return;
+      }
+      await sendVerificationEmail(user.id, user.email, user.name || '').catch(() => {});
+      json(res, { ok: true });
       return;
     }
 
@@ -1661,10 +1812,17 @@ http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url === '/api/auth/register') {
+      // Rate limit : max 5 inscriptions / heure / IP (anti-spam de comptes).
+      if (!rateLimit('reg:' + clientIp(req), 5, 3600_000)) {
+        json(res, { error: 'Trop de tentatives. Réessaie dans une heure.' }, 429); return;
+      }
       const b = await parseBody(req);
       const { email, password, name } = b;
       if (!email || !password) { json(res, { error: 'Email et mot de passe requis' }, 400); return; }
-      if (password.length < 8) { json(res, { error: 'Mot de passe trop court (8 caractères min)' }, 400); return; }
+      // Format email basique (présence d'un @ et d'un point dans le domaine).
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { json(res, { error: 'Adresse email invalide' }, 400); return; }
+      const pwErr = validatePassword(password);
+      if (pwErr) { json(res, { error: pwErr }, 400); return; }
       const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
       // Limite stricte de la bêta : on refuse les inscriptions au-delà de
       // MAX_BETA_USERS. Variable d'environnement BETA_MAX_USERS pour modifier
@@ -1697,10 +1855,13 @@ http.createServer(async (req, res) => {
           refByUserId = partnerId;
         }
       }
+      // email_verified : l'admin (1er compte) est auto-vérifié, les autres
+      // doivent confirmer via le lien email.
+      const emailVerified = isAdmin ? 1 : 0;
       db.prepare(`INSERT INTO users
-        (id, email, password_hash, name, is_admin, created_at, referred_by_code, referred_by_user_id)
-        VALUES (?,?,?,?,?,?,?,?)`)
-        .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString(), refByCode, refByUserId);
+        (id, email, password_hash, name, is_admin, created_at, referred_by_code, referred_by_user_id, email_verified)
+        VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(uid, email.toLowerCase(), hash, name || null, isAdmin, new Date().toISOString(), refByCode, refByUserId, emailVerified);
       // Assigner items existants sans user_id au premier utilisateur
       const orphans = db.prepare('SELECT COUNT(*) as c FROM items WHERE user_id IS NULL').get().c;
       if (orphans > 0) {
@@ -1713,9 +1874,14 @@ http.createServer(async (req, res) => {
       const expires = new Date(Date.now() + 30*24*3600*1000).toISOString();
       db.prepare('INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)').run(token, uid, expires);
       setSessionCookie(res, token);
+      // Envoi de l'email de confirmation (sauf admin, auto-vérifié).
+      if (!emailVerified) {
+        sendVerificationEmail(uid, email.toLowerCase(), name || '').catch(() => {});
+      }
       json(res, { user: {
         id: uid, email: email.toLowerCase(), name: name || null, plan: 'beta',
         is_admin: !!isAdmin, created_at: new Date().toISOString(),
+        email_verified: !!emailVerified,
       }});
       return;
     }
@@ -1723,6 +1889,12 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && url === '/api/auth/login') {
       const b = await parseBody(req);
       const { email, password } = b;
+      // Rate limit : max 10 essais / 15 min par IP+email (anti brute-force,
+      // sans bloquer tout un réseau partagé sur une seule cible).
+      const lkey = 'login:' + clientIp(req) + ':' + (email || '').toLowerCase().slice(0, 60);
+      if (!rateLimit(lkey, 10, 15 * 60_000)) {
+        json(res, { error: 'Trop de tentatives. Réessaie dans quelques minutes.' }, 429); return;
+      }
       const user = db.prepare('SELECT * FROM users WHERE email=?').get((email||'').toLowerCase());
       if (!user) { json(res, { error: 'Email ou mot de passe incorrect' }, 401); return; }
       const ok = await bcrypt.compare(password, user.password_hash);
@@ -1740,6 +1912,7 @@ http.createServer(async (req, res) => {
       json(res, { user: {
         id: user.id, email: user.email, name: user.name, plan: user.plan,
         is_admin: !!user.is_admin, created_at: user.created_at,
+        email_verified: !!user.email_verified,
       }});
       return;
     }
@@ -1748,19 +1921,27 @@ http.createServer(async (req, res) => {
     // POST /api/auth/forgot { email } → renvoie toujours { ok: true } pour ne pas
     // divulguer la liste des emails. Crée un token de reset valable 1h.
     if (req.method === 'POST' && url === '/api/auth/forgot') {
+      // Rate limit : max 5 demandes / heure / IP.
+      if (!rateLimit('forgot:' + clientIp(req), 5, 3600_000)) {
+        json(res, { error: 'Trop de demandes. Réessaie dans une heure.' }, 429); return;
+      }
       const b = await parseBody(req).catch(() => ({}));
       const email = (b.email || '').toLowerCase().trim();
       if (!email) { json(res, { error: 'Email requis' }, 400); return; }
-      const user = db.prepare('SELECT id, email FROM users WHERE email=?').get(email);
+      const user = db.prepare('SELECT id, email, name FROM users WHERE email=?').get(email);
       if (user) {
         const token = crypto.randomBytes(32).toString('hex');
         const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
         db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)')
           .run(token, user.id, expires);
-        // En attendant l'envoi d'email réel (SMTP), on log le lien (visible dans
-        // les logs Fly.io) et on le renvoie en dev seulement.
-        const resetUrl = `https://bambustock.com/reset-password?token=${token}`;
-        console.log(`  [Password Reset] ${user.email} → ${resetUrl}`);
+        const resetUrl = `${PUBLIC_BASE}/reset-password?token=${token}`;
+        const html = emailLayout(
+          'Réinitialise ton mot de passe',
+          `Bonjour${user.name ? ' ' + user.name : ''},<br><br>Tu as demandé à réinitialiser ton mot de passe. Le lien est valable 1 heure.`,
+          resetUrl, 'Choisir un nouveau mot de passe'
+        );
+        sendEmail(user.email, 'Réinitialisation de mot de passe · BambuStock', html).catch(() => {});
+        console.log(`  [Password Reset] ${user.email} → lien généré`);
         const devReply = process.env.NODE_ENV !== 'production'
           ? { ok: true, devLink: resetUrl }
           : { ok: true };
@@ -1777,7 +1958,8 @@ http.createServer(async (req, res) => {
       const b = await parseBody(req).catch(() => ({}));
       const { token: rtoken, password } = b;
       if (!rtoken || !password) { json(res, { error: 'Token et mot de passe requis' }, 400); return; }
-      if (password.length < 8) { json(res, { error: 'Mot de passe trop court (8 caractères min)' }, 400); return; }
+      const pwErr = validatePassword(password);
+      if (pwErr) { json(res, { error: pwErr }, 400); return; }
       const row = db.prepare(
         "SELECT user_id, used FROM password_resets WHERE token=? AND expires_at>datetime('now')"
       ).get(rtoken);
@@ -2956,7 +3138,8 @@ http.createServer(async (req, res) => {
         const b = await parseBody(req);
         const { currentPassword, newPassword } = b;
         if (!currentPassword || !newPassword) { json(res, { error: 'Champs requis' }, 400); return; }
-        if (newPassword.length < 8) { json(res, { error: 'Nouveau mot de passe trop court (8 min)' }, 400); return; }
+        const pwErr = validatePassword(newPassword);
+        if (pwErr) { json(res, { error: pwErr }, 400); return; }
         const fresh = db.prepare('SELECT password_hash FROM users WHERE id=?').get(userId);
         const ok = await bcrypt.compare(currentPassword, fresh.password_hash);
         if (!ok) { json(res, { error: 'Mot de passe actuel incorrect' }, 401); return; }
