@@ -4003,6 +4003,12 @@
 <!-- MAIN -->
 <main id="main">
   <div class="main-inner">
+    <!-- Bannière email non vérifié (affichée par updateVerifyBanner) -->
+    <div id="verifyBanner" style="display:none;background:rgba(245,158,11,0.1);border:1px solid #f59e0b;border-radius:10px;padding:10px 14px;margin-bottom:14px;align-items:center;gap:10px;flex-wrap:wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" width="18" height="18" style="flex-shrink:0"><path d="M4 4h16v16H4z" opacity="0"/><path d="M22 6l-10 7L2 6"/><rect x="2" y="4" width="20" height="16" rx="2"/></svg>
+      <span style="flex:1;min-width:160px;font-size:0.84rem;color:var(--text)">Confirme ton adresse email pour sécuriser ton compte.</span>
+      <button id="verifyResendBtn" onclick="resendVerification()" style="background:#f59e0b;color:#000;border:none;border-radius:7px;padding:6px 12px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit">Renvoyer l'email</button>
+    </div>
     <!-- VUE STOCK -->
     <div id="stockView" class="tab-active">
       <div class="filters" id="filtersBar" role="search">
@@ -6736,12 +6742,50 @@
     if (!u) return;
     window.currentUser = u;
     applyUserToHeader(u);
+    updateVerifyBanner();
     // Premier login : déclenche le wizard d'accueil. setTimeout pour laisser
     // l'app finir son init (handlers attachés, modales déclarées) avant
     // d'ouvrir un modal par-dessus.
     if (u.onboarding_completed === false) {
       setTimeout(() => { try { window.openOnboarding && window.openOnboarding(); } catch {} }, 300);
     }
+  })();
+
+  // Bannière "email non vérifié" : visible tant que email_verified est false.
+  function updateVerifyBanner() {
+    const el = document.getElementById('verifyBanner');
+    if (!el) return;
+    const u = window.currentUser;
+    el.style.display = (u && u.email_verified === false) ? 'flex' : 'none';
+  }
+  window.updateVerifyBanner = updateVerifyBanner;
+
+  async function resendVerification() {
+    const btn = document.getElementById('verifyResendBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Envoi…'; }
+    try {
+      const r = await fetch('/api/auth/resend-verification', { method: 'POST', credentials: 'same-origin' });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { showToast(d.already ? 'Email déjà confirmé' : 'Email de confirmation renvoyé ✓'); }
+      else      { showToast(d.error || 'Erreur', 'error'); }
+    } catch { showToast('Erreur réseau', 'error'); }
+    if (btn) { btn.disabled = false; btn.textContent = "Renvoyer l'email"; }
+  }
+  window.resendVerification = resendVerification;
+
+  // Toast après confirmation d'email (redirigé depuis /api/auth/verify).
+  (function handleVerifiedFlag() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('verified')) return;
+    const ok = params.get('verified') === '1';
+    setTimeout(() => {
+      try { showToast(ok ? 'Email confirmé, merci ✓' : 'Lien de confirmation invalide ou expiré', ok ? 'success' : 'error'); } catch {}
+    }, 500);
+    if (ok && window.currentUser) { window.currentUser.email_verified = true; updateVerifyBanner(); }
+    // Nettoie l'URL pour ne pas re-déclencher au refresh.
+    params.delete('verified');
+    const clean = location.pathname + (params.toString() ? '?' + params.toString() : '');
+    history.replaceState(null, '', clean);
   })();
 
   function applyUserToHeader(u) {
@@ -6770,6 +6814,7 @@
         window.location.replace('/');
       } else {
         window.currentUser = r.user;
+        updateVerifyBanner();
       }
     } catch { /* silent — le serveur a déjà validé la session pour servir cette page */ }
   })();

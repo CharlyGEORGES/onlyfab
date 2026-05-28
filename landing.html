@@ -1406,7 +1406,7 @@
         <div class="form-group">
           <label for="reg-password">Mot de passe <span style="color:var(--danger)">*</span></label>
           <div class="password-wrap">
-            <input type="password" id="reg-password" class="form-input" placeholder="8 caractères minimum" required autocomplete="new-password" minlength="8">
+            <input type="password" id="reg-password" class="form-input" placeholder="10 caractères minimum" required autocomplete="new-password" minlength="10">
             <button type="button" class="password-toggle" onclick="togglePassword(this)" aria-label="Afficher le mot de passe" tabindex="-1">
               <svg class="eye-on"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -1675,8 +1675,18 @@
       document.getElementById('reg-email').focus();
       return;
     }
-    if (password.length < 8) {
-      showAlert('register-alert', 'error', 'Le mot de passe doit contenir au moins 8 caractères.');
+    if (password.length < 10) {
+      showAlert('register-alert', 'error', 'Le mot de passe doit contenir au moins 10 caractères.');
+      return;
+    }
+    // Au moins 2 types de caractères (aligné sur la politique serveur).
+    let _cls = 0;
+    if (/[a-z]/.test(password)) _cls++;
+    if (/[A-Z]/.test(password)) _cls++;
+    if (/[0-9]/.test(password)) _cls++;
+    if (/[^a-zA-Z0-9]/.test(password)) _cls++;
+    if (_cls < 2) {
+      showAlert('register-alert', 'error', 'Mélange au moins 2 types : minuscules, majuscules, chiffres ou symboles.');
       return;
     }
 
