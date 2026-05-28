@@ -656,6 +656,45 @@
       gap: 10px;
       margin-bottom: 18px;
     }
+
+    /* Bouton "Enregistrer une vente" dans la vue détail */
+    .detail-sell-btn {
+      width: 100%; margin: 4px 0 14px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      background: var(--surface2); color: var(--primary);
+      border: 1px solid var(--primary); border-radius: 10px;
+      padding: 11px 16px; font-size: 0.9rem; font-weight: 700;
+      font-family: inherit; cursor: pointer;
+    }
+    .detail-sell-btn:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+    .sell-confirm-btn {
+      width: 100%; background: var(--primary); color: #fff;
+      border: none; border-radius: 10px; padding: 13px 16px;
+      font-size: 0.92rem; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+    .sell-confirm-btn:hover { filter: brightness(1.08); }
+    .sell-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Récap "Mes ventes" */
+    .sales-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .sales-stat {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; text-align: center;
+    }
+    .sales-stat.accent { border-color: var(--primary); }
+    .sales-stat-val { font-size: 1.7rem; font-weight: 800; color: var(--text); }
+    .sales-stat.accent .sales-stat-val { color: var(--primary); }
+    .sales-stat-lbl { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+    .sale-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 2px; border-bottom: 1px solid var(--border);
+    }
+    .sale-row:last-child { border-bottom: none; }
+    .sale-row-main { flex: 1; min-width: 0; }
+    .sale-row-name { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sale-row-sub { font-size: 0.72rem; color: var(--text-muted); }
+    .sale-row-amount { font-weight: 700; color: var(--primary); white-space: nowrap; }
+    .sales-empty { text-align: center; color: var(--text-muted); padding: 28px 0; font-size: 0.88rem; }
     .cat-stat {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -3929,6 +3968,13 @@
           </svg>
           <span data-i18n="header.categories">Gérer les catégories</span>
         </button>
+        <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();openSalesModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3a1 1 0 0 0 .7 1.7H17"/>
+            <circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/>
+          </svg>
+          <span data-i18n="header.sales">Mes ventes</span>
+        </button>
         <button class="user-menu-item" role="menuitem" onclick="closeUserMenu();openHistory()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <circle cx="12" cy="12" r="10"/>
@@ -4324,6 +4370,12 @@
         <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em" id="detailQtyLabel">Quantité totale</div>
         <div class="detail-qty-big" id="detailQtyTotal">0</div>
       </div>
+
+      <!-- Enregistrer une vente (sortie de stock) -->
+      <button type="button" class="detail-sell-btn" id="detailSellBtn" onclick="openSellModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3a1 1 0 0 0 .7 1.7H17"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>
+        Enregistrer une vente
+      </button>
 
       <!-- Variantes (mode simple) -->
       <div class="detail-variants" id="detailVariants"></div>
@@ -5410,6 +5462,64 @@
   </div>
 </div>
 
+<!-- VENTE (sortie de stock) -->
+<div class="modal-overlay" id="sellModal" role="dialog" aria-modal="true" aria-labelledby="sellModalTitle" aria-hidden="true">
+  <div class="modal" style="max-width:430px">
+    <div class="modal-header">
+      <div class="modal-title" id="sellModalTitle">Enregistrer une vente</div>
+      <button class="close-btn" onclick="closeSellModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="sellItemName" style="font-weight:700;font-size:1.05rem"></div>
+      <div id="sellAvail" style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px"></div>
+      <div class="form-group" id="sellVariantGroup" style="display:none">
+        <label for="sellVariant">Variante vendue</label>
+        <select id="sellVariant" onchange="updateSellAvail()"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sellQty">Quantité</label>
+          <input type="number" id="sellQty" min="1" step="1" value="1" inputmode="numeric" oninput="updateSellTotal()">
+        </div>
+        <div class="form-group">
+          <label for="sellPrice">Prix unitaire (€)</label>
+          <input type="number" id="sellPrice" min="0" step="0.01" inputmode="decimal" placeholder="optionnel" oninput="updateSellTotal()">
+        </div>
+      </div>
+      <div id="sellTotal" style="text-align:right;font-weight:700;font-size:1.05rem;margin:2px 0 16px;min-height:1.3em"></div>
+      <button type="button" class="sell-confirm-btn" id="sellConfirmBtn" onclick="confirmSale()">Confirmer la vente</button>
+      <p style="font-size:0.72rem;color:var(--text-muted);text-align:center;margin:10px 0 0">Le prix est optionnel — sans lui, la vente est comptée mais pas le chiffre d'affaires.</p>
+    </div>
+  </div>
+</div>
+
+<!-- MES VENTES (récap) -->
+<div class="modal-overlay" id="salesModal" role="dialog" aria-modal="true" aria-labelledby="salesModalTitle" aria-hidden="true">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" id="salesModalTitle">Mes ventes</div>
+      <button class="close-btn" onclick="closeSalesModal()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="sales-stats">
+        <div class="sales-stat">
+          <div class="sales-stat-val" id="salesUnits">0</div>
+          <div class="sales-stat-lbl">Articles vendus</div>
+        </div>
+        <div class="sales-stat accent">
+          <div class="sales-stat-val" id="salesRevenue">—</div>
+          <div class="sales-stat-lbl">Chiffre d'affaires</div>
+        </div>
+      </div>
+      <div id="salesRecent"></div>
+    </div>
+  </div>
+</div>
+
 <!-- FEEDBACK USER MODAL -->
 <div class="modal-overlay" id="feedbackModal" role="dialog" aria-modal="true" aria-labelledby="feedbackModalTitle" aria-hidden="true">
   <div class="modal" style="max-width:540px">
@@ -5886,6 +5996,7 @@
       'header.saved': 'Sauvegardé',
       'header.categories': 'Gérer les catégories',
       'header.history': 'Historique',
+      'header.sales': 'Mes ventes',
       'header.calculator': 'Calculateur de coût',
       'header.export': 'Exporter en CSV',
       'header.import': 'Importer un CSV',
@@ -6015,6 +6126,7 @@
       'header.saved': 'Saved',
       'header.categories': 'Manage categories',
       'header.history': 'History',
+      'header.sales': 'My sales',
       'header.calculator': 'Cost calculator',
       'header.export': 'Export to CSV',
       'header.import': 'Import a CSV',
@@ -6144,6 +6256,7 @@
       'header.saved': 'Guardado',
       'header.categories': 'Gestionar categorías',
       'header.history': 'Historial',
+      'header.sales': 'Mis ventas',
       'header.calculator': 'Calculadora de costes',
       'header.export': 'Exportar a CSV',
       'header.import': 'Importar un CSV',
@@ -6273,6 +6386,7 @@
       'header.saved': 'Gespeichert',
       'header.categories': 'Kategorien verwalten',
       'header.history': 'Verlauf',
+      'header.sales': 'Meine Verkäufe',
       'header.calculator': 'Kostenkalkulator',
       'header.export': 'CSV exportieren',
       'header.import': 'CSV importieren',
@@ -6402,6 +6516,7 @@
       'header.saved': 'Salvato',
       'header.categories': 'Gestisci categorie',
       'header.history': 'Cronologia',
+      'header.sales': 'Le mie vendite',
       'header.calculator': 'Calcolatore di costi',
       'header.export': 'Esporta in CSV',
       'header.import': 'Importa un CSV',
@@ -6531,6 +6646,7 @@
       'header.saved': 'Guardado',
       'header.categories': 'Gerir categorias',
       'header.history': 'Histórico',
+      'header.sales': 'Minhas vendas',
       'header.calculator': 'Calculadora de custos',
       'header.export': 'Exportar para CSV',
       'header.import': 'Importar um CSV',
@@ -9886,6 +10002,139 @@
   }
   window.updateProduceFilterUI = updateProduceFilterUI;
 
+  // ── VENTE (sortie de stock) ────────────────────────────────────────────
+  let _sellItemId = null;
+
+  function openSellModal() {
+    const item = items.find(i => i.id === detailId);
+    if (!item) return;
+    _sellItemId = item.id;
+    document.getElementById('sellItemName').textContent = item.name || '';
+    const isMulti = parseParts(item).length > 0;
+    const vg  = document.getElementById('sellVariantGroup');
+    const sel = document.getElementById('sellVariant');
+    if (!isMulti) {
+      const variants = parseVariants(item);
+      if (variants.length > 1) {
+        vg.style.display = '';
+        sel.innerHTML = variants.map((v, idx) =>
+          `<option value="${escHtml(v.color || '')}">${escHtml(v.colorName || v.color || ('Variante ' + (idx + 1)))} · ${v.qty || 0} dispo</option>`
+        ).join('');
+      } else { vg.style.display = 'none'; sel.innerHTML = ''; }
+    } else { vg.style.display = 'none'; sel.innerHTML = ''; }
+    document.getElementById('sellQty').value = 1;
+    document.getElementById('sellPrice').value = '';
+    document.getElementById('sellConfirmBtn').disabled = false;
+    updateSellAvail();
+    updateSellTotal();
+    document.getElementById('sellModal').classList.add('open');
+    setTimeout(() => document.getElementById('sellQty').focus(), 50);
+  }
+  window.openSellModal = openSellModal;
+
+  function _sellAvailable() {
+    const item = items.find(i => i.id === _sellItemId);
+    if (!item) return 0;
+    if (parseParts(item).length > 0) return item.assembledQty || 0;
+    const variants = parseVariants(item);
+    if (variants.length > 1) {
+      const sel = document.getElementById('sellVariant');
+      const v = variants.find(x => (x.color || '') === sel.value);
+      return v ? (v.qty || 0) : 0;
+    }
+    return totalQty(variants);
+  }
+
+  function updateSellAvail() {
+    const item = items.find(i => i.id === _sellItemId);
+    const avail = _sellAvailable();
+    const unit = (item && parseParts(item).length > 0) ? 'assemblage(s) disponible(s)' : 'en stock';
+    document.getElementById('sellAvail').textContent = `${avail} ${unit}`;
+    document.getElementById('sellQty').max = avail;
+    updateSellTotal();
+  }
+  window.updateSellAvail = updateSellAvail;
+
+  function updateSellTotal() {
+    const qty = Math.max(1, parseInt(document.getElementById('sellQty').value) || 1);
+    const price = parseFloat(document.getElementById('sellPrice').value);
+    const el = document.getElementById('sellTotal');
+    el.textContent = (isFinite(price) && price >= 0)
+      ? `Total : ${(price * qty).toFixed(2).replace('.', ',')} €` : '';
+  }
+  window.updateSellTotal = updateSellTotal;
+
+  async function confirmSale() {
+    const item = items.find(i => i.id === _sellItemId);
+    if (!item) return;
+    const qty = Math.max(1, parseInt(document.getElementById('sellQty').value) || 1);
+    const avail = _sellAvailable();
+    if (qty > avail) { showToast(`Stock insuffisant (${avail} disponible(s))`, 'error'); return; }
+    const priceRaw = document.getElementById('sellPrice').value.trim();
+    const unitPrice = priceRaw === '' ? null : parseFloat(priceRaw.replace(',', '.'));
+    if (unitPrice !== null && (!isFinite(unitPrice) || unitPrice < 0)) { showToast('Prix invalide', 'error'); return; }
+    const vg = document.getElementById('sellVariantGroup');
+    const variantColor = vg.style.display !== 'none' ? document.getElementById('sellVariant').value : undefined;
+    const btn = document.getElementById('sellConfirmBtn');
+    btn.disabled = true;
+    try {
+      const r = await api('POST', `/api/items/${item.id}/sell`, { qty, unitPrice, variantColor });
+      const idx = items.findIndex(i => i.id === item.id);
+      if (idx !== -1 && r.item) items[idx] = r.item;
+      closeSellModal();
+      render();
+      if (detailId === item.id) openDetail(item.id); // rafraîchit la vue détail
+      showToast(`Vente enregistrée · ${qty} × ${item.name}`);
+    } catch (e) {
+      showToast('Erreur : ' + (e.message || '').slice(0, 120), 'error');
+      btn.disabled = false;
+    }
+  }
+  window.confirmSale = confirmSale;
+
+  function closeSellModal() { document.getElementById('sellModal').classList.remove('open'); }
+  window.closeSellModal = closeSellModal;
+
+  // ── RÉCAP "MES VENTES" ─────────────────────────────────────────────────
+  async function openSalesModal() {
+    document.getElementById('salesModal').classList.add('open');
+    document.getElementById('salesUnits').textContent = '…';
+    document.getElementById('salesRevenue').textContent = '…';
+    document.getElementById('salesRecent').innerHTML = '';
+    try {
+      const s = await api('GET', '/api/sales/summary');
+      document.getElementById('salesUnits').textContent = s.units || 0;
+      document.getElementById('salesRevenue').textContent = (s.revenue > 0)
+        ? s.revenue.toFixed(2).replace('.', ',') + ' €' : '—';
+      const list = document.getElementById('salesRecent');
+      if (!s.recent || !s.recent.length) {
+        list.innerHTML = '<div class="sales-empty">Aucune vente enregistrée pour l\'instant.<br>Utilise « Enregistrer une vente » depuis la fiche d\'un article.</div>';
+        return;
+      }
+      list.innerHTML = s.recent.map(v => {
+        const d = new Date(v.ts);
+        const date = isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+        const sub = [date, v.label].filter(Boolean).join(' · ');
+        const amount = (typeof v.total === 'number')
+          ? v.total.toFixed(2).replace('.', ',') + ' €'
+          : '<span style="color:var(--text-muted);font-weight:500">—</span>';
+        return `<div class="sale-row">
+          <div class="sale-row-main">
+            <div class="sale-row-name">${escHtml(v.name || '')}</div>
+            <div class="sale-row-sub">${escHtml(sub)}${v.qty > 1 ? ' · ×' + v.qty : ''}</div>
+          </div>
+          <div class="sale-row-amount">${amount}</div>
+        </div>`;
+      }).join('');
+    } catch {
+      document.getElementById('salesRecent').innerHTML = '<div class="sales-empty">Erreur de chargement.</div>';
+    }
+  }
+  window.openSalesModal = openSalesModal;
+
+  function closeSalesModal() { document.getElementById('salesModal').classList.remove('open'); }
+  window.closeSalesModal = closeSalesModal;
+
   // ── VIRTUALISATION : état + helpers ────────────────────────────────────
   const _virtState = {
     filtered: [],
@@ -11649,11 +11898,12 @@
         qty:    { cls: 'qty',    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M3 3h18v18H3z"/><path d="M9 12h6M12 9v6"/></svg>' },
         delete: { cls: 'delete', svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>' },
         assemble: { cls: 'update', svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>' },
+        sale:   { cls: 'qty',    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 2.3a1 1 0 0 0 .7 1.7H17"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>' },
         'print-dismiss': { cls: 'delete', svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>' },
       };
       const labels = {
         add: 'Ajouté', update: 'Modifié', qty: 'Quantité', delete: 'Supprimé',
-        assemble: 'Assemblage',
+        assemble: 'Assemblage', sale: 'Vente',
         'print-dismiss': 'Impression ignorée',
         'undo-add': 'Annulation (ajout)', 'undo-update': 'Annulation (modif)', 'undo-delete': 'Restauré',
       };
@@ -11673,6 +11923,12 @@
         }
         if (h.action === 'update' && detail) desc = `Qté : ${detail.totalQty ?? '—'}`;
         if (h.action === 'assemble' && detail) desc = `${detail.delta > 0 ? '+' : ''}${detail.delta} assemblage(s)`;
+        if (h.action === 'sale' && detail) {
+          const bits = [`−${detail.qty || 1} vendu(s)`];
+          if (detail.label) bits.push(detail.label);
+          if (typeof detail.total === 'number') bits.push(`${detail.total.toFixed(2).replace('.', ',')} €`);
+          desc = bits.join(' · ');
+        }
         if (h.action === 'print-dismiss' && detail) {
           const bits = [];
           if (detail.bulk) bits.push('Lot');
