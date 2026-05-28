@@ -9325,6 +9325,30 @@
     { hex: '#9ca3af', name: 'Gris clair' },
     { hex: '#4b5563', name: 'Gris foncé' },
     { hex: '#000000', name: 'Noir' },
+    // ── Finitions spéciales ──────────────────────────────────────────────
+    // `hex` = couleur pleine représentative (stockée, utilisée partout en
+    // fallback) · `bg` = rendu du swatch (dégradé/motif) · `finish` = exclu
+    // de l'auto-nommage par proximité (closestColorName).
+    { hex: '#e8e6e1', name: 'Marbre blanc', finish: true,
+      bg: 'radial-gradient(#9a958c 1.2px, transparent 1.5px) 0 0/7px 7px, radial-gradient(#9a958c 1.2px, transparent 1.5px) 3.5px 3.5px/7px 7px, #ece9e3' },
+    { hex: '#3a3a3a', name: 'Marbre noir', finish: true,
+      bg: 'radial-gradient(#c9c9c9 1.2px, transparent 1.5px) 0 0/7px 7px, radial-gradient(#c9c9c9 1.2px, transparent 1.5px) 3.5px 3.5px/7px 7px, #2f2f2f' },
+    { hex: '#c0392b', name: 'Bicolore Rouge/Noir', finish: true,
+      bg: 'linear-gradient(135deg, #c0392b 0 50%, #1a1a1a 50% 100%)' },
+    { hex: '#2563eb', name: 'Bicolore Bleu/Blanc', finish: true,
+      bg: 'linear-gradient(135deg, #2563eb 0 50%, #f3f3f3 50% 100%)' },
+    { hex: '#c8a13a', name: 'Bicolore Noir/Or', finish: true,
+      bg: 'linear-gradient(135deg, #1a1a1a 0 50%, #c8a13a 50% 100%)' },
+    { hex: '#9333ea', name: 'Bicolore Violet/Rose', finish: true,
+      bg: 'linear-gradient(135deg, #a855f7 0 50%, #ec4899 50% 100%)' },
+    { hex: '#dfe7ea', name: 'Translucide naturel', finish: true,
+      bg: 'linear-gradient(rgba(223,231,234,0.45), rgba(223,231,234,0.45)), repeating-conic-gradient(#d4d4d4 0 25%, #ffffff 0 50%) 0/10px 10px' },
+    { hex: '#7cc7f0', name: 'Translucide bleu', finish: true,
+      bg: 'linear-gradient(rgba(124,199,240,0.55), rgba(124,199,240,0.55)), repeating-conic-gradient(#d4d4d4 0 25%, #ffffff 0 50%) 0/10px 10px' },
+    { hex: '#86e0b0', name: 'Translucide vert', finish: true,
+      bg: 'linear-gradient(rgba(134,224,176,0.55), rgba(134,224,176,0.55)), repeating-conic-gradient(#d4d4d4 0 25%, #ffffff 0 50%) 0/10px 10px' },
+    { hex: '#f0908f', name: 'Translucide rouge', finish: true,
+      bg: 'linear-gradient(rgba(240,144,143,0.55), rgba(240,144,143,0.55)), repeating-conic-gradient(#d4d4d4 0 25%, #ffffff 0 50%) 0/10px 10px' },
   ];
 
   // Distance euclidienne RGB simple. Suffisante pour matcher des couleurs
@@ -9344,6 +9368,7 @@
     if (!rgb) return '';
     let best = null, bestDist = Infinity;
     for (const c of COLOR_PALETTE) {
+      if (c.finish) continue; // les finitions (marbre, bicolore…) ne servent pas de cible d'auto-nommage
       const d = _rgbDist(rgb, _hexToRgb(c.hex));
       if (d < bestDist) { bestDist = d; best = c; }
     }
@@ -9357,8 +9382,8 @@
     return COLOR_PALETTE.map(c => {
       const sel = c.hex.toLowerCase() === (currentHex || '').toLowerCase() ? ' selected' : '';
       // onPickAttr est un nom de fonction globale qui prend (this, hex, name)
-      return `<button type="button" class="color-preset${sel}" style="background:${c.hex}"
-              title="${c.name}" aria-label="${c.name}"
+      return `<button type="button" class="color-preset${sel}" style="background:${c.bg || c.hex}"
+              data-hex="${c.hex}" title="${c.name}" aria-label="${c.name}"
               onclick="${onPickAttr}(this,'${c.hex}','${c.name}')"></button>`;
     }).join('');
   }
@@ -9368,41 +9393,54 @@
   // appelle callback(hex, name) avec le nom du préset le plus proche.
   let _cpickerCb = null;
   let _cpickerCurrent = '#6c47ff';
+  // Nom du préset sélectionné : sert à conserver le libellé d'une finition
+  // (Marbre, Bicolore, Translucide…) à la validation, au lieu de le
+  // re-déduire par proximité de couleur. Vidé dès qu'on édite le hex à la main.
+  let _cpickerName = '';
 
   function openColorPicker(initial, callback) {
     _cpickerCb = callback || null;
     _cpickerCurrent = (initial && /^#[0-9a-f]{6}$/i.test(initial)) ? initial : '#6c47ff';
+    // Si la valeur initiale correspond exactement à une finition, on
+    // restaure son nom pour ne pas le perdre si l'user valide sans rien toucher.
+    const initMatch = COLOR_PALETTE.find(c => c.finish && c.hex.toLowerCase() === _cpickerCurrent.toLowerCase());
+    _cpickerName = initMatch ? initMatch.name : '';
     const grid = document.getElementById('colorPickerGrid');
     if (!grid) return;
     grid.innerHTML = COLOR_PALETTE.map(c => {
       const sel = c.hex.toLowerCase() === _cpickerCurrent.toLowerCase() ? ' selected' : '';
-      return `<button type="button" class="cpicker-swatch${sel}" style="background:${c.hex}"
-              title="${c.name}" aria-label="${c.name}"
-              onclick="_cpickerSelect('${c.hex}')"></button>`;
+      return `<button type="button" class="cpicker-swatch${sel}" style="background:${c.bg || c.hex}"
+              data-hex="${c.hex}" title="${c.name}" aria-label="${c.name}"
+              onclick="_cpickerSelect('${c.hex}','${c.name}')"></button>`;
     }).join('');
     document.getElementById('colorPickerPreview').style.background = _cpickerCurrent;
     document.getElementById('colorPickerHex').value = _cpickerCurrent.toUpperCase();
     document.getElementById('colorPickerModal').classList.add('open');
   }
 
-  function _cpickerSelect(hex) {
+  function _cpickerSelect(hex, name) {
     _cpickerCurrent = hex;
-    document.getElementById('colorPickerPreview').style.background = hex;
+    _cpickerName = name || '';
+    // Aperçu : montre le rendu réel du préset (dégradé/motif si finition).
+    const match = COLOR_PALETTE.find(c => c.hex.toLowerCase() === hex.toLowerCase() && (!name || c.name === name));
+    document.getElementById('colorPickerPreview').style.background = (match && match.bg) || hex;
     document.getElementById('colorPickerHex').value = hex.toUpperCase();
     document.querySelectorAll('#colorPickerGrid .cpicker-swatch').forEach(b => {
-      b.classList.toggle('selected', _cpickerSameColor(b.style.backgroundColor, hex));
+      b.classList.toggle('selected', (b.dataset.hex || '').toLowerCase() === hex.toLowerCase());
     });
   }
 
   // Saisie hex manuelle : valide et applique en live si format OK.
+  // Toute édition manuelle annule le nom de finition mémorisé.
   function _cpickerHexInput(value) {
     let v = String(value || '').trim();
     if (v && !v.startsWith('#')) v = '#' + v;
     if (/^#[0-9a-f]{6}$/i.test(v)) {
       _cpickerCurrent = v;
+      _cpickerName = '';
       document.getElementById('colorPickerPreview').style.background = v;
       document.querySelectorAll('#colorPickerGrid .cpicker-swatch').forEach(b => {
-        b.classList.toggle('selected', _cpickerSameColor(b.style.backgroundColor, v));
+        b.classList.toggle('selected', (b.dataset.hex || '').toLowerCase() === v.toLowerCase());
       });
     }
   }
@@ -9421,7 +9459,10 @@
       const raw = document.getElementById('colorPickerHex').value.trim();
       let hex = raw.startsWith('#') ? raw : '#' + raw;
       if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = _cpickerCurrent;
-      try { _cpickerCb(hex.toLowerCase(), closestColorName(hex)); } catch {}
+      // Nom : on garde le libellé de finition s'il a été sélectionné (et non
+      // écrasé par une saisie hex manuelle), sinon on déduit par proximité.
+      const name = _cpickerName || closestColorName(hex);
+      try { _cpickerCb(hex.toLowerCase(), name); } catch {}
     }
     document.getElementById('colorPickerModal').classList.remove('open');
     _cpickerCb = null;
@@ -10533,7 +10574,9 @@
       nameInput.dataset.auto = '1';
     }
     wrapAll.querySelectorAll('.color-preset').forEach(b => {
-      b.classList.toggle('selected', _sameColor(b, hex));
+      // data-hex couvre aussi les finitions (dégradés) dont backgroundColor est vide.
+      const bh = b.dataset.hex ? b.dataset.hex.toLowerCase() === (hex || '').toLowerCase() : _sameColor(b, hex);
+      b.classList.toggle('selected', bh);
     });
   }
 
