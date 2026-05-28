@@ -3570,6 +3570,72 @@
     /* Les lignes filament / imprimante avaient les spinners natifs du
        navigateur qui rendent très moche (flèches grises tronquées). On les
        cache et on stylise un bouton de suppression rond avec un vrai SVG. */
+    /* VUE CLIENT (présentation) — plein écran, propre, sans détails internes */
+    .cc-screen {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+      transform: scale(0.97);
+      transition: transform 0.2s;
+    }
+    .modal-overlay.open .cc-screen { transform: scale(1); }
+    .cc-close {
+      position: absolute; top: 18px; right: 18px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text-muted); border-radius: 10px;
+      width: 44px; height: 44px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cc-close:hover { color: var(--text); border-color: var(--primary); }
+    .cc-card {
+      width: 100%; max-width: 460px; text-align: center;
+    }
+    .cc-eyebrow {
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.18em;
+      color: var(--primary); font-weight: 700; margin-bottom: 12px;
+    }
+    .cc-objet {
+      width: 100%; text-align: center; background: transparent;
+      border: none; border-bottom: 2px dashed transparent;
+      color: var(--text); font-size: 1.6rem; font-weight: 800;
+      font-family: inherit; padding: 4px 8px; margin-bottom: 28px;
+      outline: none; box-sizing: border-box;
+    }
+    .cc-objet::placeholder { color: var(--text-muted); opacity: 0.5; font-weight: 600; }
+    .cc-objet:focus { border-bottom-color: var(--border); }
+    .cc-facts {
+      display: flex; gap: 14px; margin-bottom: 28px; justify-content: center;
+    }
+    .cc-fact {
+      flex: 1; max-width: 180px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 20px 14px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      color: var(--primary);
+    }
+    .cc-fact-val { font-size: 1.5rem; font-weight: 800; color: var(--text); }
+    .cc-fact-label {
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-muted); font-weight: 600;
+    }
+    .cc-price {
+      background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, transparent), color-mix(in srgb, var(--accent) 18%, transparent));
+      border: 1px solid var(--border); border-radius: 18px;
+      padding: 24px;
+    }
+    .cc-price-label {
+      font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--text-muted); font-weight: 700; margin-bottom: 6px;
+    }
+    .cc-price-val { font-size: 3rem; font-weight: 800; color: var(--text); line-height: 1.05; }
+    .cc-price-sub { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+    @media (max-width: 480px) {
+      .cc-fact-val { font-size: 1.25rem; }
+      .cc-price-val { font-size: 2.4rem; }
+      .cc-objet { font-size: 1.35rem; }
+    }
+
     .calc-row {
       display: grid;
       grid-template-columns: 1fr 100px 32px;
@@ -4783,8 +4849,7 @@
       <div id="calcResult" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
           <span>Filament <span id="calcOutFilName" style="opacity:0.7"></span></span><span id="calcOutFilament">—</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
+        </div>        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
           <span>Électricité <span id="calcOutPrinterName" style="opacity:0.7"></span></span><span id="calcOutElec">—</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.82rem;color:var(--text-muted);margin-bottom:6px">
@@ -4817,6 +4882,44 @@
           </div>
           <div style="font-size:0.72rem;color:var(--text-muted);margin-top:8px" id="calcOutProfit">Saisis le poids et le temps pour démarrer.</div>
         </div>
+      </div>
+
+      <button type="button" id="calcClientBtn" onclick="openCalcClientView()"
+              style="width:100%;margin-top:12px;background:var(--surface2);color:var(--primary);border:1px solid var(--primary);border-radius:10px;padding:11px 16px;font-size:0.88rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M2 3h20v14H2z"/><path d="M8 21h8M12 17v4"/></svg>
+        Présenter au client
+      </button>
+      <p style="font-size:0.7rem;color:var(--text-muted);text-align:center;margin:6px 0 0">Affiche un écran propre avec uniquement temps, filament et prix.</p>
+    </div>
+  </div>
+</div>
+
+<!-- VUE CLIENT (présentation plein écran) — temps machine + filament + prix,
+     aucune mention de marge ni de coûts internes. -->
+<div class="modal-overlay" id="calcClientModal" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="cc-screen">
+    <button class="cc-close" onclick="closeCalcClientView()" aria-label="Fermer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <div class="cc-card">
+      <div class="cc-eyebrow">Estimation</div>
+      <input type="text" id="ccObjet" class="cc-objet" placeholder="Nom de la pièce (optionnel)" autocomplete="off">
+      <div class="cc-facts">
+        <div class="cc-fact">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="26" height="26"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <div class="cc-fact-val" id="ccTime">—</div>
+          <div class="cc-fact-label">Temps machine</div>
+        </div>
+        <div class="cc-fact">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="26" height="26"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
+          <div class="cc-fact-val" id="ccFilament">—</div>
+          <div class="cc-fact-label" id="ccFilamentLabel">Filament</div>
+        </div>
+      </div>
+      <div class="cc-price">
+        <div class="cc-price-label">Prix</div>
+        <div class="cc-price-val" id="ccPrice">—</div>
+        <div class="cc-price-sub" id="ccPriceSub"></div>
       </div>
     </div>
   </div>
@@ -7340,6 +7443,7 @@
   //   priceTTC = priceHT × (1 + TVA/100)
   // Le temps de main d'œuvre est indépendant du temps d'impression
   // (un print de 10h ne demande pas 10h de manipulation).
+  let _calcLast = null; // valeurs montrables (temps/filament/prix) pour la vue client
   function recomputeCalc() {
     const fmt = n => isFinite(n) ? n.toFixed(2) + ' €' : '—';
     const elecRate  = parseFloat(document.getElementById('calcElecRate').value)    || 0;
@@ -7413,8 +7517,46 @@
     } else {
       profEl.textContent = 'Saisis le poids et le temps pour démarrer.';
     }
+
+    // Mémorise les valeurs "montrables" pour la vue client (temps,
+    // filament, prix final) — pas de coûts ni de marge.
+    _calcLast = {
+      weight, hours,
+      filName:    fil ? (fil.name || '') : '',
+      finalPrice: tvaOn ? priceTtc : priceHt,
+      ttc:        tvaOn,
+      ready:      (weight > 0 || hours > 0),
+    };
   }
   window.recomputeCalc = recomputeCalc;
+
+  // ── VUE CLIENT (présentation) ────────────────────────────────────────────
+  // Formate un nombre d'heures en "Xh", "X h YY" ou "YY min".
+  function _fmtMachineTime(hours) {
+    if (!hours || hours <= 0) return '—';
+    if (hours < 1) return Math.round(hours * 60) + ' min';
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    return m > 0 ? `${h} h ${String(m).padStart(2,'0')}` : `${h} h`;
+  }
+
+  function openCalcClientView() {
+    const d = _calcLast;
+    if (!d || !d.ready) { showToast('Saisis d\'abord le poids et le temps', 'error'); return; }
+    document.getElementById('ccTime').textContent = _fmtMachineTime(d.hours);
+    document.getElementById('ccFilament').textContent = d.weight > 0 ? `${Math.round(d.weight)} g` : '—';
+    document.getElementById('ccFilamentLabel').textContent = d.filName ? d.filName : 'Filament';
+    const fmt = n => isFinite(n) ? n.toFixed(2).replace('.', ',') + ' €' : '—';
+    document.getElementById('ccPrice').textContent = fmt(d.finalPrice);
+    document.getElementById('ccPriceSub').textContent = d.ttc ? 'TTC' : '';
+    document.getElementById('calcClientModal').classList.add('open');
+  }
+  window.openCalcClientView = openCalcClientView;
+
+  function closeCalcClientView() {
+    document.getElementById('calcClientModal').classList.remove('open');
+  }
+  window.closeCalcClientView = closeCalcClientView;
 
   // ── ADMIN PANEL ───────────────────────────────────────────────────────────
   // ── FEEDBACK USER ────────────────────────────────────────────────────
