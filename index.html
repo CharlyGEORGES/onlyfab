@@ -512,6 +512,29 @@
       padding: 10px 14px;
     }
 
+    /* Filtre "À produire" : isole les articles sous leur seuil de stock. */
+    .produce-filter {
+      display: inline-flex; align-items: center; gap: 7px;
+      flex-shrink: 0; cursor: pointer;
+      background: var(--surface2); color: var(--text-muted);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px 12px; font-size: 0.84rem; font-weight: 600;
+      font-family: inherit; white-space: nowrap;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    .produce-filter svg { width: 16px; height: 16px; }
+    .produce-filter:hover { color: var(--text); border-color: var(--text-muted); }
+    .produce-filter[aria-pressed="true"] {
+      background: rgba(245,158,11,0.12); color: #f59e0b; border-color: #f59e0b;
+    }
+    .produce-count {
+      min-width: 20px; text-align: center;
+      background: #f59e0b; color: #1a1a24;
+      border-radius: 999px; padding: 1px 6px;
+      font-size: 0.74rem; font-weight: 800;
+    }
+    .produce-filter[aria-pressed="false"] .produce-count { background: var(--border); color: var(--text); }
+
     .filter-divider {
       width: 1px;
       height: 22px;
@@ -4031,6 +4054,11 @@
           <label for="searchInput" class="sr-only" data-i18n="filters.search">Rechercher un objet</label>
           <input id="searchInput" type="text" placeholder="Rechercher un objet..." data-i18n-attr="placeholder:filters.searchPlaceholder">
         </div>
+        <button type="button" id="produceFilterBtn" class="produce-filter" onclick="toggleProduceFilter()" aria-pressed="false" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span data-i18n="filters.toProduce">À produire</span>
+          <span id="produceCount" class="produce-count">0</span>
+        </button>
       </div>
       <div class="cat-stats" id="catStats" hidden aria-live="polite"></div>
       <div class="grid" id="grid"></div>
@@ -5842,6 +5870,7 @@
       'filters.allCategories': 'Toutes',
       'filters.search': 'Rechercher un objet',
       'filters.searchPlaceholder': 'Rechercher un objet…',
+      'filters.toProduce': 'À produire',
       'fab.addItem': 'Ajouter un article',
       'modal.close': 'Fermer',
       'modal.save': 'Enregistrer',
@@ -5968,6 +5997,7 @@
       'filters.allCategories': 'All',
       'filters.search': 'Search an item',
       'filters.searchPlaceholder': 'Search an item…',
+      'filters.toProduce': 'To produce',
       'fab.addItem': 'Add an item',
       'modal.close': 'Close',
       'modal.save': 'Save',
@@ -6094,6 +6124,7 @@
       'filters.allCategories': 'Todas',
       'filters.search': 'Buscar un objeto',
       'filters.searchPlaceholder': 'Buscar un objeto…',
+      'filters.toProduce': 'Por producir',
       'fab.addItem': 'Añadir un artículo',
       'modal.close': 'Cerrar',
       'modal.save': 'Guardar',
@@ -6220,6 +6251,7 @@
       'filters.allCategories': 'Alle',
       'filters.search': 'Objekt suchen',
       'filters.searchPlaceholder': 'Objekt suchen…',
+      'filters.toProduce': 'Zu produzieren',
       'fab.addItem': 'Artikel hinzufügen',
       'modal.close': 'Schließen',
       'modal.save': 'Speichern',
@@ -6346,6 +6378,7 @@
       'filters.allCategories': 'Tutte',
       'filters.search': 'Cerca un oggetto',
       'filters.searchPlaceholder': 'Cerca un oggetto…',
+      'filters.toProduce': 'Da produrre',
       'fab.addItem': 'Aggiungi un articolo',
       'modal.close': 'Chiudi',
       'modal.save': 'Salva',
@@ -6472,6 +6505,7 @@
       'filters.allCategories': 'Todas',
       'filters.search': 'Pesquisar um objeto',
       'filters.searchPlaceholder': 'Pesquisar um objeto…',
+      'filters.toProduce': 'A produzir',
       'fab.addItem': 'Adicionar artigo',
       'modal.close': 'Fechar',
       'modal.save': 'Guardar',
@@ -9597,12 +9631,10 @@
   // ── RENDER ────────────────────────────────────────────────────────────────
   function getFiltered() {
     let result = [...items];
+    // Filtre "À produire" : on réutilise getItemStockStatus pour rester
+    // strictement cohérent avec le badge "Stock faible" affiché sur les cartes.
     if (currentFilter === 'low') {
-      result = result.filter(i => {
-        if (!i.trackStock && i.trackStock !== undefined) return false;
-        const variants = parseVariants(i);
-        return totalQty(variants) <= (i.threshold ?? 3);
-      });
+      result = result.filter(i => getItemStockStatus(i).isLow);
     }
     if (currentCategoryFilter) result = result.filter(i => i.category === currentCategoryFilter);
     if (currentSearchQuery) {
@@ -9763,6 +9795,7 @@
     const filtered = getFiltered();
     const grid = document.getElementById('grid');
     _renderCategoryStats();
+    updateProduceFilterUI();
 
     if (filtered.length === 0) {
       grid.innerHTML = `<div class="empty">
@@ -9780,6 +9813,30 @@
     grid.style.cssText = '';
     grid.innerHTML = filtered.map(buildCard).join('');
   }
+
+  // ── FILTRE "À PRODUIRE" (stock sous le seuil) ──────────────────────────
+  // Bascule l'affichage entre tous les articles et seulement ceux à
+  // réimprimer. Le compteur se met à jour à chaque render.
+  function toggleProduceFilter() {
+    currentFilter = (currentFilter === 'low') ? 'all' : 'low';
+    updateProduceFilterUI();
+    render();
+  }
+  window.toggleProduceFilter = toggleProduceFilter;
+
+  function updateProduceFilterUI() {
+    const btn = document.getElementById('produceFilterBtn');
+    if (!btn) return;
+    const lowCount = items.filter(i => getItemStockStatus(i).isLow).length;
+    // Bouton masqué tant qu'aucun article n'est en stock faible ET que le
+    // filtre n'est pas actif (évite un bouton "0" inutile).
+    const active = currentFilter === 'low';
+    btn.hidden = lowCount === 0 && !active;
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    const cnt = document.getElementById('produceCount');
+    if (cnt) cnt.textContent = lowCount;
+  }
+  window.updateProduceFilterUI = updateProduceFilterUI;
 
   // ── VIRTUALISATION : état + helpers ────────────────────────────────────
   const _virtState = {
@@ -9948,6 +10005,7 @@
     const filtered = getFiltered();
     const grid = document.getElementById('grid');
     renderInventory(filtered, grid);
+    updateProduceFilterUI();
 
     // Debounce la sauvegarde (300ms)
     clearTimeout(_invSaveTimers[itemId]);
