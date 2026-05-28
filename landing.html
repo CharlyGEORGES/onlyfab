@@ -1034,6 +1034,55 @@
     @supports (padding: env(safe-area-inset-bottom)) {
       body { padding-bottom: env(safe-area-inset-bottom); }
     }
+
+    /* ── FAQ ── */
+    .faq-list { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+    .faq-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+    }
+    .faq-item[open] { border-color: var(--primary); }
+    .faq-q {
+      list-style: none; cursor: pointer; padding: 18px 22px;
+      font-size: 1rem; font-weight: 600; color: var(--text);
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .faq-q::-webkit-details-marker { display: none; }
+    .faq-q::after {
+      content: "+"; font-size: 1.5rem; font-weight: 400; color: var(--primary);
+      flex-shrink: 0; transition: transform 0.2s; line-height: 1;
+    }
+    .faq-item[open] .faq-q::after { transform: rotate(45deg); }
+    .faq-a {
+      padding: 0 22px 20px; color: var(--text-muted);
+      font-size: 0.95rem; line-height: 1.6;
+    }
+    .faq-a strong { color: var(--text); font-weight: 600; }
+    .faq-tag {
+      display: inline-block; font-size: 0.7rem; font-weight: 700;
+      padding: 2px 9px; border-radius: 999px; margin-right: 6px; vertical-align: middle;
+    }
+    .faq-tag.yes  { background: rgba(0,212,170,0.15);  color: var(--accent); }
+    .faq-tag.soon { background: rgba(245,158,11,0.15); color: #f59e0b; }
+
+    /* ── ENGAGEMENTS BÊTA ── */
+    .pledge-grid {
+      max-width: 860px; margin: 36px auto 0;
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+    }
+    .pledge-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 20px; display: flex; gap: 14px; align-items: flex-start;
+    }
+    .pledge-icon {
+      flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px;
+      background: rgba(108,71,255,0.12); color: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pledge-icon svg { width: 20px; height: 20px; }
+    .pledge-title { font-weight: 700; color: var(--text); margin-bottom: 4px; font-size: 0.98rem; }
+    .pledge-text { font-size: 0.86rem; color: var(--text-muted); line-height: 1.5; }
+    @media (max-width: 640px) { .pledge-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -1355,7 +1404,7 @@
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
             </div>
-            Export / Import JSON de votre stock
+            Export / Import CSV de votre stock
           </li>
           <li class="pricing-feature">
             <div class="pricing-feature-icon">
@@ -1377,6 +1426,112 @@
         <a href="#register" class="btn btn-primary" style="width:100%;justify-content:center;padding:14px;">
           Commencer gratuitement
         </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FAQ ── -->
+<section id="faq">
+  <div class="container">
+    <div class="section-header centered">
+      <div class="section-label">Questions fréquentes</div>
+      <h2 class="section-title">Ce que vous nous demandez</h2>
+      <p class="section-sub">Réponses honnêtes : ce qui existe aujourd'hui, et ce qui arrive.</p>
+    </div>
+    <div class="faq-list">
+
+      <details class="faq-item">
+        <summary class="faq-q">Est-ce qu'il gère les ventes, ou seulement les ajouts au stock ?</summary>
+        <div class="faq-a">
+          <span class="faq-tag yes">Oui</span>
+          Chaque fiche article a un bouton <strong>« Enregistrer une vente »</strong> qui décrémente le stock (par couleur, ou par objet assemblé pour les pièces multiples). Le prix de vente est optionnel : renseignez-le et le menu <strong>« Mes ventes »</strong> agrège automatiquement vos unités vendues et votre chiffre d'affaires. Toutes les ventes sont tracées dans l'historique (et annulables).
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary class="faq-q">Y a-t-il une intégration Etsy, Shopify, WooCommerce ou un export CSV ?</summary>
+        <div class="faq-a">
+          <span class="faq-tag yes">CSV</span><span class="faq-tag soon">Connecteurs à venir</span>
+          <strong>Import et export CSV complets</strong> dès aujourd'hui (aller-retour, toutes vos données : articles, SKU, variantes, pièces, stock). Les connecteurs natifs Etsy / Shopify / WooCommerce sont sur la roadmap. En attendant, le CSV vous garantit que vos données restent les vôtres et circulent librement.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary class="faq-q">Gère-t-il les seuils de réimpression (« si stock &lt; 3, à reproduire ») ?</summary>
+        <div class="faq-a">
+          <span class="faq-tag yes">Oui</span>
+          Chaque article a un <strong>seuil d'alerte</strong> (3 par défaut, ajustable). Dès qu'un article passe en dessous, il est signalé, et le filtre <strong>« À produire »</strong> liste en un clic tout ce qu'il faut réimprimer — votre file de production, toujours à jour.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary class="faq-q">Peut-on avoir des SKU / références propres par produit ?</summary>
+        <div class="faq-a">
+          <span class="faq-tag yes">Par produit</span><span class="faq-tag soon">Par variante à venir</span>
+          Oui, chaque article a un champ <strong>SKU / référence</strong> libre, recherchable et inclus dans l'export CSV — idéal pour rester aligné avec votre catalogue ou votre boutique. Le SKU distinct <strong>par variante de couleur</strong> est prévu dans une prochaine étape.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary class="faq-q">Gère-t-il les produits composés (un objet vendu = plusieurs pièces imprimées) ?</summary>
+        <div class="faq-a">
+          <span class="faq-tag yes">Oui</span>
+          C'est l'une de ses forces. Un article peut être composé de <strong>plusieurs pièces</strong>, chacune avec son filament, ses couleurs et sa quantité requise. BambuStock calcule alors combien d'<strong>exemplaires complets</strong> vous pouvez assembler (limité par la pièce la plus rare) et suit vos assemblages.
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary class="faq-q">Que devient le service après la bêta : prix, limites, mes données ?</summary>
+        <div class="faq-a">
+          La bêta est <strong>gratuite et complète</strong>. Pour l'après, nos engagements sont juste en dessous : aucune perte de données, préavis avant tout changement de tarif, tarif préférentiel pour les bêta-testeurs, et export possible à tout moment. Vos données vous appartiennent, point.
+        </div>
+      </details>
+
+    </div>
+
+    <!-- Engagements bêta → production -->
+    <div class="section-header centered" style="margin-top:64px">
+      <div class="section-label">Nos engagements</div>
+      <h2 class="section-title">Vous pouvez nous faire confiance</h2>
+      <p class="section-sub">Tester un outil en bêta ne doit pas être un risque. Voici ce sur quoi nous nous engageons.</p>
+    </div>
+    <div class="pledge-grid">
+      <div class="pledge-card">
+        <div class="pledge-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <div>
+          <div class="pledge-title">Vos données vous appartiennent</div>
+          <div class="pledge-text">Export CSV complet à tout moment, sans condition. Aucun verrouillage : vous partez avec tout votre stock si vous le souhaitez.</div>
+        </div>
+      </div>
+      <div class="pledge-card">
+        <div class="pledge-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div>
+          <div class="pledge-title">Aucune perte de données</div>
+          <div class="pledge-text">Le passage de la bêta à la version finale se fera sans perte : vous retrouverez vos articles, variantes, pièces et historique intacts.</div>
+        </div>
+      </div>
+      <div class="pledge-card">
+        <div class="pledge-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div>
+          <div class="pledge-title">Préavis avant tout changement de tarif</div>
+          <div class="pledge-text">Si un abonnement payant arrive après la bêta, vous serez prévenu au moins 30 jours à l'avance. Jamais de prélèvement surprise.</div>
+        </div>
+      </div>
+      <div class="pledge-card">
+        <div class="pledge-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div>
+          <div class="pledge-title">Tarif préférentiel bêta-testeurs</div>
+          <div class="pledge-text">Vous nous aidez à construire l'outil : vous garderez un tarif avantageux (ou des fonctions offertes) par rapport aux futurs inscrits.</div>
+        </div>
       </div>
     </div>
   </div>
