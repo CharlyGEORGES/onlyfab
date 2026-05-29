@@ -1056,11 +1056,20 @@ async function pollBambuForUser(userId) {
   const printerSerials = new Set(printers.map(p => p.serial));
   let imported = 0;
 
+  // Diagnostic : distribution des statuts renvoyés par Bambu. Permet de
+  // confirmer/affiner le filtre ci-dessous si des échecs passaient encore
+  // (l'API cloud ne documente pas clairement ses codes de statut).
+  if (tasks.length) {
+    const byStatus = {};
+    for (const t of tasks) { const k = String(t.status); byStatus[k] = (byStatus[k] || 0) + 1; }
+    console.log(`  [Bambu poll] User ${userId} : ${tasks.length} task(s), statuts = ${JSON.stringify(byStatus)}`);
+  }
+
   for (const task of tasks) {
-    // Filtre : on veut uniquement les prints terminés. Bambu utilise
-    // status numérique : on a vu '4' = success, '3' = en cours, autres
-    // valeurs incluent failed/cancelled. On accepte 4 et la string
-    // 'COMPLETED' au cas où l'API change.
+    // Filtre : on ne remonte QUE les impressions réussies. Bambu utilise un
+    // status numérique : 4 = réussite ; les échecs / annulations portent un
+    // autre code et sont donc ignorés ici. On accepte aussi les libellés
+    // 'COMPLETED'/'SUCCESS' au cas où l'API évolue.
     const st = task.status;
     const completed = st === 4 || st === '4' || st === 'COMPLETED' || st === 'SUCCESS';
     if (!completed) continue;
