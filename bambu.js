@@ -117,8 +117,26 @@ function connect({ token, printers, onPrintComplete, onStateChange, userEmail })
       const print = data.print;
       if (!print) return;
 
-      // On ne s'intéresse qu'aux impressions terminées
+      // On ne s'intéresse qu'aux impressions terminées…
       if (print.gcode_state !== 'FINISH') return;
+
+      // …mais "FINISH" ne veut pas dire "réussie" : certaines imprimantes
+      // (P1/A1 selon le firmware) rapportent FINISH même quand l'impression
+      // a été ARRÊTÉE par l'utilisateur ou a ÉCHOUÉ. On ne remonte donc que
+      // les vraies réussites :
+      //   - aucun code d'erreur (print_error == 0)
+      //   - le dernier layer atteint == total (sinon = arrêt en cours)
+      // Les champs absents (null) ne déclenchent pas le filtre (sécurité :
+      // on n'écarte jamais un print légitime faute de données).
+      const printErr = Number(print.print_error);
+      const curLayer = Number(print.layer_num);
+      const totLayer = Number(print.total_layer_num);
+      const failed   = printErr > 0;
+      const aborted  = totLayer > 0 && curLayer > 0 && curLayer < totLayer;
+      if (failed || aborted) {
+        console.log(`  [Bambu] Impression ignorée (échec/abandon) — err=${print.print_error ?? '?'} layer=${print.layer_num ?? '?'}/${print.total_layer_num ?? '?'}`);
+        return;
+      }
 
       const serial = topic.split('/')[1];
       const printer = printers.find(p => p.serial === serial);
