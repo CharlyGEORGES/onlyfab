@@ -1484,7 +1484,12 @@ async function sendVerificationEmail(userId, email, name) {
     `Bonjour${name ? ' ' + name : ''},<br><br>Bienvenue sur BambuStock ! Confirme ton adresse pour sécuriser ton compte.`,
     url, 'Confirmer mon email'
   );
-  await sendEmail(email, 'Confirme ton email · BambuStock', html);
+  const sendRes = await sendEmail(email, 'Confirme ton email · BambuStock', html)
+    .catch(e => ({ ok: false, err: e?.message }));
+  // On log toujours l'URL pour permettre une confirmation manuelle via
+  // `fly logs` si Resend est mal configuré.
+  console.log(`  [Verify] ${email} → ${url} · email=${sendRes.ok ? 'envoyé' : 'NON envoyé'}`);
+  return sendRes;
 }
 
 // ── APP SETTINGS / DISCORD WEBHOOK ───────────────────────────────────────
@@ -1953,8 +1958,16 @@ http.createServer(async (req, res) => {
           `Bonjour${user.name ? ' ' + user.name : ''},<br><br>Tu as demandé à réinitialiser ton mot de passe. Le lien est valable 1 heure.`,
           resetUrl, 'Choisir un nouveau mot de passe'
         );
-        sendEmail(user.email, 'Réinitialisation de mot de passe · BambuStock', html).catch(() => {});
-        console.log(`  [Password Reset] ${user.email} → lien généré`);
+        // On envoie l'email ET on log toujours l'URL : permet de récupérer
+        // un compte via `fly logs` si Resend est mal configuré (clé absente,
+        // domaine non vérifié, etc.). Le token expire en 1 h donc le risque
+        // d'exposition prolongée dans les logs reste limité.
+        const sendRes = await sendEmail(
+          user.email,
+          'Réinitialisation de mot de passe · BambuStock',
+          html,
+        ).catch(e => ({ ok: false, err: e?.message }));
+        console.log(`  [Password Reset] ${user.email} → ${resetUrl} · email=${sendRes.ok ? 'envoyé' : 'NON envoyé'}`);
         const devReply = process.env.NODE_ENV !== 'production'
           ? { ok: true, devLink: resetUrl }
           : { ok: true };
