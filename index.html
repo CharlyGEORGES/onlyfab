@@ -3702,6 +3702,32 @@
       color: var(--primary);
     }
     .cc-fact-val { font-size: 1.5rem; font-weight: 800; color: var(--text); }
+    /* Inputs éditables stylés comme les gros nombres : pas de chrome de form,
+       juste le chiffre. Soulignement discret au focus pour signaler l'édition. */
+    .cc-fact .cc-edit-row {
+      display: flex; align-items: baseline; justify-content: center; gap: 4px;
+    }
+    .cc-fact .cc-edit-row input,
+    .cc-fact-val.cc-edit {
+      background: transparent; border: none; outline: none;
+      color: var(--text); font-family: inherit;
+      font-size: 1.5rem; font-weight: 800;
+      text-align: center; padding: 0;
+      border-bottom: 1.5px dashed transparent; transition: border-color .15s;
+      -moz-appearance: textfield;
+    }
+    .cc-fact input::-webkit-outer-spin-button,
+    .cc-fact input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .cc-fact input:focus { border-bottom-color: var(--primary); }
+    .cc-fact input.cc-num-h, .cc-fact input.cc-num-m { width: 2.2ch; }
+    .cc-fact input.cc-num-g { width: 3.5ch; }
+    .cc-fact input.cc-num-lab { width: 3ch; }
+    .cc-edit-unit {
+      font-size: 0.95rem; color: var(--text-muted); font-weight: 700;
+    }
+    .cc-fact-labor {
+      flex: 1 1 100%; max-width: none; margin-bottom: 14px;
+    }
     .cc-fact-label {
       font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
       color: var(--text-muted); font-weight: 600;
@@ -3717,6 +3743,7 @@
     }
     .cc-price-val { font-size: 3rem; font-weight: 800; color: var(--text); line-height: 1.05; }
     .cc-price-sub { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
+    .cc-tva-detail { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; font-weight: 500; }
     @media (max-width: 480px) {
       .cc-fact-val { font-size: 1.25rem; }
       .cc-price-val { font-size: 2.4rem; }
@@ -5045,19 +5072,38 @@
       <div class="cc-facts">
         <div class="cc-fact">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="26" height="26"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-          <div class="cc-fact-val" id="ccTime">—</div>
+          <div class="cc-edit-row">
+            <input type="number" id="ccHoursH" class="cc-num-h" min="0" step="1" inputmode="numeric" placeholder="0" oninput="_ccApplyEdits()" aria-label="Heures">
+            <span class="cc-edit-unit">h</span>
+            <input type="number" id="ccHoursMin" class="cc-num-m" min="0" max="59" step="1" inputmode="numeric" placeholder="0" oninput="_ccApplyEdits()" aria-label="Minutes">
+            <span class="cc-edit-unit">min</span>
+          </div>
           <div class="cc-fact-label">Temps machine</div>
         </div>
         <div class="cc-fact">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="26" height="26"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
-          <div class="cc-fact-val" id="ccFilament">—</div>
+          <div class="cc-edit-row">
+            <input type="number" id="ccWeight" class="cc-num-g" min="0" step="1" inputmode="decimal" placeholder="0" oninput="_ccApplyEdits()" aria-label="Poids">
+            <span class="cc-edit-unit">g</span>
+          </div>
           <div class="cc-fact-label" id="ccFilamentLabel">Filament</div>
+        </div>
+      </div>
+      <div class="cc-facts">
+        <div class="cc-fact cc-fact-labor">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="26" height="26"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>
+          <div class="cc-edit-row">
+            <input type="number" id="ccLabor" class="cc-num-lab" min="0" step="1" inputmode="numeric" placeholder="0" oninput="_ccApplyEdits()" aria-label="Main d'œuvre en minutes">
+            <span class="cc-edit-unit">min</span>
+          </div>
+          <div class="cc-fact-label">Main d'œuvre</div>
         </div>
       </div>
       <div class="cc-price">
         <div class="cc-price-label">Prix</div>
         <div class="cc-price-val" id="ccPrice">—</div>
         <div class="cc-price-sub" id="ccPriceSub"></div>
+        <div class="cc-tva-detail" id="ccTvaDetail" style="display:none"></div>
       </div>
     </div>
   </div>
@@ -7790,8 +7836,13 @@
       filName:    fil ? (fil.name || '') : '',
       finalPrice: tvaOn ? priceTtc : priceHt,
       ttc:        tvaOn,
+      tvaPct:     tvaOn ? tvaPct  : 0,
+      tvaAmount:  tvaOn ? tvaAmount : 0,
       ready:      (weight > 0 || hours > 0),
     };
+    // Si la vue client est ouverte, la garder synchro avec le recompute.
+    const ccModal = document.getElementById('calcClientModal');
+    if (ccModal && ccModal.classList.contains('open')) _refreshCalcClientView();
   }
   window.recomputeCalc = recomputeCalc;
 
@@ -7805,18 +7856,62 @@
     return m > 0 ? `${h} h ${String(m).padStart(2,'0')}` : `${h} h`;
   }
 
+  // Ouvre la vue client en pré-remplissant les inputs depuis le formulaire
+  // principal du calculateur. Les modifications faites ici sont reflétées
+  // dans le formulaire principal et déclenchent un recompute live.
   function openCalcClientView() {
-    const d = _calcLast;
-    if (!d || !d.ready) { showToast('Saisis d\'abord le poids et le temps', 'error'); return; }
-    document.getElementById('ccTime').textContent = _fmtMachineTime(d.hours);
-    document.getElementById('ccFilament').textContent = d.weight > 0 ? `${Math.round(d.weight)} g` : '—';
-    document.getElementById('ccFilamentLabel').textContent = d.filName ? d.filName : 'Filament';
-    const fmt = n => isFinite(n) ? n.toFixed(2).replace('.', ',') + ' €' : '—';
-    document.getElementById('ccPrice').textContent = fmt(d.finalPrice);
-    document.getElementById('ccPriceSub').textContent = d.ttc ? 'TTC' : '';
+    if (!_calcLast || !_calcLast.ready) { showToast('Saisis d\'abord le poids et le temps', 'error'); return; }
+    const weight = parseFloat(document.getElementById('calcWeight').value)     || 0;
+    const hH     = parseFloat(document.getElementById('calcHoursH').value)     || 0;
+    const hM     = parseFloat(document.getElementById('calcHoursMin').value)   || 0;
+    const labMin = parseFloat(document.getElementById('calcLaborMinutes').value) || 0;
+    const labOn  = document.getElementById('calcLaborEnabled').checked;
+    document.getElementById('ccWeight').value   = weight > 0 ? weight : '';
+    document.getElementById('ccHoursH').value   = hH > 0 ? hH : '';
+    document.getElementById('ccHoursMin').value = hM > 0 ? hM : '';
+    document.getElementById('ccLabor').value    = (labOn && labMin > 0) ? labMin : '';
+    _refreshCalcClientView();
     document.getElementById('calcClientModal').classList.add('open');
   }
   window.openCalcClientView = openCalcClientView;
+
+  // Reflète les saisies de la vue client dans le formulaire principal puis
+  // recompute. L'activation auto de la main d'œuvre évite la confusion :
+  // si l'user tape un nombre de minutes, on s'assure que la case est cochée.
+  function _ccApplyEdits() {
+    const wEl = document.getElementById('calcWeight');
+    const hHEl = document.getElementById('calcHoursH');
+    const hMEl = document.getElementById('calcHoursMin');
+    const labEl = document.getElementById('calcLaborMinutes');
+    const labChk = document.getElementById('calcLaborEnabled');
+    wEl.value  = document.getElementById('ccWeight').value;
+    hHEl.value = document.getElementById('ccHoursH').value;
+    hMEl.value = document.getElementById('ccHoursMin').value;
+    const ccLabVal = document.getElementById('ccLabor').value;
+    labEl.value = ccLabVal;
+    if (labChk && !labChk.checked && (parseFloat(ccLabVal) || 0) > 0) {
+      labChk.checked = true;
+      labChk.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    recomputeCalc();
+  }
+  window._ccApplyEdits = _ccApplyEdits;
+
+  function _refreshCalcClientView() {
+    const d = _calcLast;
+    if (!d) return;
+    document.getElementById('ccFilamentLabel').textContent = d.filName || 'Filament';
+    const fmt = n => isFinite(n) ? n.toFixed(2).replace('.', ',') + ' €' : '—';
+    document.getElementById('ccPrice').textContent = fmt(d.finalPrice);
+    document.getElementById('ccPriceSub').textContent = d.ttc ? 'TTC' : '';
+    const tvaEl = document.getElementById('ccTvaDetail');
+    if (d.ttc && typeof d.tvaAmount === 'number' && d.tvaAmount > 0) {
+      tvaEl.textContent = `dont ${fmt(d.tvaAmount)} de TVA (${d.tvaPct}%)`;
+      tvaEl.style.display = '';
+    } else {
+      tvaEl.style.display = 'none';
+    }
+  }
 
   function closeCalcClientView() {
     document.getElementById('calcClientModal').classList.remove('open');
