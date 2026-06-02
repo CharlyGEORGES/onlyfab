@@ -5054,7 +5054,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M2 3h20v14H2z"/><path d="M8 21h8M12 17v4"/></svg>
         Présenter au client
       </button>
-      <p style="font-size:0.7rem;color:var(--text-muted);text-align:center;margin:6px 0 0">Affiche un écran propre avec uniquement temps, filament et prix.</p>
+      <p style="font-size:0.7rem;color:var(--text-muted);text-align:center;margin:6px 0 0">Écran propre, ajustable en direct devant le client. Marge et coûts internes restent masqués.</p>
     </div>
   </div>
 </div>
@@ -7859,8 +7859,10 @@
   // Ouvre la vue client en pré-remplissant les inputs depuis le formulaire
   // principal du calculateur. Les modifications faites ici sont reflétées
   // dans le formulaire principal et déclenchent un recompute live.
+  // Aucun pré-requis : la vue s'ouvre vide si rien n'est saisi, l'user
+  // remplit tout depuis ici devant le client.
   function openCalcClientView() {
-    if (!_calcLast || !_calcLast.ready) { showToast('Saisis d\'abord le poids et le temps', 'error'); return; }
+    recomputeCalc(); // s'assure que _calcLast reflète l'état courant
     const weight = parseFloat(document.getElementById('calcWeight').value)     || 0;
     const hH     = parseFloat(document.getElementById('calcHoursH').value)     || 0;
     const hM     = parseFloat(document.getElementById('calcHoursMin').value)   || 0;
@@ -7872,6 +7874,12 @@
     document.getElementById('ccLabor').value    = (labOn && labMin > 0) ? labMin : '';
     _refreshCalcClientView();
     document.getElementById('calcClientModal').classList.add('open');
+    // Si le premier champ (heures) est vide, on le focus pour que l'user
+    // puisse commencer à saisir immédiatement devant le client.
+    setTimeout(() => {
+      const first = document.getElementById('ccHoursH');
+      if (first && !first.value) first.focus();
+    }, 100);
   }
   window.openCalcClientView = openCalcClientView;
 
