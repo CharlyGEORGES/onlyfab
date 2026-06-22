@@ -12153,7 +12153,9 @@
   });
 
   // ── CLOSE ON BACKDROP / ESC ───────────────────────────────────────────────
-  document.getElementById('formModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeFormModal(); });
+  // Volontairement PAS de fermeture du formulaire d'ajout sur clic du fond :
+  // un clic à côté faisait perdre toute la saisie. Seul le bouton "X" (et Echap)
+  // ferment le formulaire désormais.
   // Note : detailView n'est plus une modale, son seul moyen de fermeture est
   // le bouton "Retour" en haut, ou le bouton physique back du téléphone (géré
   // via popstate).
