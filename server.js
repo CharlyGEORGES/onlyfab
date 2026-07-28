@@ -444,6 +444,56 @@ db.exec(`
   );
 `);
 
+// ── PROGRAMME FIDÉLITÉ « DRAGONS » ────────────────────────────────────────
+// Carte de fidélité 100 % en ligne, pensée pour un stand de marché. Le
+// numéro de téléphone du parent EST la carte : pas de code à imprimer.
+//   - Le parent s'inscrit une fois sur /fid/<slug> (page publique).
+//   - Le vendeur crédite un dragon depuis /fidelite (page protégée) sur
+//     son téléphone : un gros bouton « +1 🐉 ».
+//   - Récompenses : un petit cadeau au 3ᵉ dragon, un dragon OFFERT au 5ᵉ.
+// Chaque vendeur (compte OnlyFab) a ses propres clients, isolés par
+// owner_id. Le lien public est identifié par un slug unique par vendeur.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS loyalty_customers (
+    id              TEXT PRIMARY KEY,
+    owner_id        TEXT NOT NULL,        -- compte vendeur (users.id)
+    phone           TEXT NOT NULL,        -- normalisé (chiffres uniquement)
+    child_name      TEXT,                 -- prénom de l'enfant (affichage)
+    parent_email    TEXT,                 -- optionnel, pour recontact
+    consent         INTEGER DEFAULT 0,    -- case RGPD cochée à l'inscription
+    stamps          INTEGER DEFAULT 0,    -- dragons sur la carte en cours (0..CARD_SIZE)
+    total_dragons   INTEGER DEFAULT 0,    -- cumul historique (stats)
+    cards_completed INTEGER DEFAULT 0,    -- nombre de cartes terminées (5/5 remises)
+    minor_pending   INTEGER DEFAULT 0,    -- petit cadeau du 3ᵉ dû mais pas encore remis
+    minor_given     INTEGER DEFAULT 0,    -- petits cadeaux déjà remis (cumul)
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(owner_id, phone)
+  );
+  CREATE INDEX IF NOT EXISTS idx_loyalty_owner ON loyalty_customers(owner_id);
+  CREATE TABLE IF NOT EXISTS loyalty_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id    TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    type        TEXT NOT NULL,            -- join | credit | undo | redeem_minor | redeem_major
+    ts          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_loyalty_ev_cust ON loyalty_events(customer_id);
+`);
+// Slug public du programme fidélité (identifie le vendeur dans /fid/<slug>).
+addColumnIfMissing('users', 'loyalty_slug', 'TEXT');
+// Backfill : on génère un slug pour chaque vendeur existant qui n'en a pas
+// encore, pour que son lien public soit prêt sans première visite.
+(function backfillLoyaltySlugs() {
+  const rows = db.prepare("SELECT id FROM users WHERE loyalty_slug IS NULL OR loyalty_slug=''").all();
+  for (const r of rows) {
+    let slug, tries = 0;
+    do { slug = genLoyaltySlug(); tries++; }
+    while (tries < 20 && db.prepare('SELECT 1 FROM users WHERE loyalty_slug=?').get(slug));
+    db.prepare('UPDATE users SET loyalty_slug=? WHERE id=?').run(slug, r.id);
+  }
+})();
+
 // Migration : si aucun admin n'existe, promouvoir le compte le plus ancien.
 // Couvre les utilisateurs inscrits avant la mise en place du flag is_admin.
 (function ensureFirstAdmin() {
@@ -1501,6 +1551,430 @@ function setSetting(key, value) {
               ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(key, value || '');
 }
 
+// ── FIDÉLITÉ : constantes & helpers ──────────────────────────────────────
+// Règles de la carte : petit cadeau au 3ᵉ dragon, dragon OFFERT au 5ᵉ
+// (= carte pleine). Modifiables ici si tu changes l'offre plus tard.
+const LOYALTY_CARD_SIZE = 5;  // dragons pour une carte pleine (dragon offert)
+const LOYALTY_MINOR_AT  = 3;  // dragon déclenchant le petit cadeau
+
+// Normalise un numéro de téléphone : on ne garde que les chiffres (et un
+// éventuel + initial). Suffisant pour servir de clé stable saisie au stand,
+// sans dépendance à une lib de formatage international.
+function normalizePhone(raw) {
+  if (typeof raw !== 'string') return '';
+  const plus = raw.trim().startsWith('+') ? '+' : '';
+  const digits = raw.replace(/[^0-9]/g, '');
+  return (plus + digits).slice(0, 20);
+}
+// Affichage lisible d'un numéro FR (06 12 34 56 78) — cosmétique seulement.
+function formatPhone(p) {
+  if (!p) return '';
+  const d = p.replace(/[^0-9]/g, '');
+  if (d.length === 10) return d.replace(/(\d{2})(?=\d)/g, '$1 ').trim();
+  return p;
+}
+// Slug public court, sans caractères ambigus (0/O, 1/I/l), facile à lire.
+function genLoyaltySlug() {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let s = '';
+  const bytes = crypto.randomBytes(7);
+  for (let i = 0; i < 7; i++) s += alphabet[bytes[i] % alphabet.length];
+  return s;
+}
+// Récupère le slug fidélité du vendeur, en le générant à la volée s'il
+// manque (sécurité en plus du backfill de migration).
+function ensureLoyaltySlug(userId) {
+  const row = db.prepare('SELECT loyalty_slug FROM users WHERE id=?').get(userId);
+  if (row && row.loyalty_slug) return row.loyalty_slug;
+  let slug, tries = 0;
+  do { slug = genLoyaltySlug(); tries++; }
+  while (tries < 20 && db.prepare('SELECT 1 FROM users WHERE loyalty_slug=?').get(slug));
+  db.prepare('UPDATE users SET loyalty_slug=? WHERE id=?').run(slug, userId);
+  return slug;
+}
+// Vue « publique » d'une carte : ce que voit le parent (aucune donnée
+// sensible au-delà du prénom + progression).
+function loyaltyPublicView(c) {
+  const stamps = Math.max(0, Math.min(LOYALTY_CARD_SIZE, c.stamps));
+  const cardFull = stamps >= LOYALTY_CARD_SIZE;
+  let nextReward;
+  if (cardFull)              nextReward = 'Ton dragon est OFFERT ! 🐉 Montre ton téléphone au stand.';
+  else if (stamps >= LOYALTY_MINOR_AT) nextReward = `Plus que ${LOYALTY_CARD_SIZE - stamps} pour ton dragon offert !`;
+  else                       nextReward = `Encore ${LOYALTY_MINOR_AT - stamps} pour un petit cadeau, ${LOYALTY_CARD_SIZE - stamps} pour un dragon offert 🎁`;
+  return {
+    childName: c.child_name || null,
+    stamps,
+    cardSize: LOYALTY_CARD_SIZE,
+    minorAt: LOYALTY_MINOR_AT,
+    cardFull,
+    minorPending: !!c.minor_pending,
+    cardsCompleted: c.cards_completed || 0,
+    nextReward,
+  };
+}
+// Vue « stand » d'une carte : tout ce dont le vendeur a besoin pour décider.
+function loyaltyVendorView(c) {
+  return {
+    id: c.id,
+    phone: c.phone,
+    phoneDisplay: formatPhone(c.phone),
+    childName: c.child_name || null,
+    parentEmail: c.parent_email || null,
+    stamps: c.stamps,
+    cardSize: LOYALTY_CARD_SIZE,
+    minorAt: LOYALTY_MINOR_AT,
+    cardFull: c.stamps >= LOYALTY_CARD_SIZE,
+    minorPending: !!c.minor_pending,
+    totalDragons: c.total_dragons || 0,
+    cardsCompleted: c.cards_completed || 0,
+    minorGiven: c.minor_given || 0,
+    updatedAt: c.updated_at,
+  };
+}
+// Crédite +1 dragon à un client (scopé au vendeur). Retourne la ligne à
+// jour, ou null si le client n'existe pas / n'appartient pas au vendeur.
+// Un dragon n'est PAS ajouté au-delà d'une carte pleine : le vendeur doit
+// d'abord remettre le dragon offert (redeem major) pour repartir à zéro.
+function loyaltyCredit(ownerId, customerId) {
+  const c = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? AND id=?').get(ownerId, customerId || '');
+  if (!c) return null;
+  if (c.stamps >= LOYALTY_CARD_SIZE) return c; // carte déjà pleine : à remettre d'abord
+  const stamps = c.stamps + 1;
+  const minorPending = stamps === LOYALTY_MINOR_AT ? 1 : c.minor_pending;
+  db.prepare('UPDATE loyalty_customers SET stamps=?, total_dragons=total_dragons+1, minor_pending=?, updated_at=? WHERE id=?')
+    .run(stamps, minorPending, new Date().toISOString(), c.id);
+  db.prepare('INSERT INTO loyalty_events (owner_id, customer_id, type) VALUES (?,?,?)').run(ownerId, c.id, 'credit');
+  return db.prepare('SELECT * FROM loyalty_customers WHERE id=?').get(c.id);
+}
+// Échappe le HTML pour injecter des valeurs utilisateur (nom du vendeur…).
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── PAGE PUBLIQUE (parent) : /fid/<slug> ─────────────────────────────────
+// Le parent saisit son numéro : soit il voit sa carte, soit il s'inscrit.
+// 100 % autonome (CSS + JS inline), mobile-first, thème sombre « dragon ».
+function renderLoyaltyPublicPage(slug, vendorName) {
+  const title = 'Carte Dragons · ' + escHtml(vendorName || 'Le stand');
+  return `<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>${title}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:radial-gradient(120% 120% at 50% 0%,#1a2b22 0%,#0f0f13 55%);
+    color:#e9eef0;min-height:100vh;padding:22px 16px 40px;
+    display:flex;flex-direction:column;align-items:center}
+  .wrap{width:100%;max-width:440px}
+  .brand{text-align:center;margin-bottom:18px}
+  .brand .big{font-size:44px;line-height:1}
+  .brand h1{font-size:19px;margin-top:8px;font-weight:700}
+  .brand p{color:#9fb3ab;font-size:13px;margin-top:4px}
+  .card{background:#161a20;border:1px solid #26303a;border-radius:18px;
+    padding:20px;margin-top:14px;box-shadow:0 10px 34px rgba(0,0,0,.35)}
+  label{display:block;font-size:13px;color:#9fb3ab;margin:0 0 6px 2px}
+  input{width:100%;background:#0f1318;border:1px solid #2b3742;border-radius:12px;
+    color:#e9eef0;font-size:17px;padding:14px 14px}
+  input:focus{outline:none;border-color:#3ecf8e;box-shadow:0 0 0 3px rgba(62,207,142,.15)}
+  .row-consent{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:12.5px;color:#9fb3ab}
+  .row-consent input{width:auto;margin-top:2px}
+  button{width:100%;border:0;border-radius:13px;font-size:16px;font-weight:700;
+    padding:15px;margin-top:16px;cursor:pointer;color:#06231a;
+    background:linear-gradient(180deg,#4be3a0,#2fb87e)}
+  button:active{transform:translateY(1px)}
+  button.ghost{background:transparent;color:#9fb3ab;font-weight:600;border:1px solid #2b3742}
+  .dragons{display:flex;justify-content:center;gap:8px;font-size:34px;margin:6px 0 4px;flex-wrap:wrap}
+  .dragons .on{filter:drop-shadow(0 3px 8px rgba(62,207,142,.5))}
+  .dragons .off{opacity:.22;filter:grayscale(1)}
+  .count{text-align:center;font-size:15px;color:#cfe6dc;margin-top:4px}
+  .next{text-align:center;color:#9fb3ab;font-size:13.5px;margin-top:10px;line-height:1.5}
+  .kidname{text-align:center;font-size:20px;font-weight:700;margin-bottom:4px}
+  .banner{border-radius:13px;padding:13px;text-align:center;font-weight:700;font-size:14.5px;margin-top:14px}
+  .banner.gift{background:rgba(240,190,70,.14);border:1px solid rgba(240,190,70,.4);color:#f6cf7a}
+  .banner.free{background:rgba(62,207,142,.16);border:1px solid rgba(62,207,142,.5);color:#7ef0bd}
+  .err{color:#ff9a8f;font-size:13px;text-align:center;margin-top:12px;min-height:16px}
+  .hide{display:none}
+  .foot{text-align:center;color:#5f6f68;font-size:11px;margin-top:26px;line-height:1.6}
+  .link{color:#3ecf8e;text-decoration:none}
+</style>
+</head><body>
+<div class="wrap">
+  <div class="brand">
+    <div class="big">🐉</div>
+    <h1>Carte Dragons — ${escHtml(vendorName || 'Le stand')}</h1>
+    <p>1 petit cadeau au 3ᵉ dragon · 1 dragon OFFERT au 5ᵉ</p>
+  </div>
+
+  <!-- Étape 1 : saisie du numéro -->
+  <div id="stepPhone" class="card">
+    <label for="phone">Ton numéro de téléphone</label>
+    <input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="06 12 34 56 78">
+    <button id="btnCheck">Voir ma carte</button>
+    <div class="err" id="errPhone"></div>
+  </div>
+
+  <!-- Étape 2 : inscription (numéro inconnu) -->
+  <div id="stepJoin" class="card hide">
+    <div class="kidname">Première visite ? 🎉</div>
+    <p class="next" style="margin-bottom:14px">Inscris-toi pour commencer ta collection de dragons.</p>
+    <label for="child">Prénom de l'enfant</label>
+    <input id="child" type="text" autocomplete="off" placeholder="Ex. Léo">
+    <label class="row-consent"><input id="consent" type="checkbox">
+      J'accepte que mon numéro soit conservé pour suivre ma carte fidélité. Aucune pub, désinscription sur simple demande.</label>
+    <button id="btnJoin">Créer ma carte</button>
+    <button class="ghost" id="btnBack1">Retour</button>
+    <div class="err" id="errJoin"></div>
+  </div>
+
+  <!-- Étape 3 : carte du client -->
+  <div id="stepCard" class="card hide">
+    <div class="kidname" id="cardName"></div>
+    <div class="dragons" id="cardDragons"></div>
+    <div class="count" id="cardCount"></div>
+    <div id="cardBanner"></div>
+    <div class="next" id="cardNext"></div>
+    <button class="ghost" id="btnBack2" style="margin-top:18px">Voir un autre numéro</button>
+  </div>
+
+  <div class="foot">Présente cet écran au stand pour qu'on ajoute ton dragon.<br>
+    Programme fidélité — les dragons sont ajoutés par le stand.</div>
+</div>
+
+<script>
+  var SLUG = ${JSON.stringify(slug)};
+  var $ = function(id){ return document.getElementById(id); };
+  function show(id){ ['stepPhone','stepJoin','stepCard'].forEach(function(s){ $(s).classList.toggle('hide', s!==id); }); }
+  function api(path, body){
+    return fetch('/api/fid/'+SLUG+path, {method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); });
+  }
+  function renderCard(v){
+    $('cardName').textContent = v.childName ? ('Carte de ' + v.childName) : 'Ta carte';
+    var d = '';
+    for (var i=0;i<v.cardSize;i++){ d += '<span class="'+(i<v.stamps?'on':'off')+'">🐉</span>'; }
+    $('cardDragons').innerHTML = d;
+    $('cardCount').textContent = v.stamps + ' / ' + v.cardSize + ' dragons';
+    var b = '';
+    if (v.cardFull) b = '<div class="banner free">🐉 Dragon OFFERT débloqué !</div>';
+    else if (v.minorPending) b = '<div class="banner gift">🎁 Petit cadeau débloqué !</div>';
+    $('cardBanner').innerHTML = b;
+    $('cardNext').textContent = v.nextReward || '';
+    show('stepCard');
+  }
+  $('btnCheck').onclick = function(){
+    $('errPhone').textContent = '';
+    var p = $('phone').value.trim();
+    if (p.replace(/[^0-9]/g,'').length < 6){ $('errPhone').textContent='Numéro trop court.'; return; }
+    api('/status',{phone:p}).then(function(r){
+      if (r.ok && r.j.found){ renderCard(r.j.card); }
+      else if (r.ok){ $('child').value=''; $('consent').checked=false; $('errJoin').textContent=''; show('stepJoin'); }
+      else { $('errPhone').textContent = r.j.error || 'Erreur, réessaie.'; }
+    }).catch(function(){ $('errPhone').textContent='Pas de réseau, réessaie.'; });
+  };
+  $('btnJoin').onclick = function(){
+    $('errJoin').textContent = '';
+    if (!$('consent').checked){ $('errJoin').textContent='Coche la case pour continuer.'; return; }
+    api('/join',{phone:$('phone').value.trim(), childName:$('child').value.trim(), consent:true}).then(function(r){
+      if (r.ok && r.j.card){ renderCard(r.j.card); }
+      else { $('errJoin').textContent = r.j.error || 'Erreur, réessaie.'; }
+    }).catch(function(){ $('errJoin').textContent='Pas de réseau, réessaie.'; });
+  };
+  $('btnBack1').onclick = function(){ show('stepPhone'); };
+  $('btnBack2').onclick = function(){ $('phone').value=''; show('stepPhone'); $('phone').focus(); };
+  $('phone').addEventListener('keydown', function(e){ if(e.key==='Enter') $('btnCheck').click(); });
+</script>
+</body></html>`;
+}
+
+// ── PAGE STAND (vendeur, protégée par session) : /fidelite ───────────────
+function renderLoyaltyVendorPage(vendorName, slug, publicUrl) {
+  return `<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Stand fidélité · Dragons</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:#0f0f13;color:#e9eef0;min-height:100vh;padding:16px 14px 48px;
+    display:flex;flex-direction:column;align-items:center}
+  .wrap{width:100%;max-width:460px}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .top h1{font-size:17px}.top a{color:#8aa;font-size:13px;text-decoration:none}
+  .stats{display:flex;gap:8px;margin-bottom:14px}
+  .stat{flex:1;background:#161a20;border:1px solid #26303a;border-radius:12px;padding:10px;text-align:center}
+  .stat b{display:block;font-size:20px}.stat span{font-size:11px;color:#9fb3ab}
+  .card{background:#161a20;border:1px solid #26303a;border-radius:16px;padding:16px;margin-bottom:14px}
+  label{display:block;font-size:12px;color:#9fb3ab;margin:0 0 6px 2px}
+  input{width:100%;background:#0f1318;border:1px solid #2b3742;border-radius:11px;color:#e9eef0;font-size:17px;padding:13px}
+  input:focus{outline:none;border-color:#3ecf8e}
+  button{border:0;border-radius:12px;font-weight:700;cursor:pointer;color:#06231a;
+    background:linear-gradient(180deg,#4be3a0,#2fb87e);padding:13px 16px;font-size:15px}
+  button:active{transform:translateY(1px)}
+  button.ghost{background:transparent;color:#cfe6dc;border:1px solid #2b3742}
+  button.warn{background:linear-gradient(180deg,#f6cf7a,#e6ad3f);color:#2a1c00}
+  button.big{width:100%;font-size:20px;padding:20px}
+  .results{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+  .res{display:flex;justify-content:space-between;align-items:center;background:#0f1318;
+    border:1px solid #2b3742;border-radius:11px;padding:11px 13px;cursor:pointer}
+  .res b{font-size:15px}.res small{color:#9fb3ab;display:block;font-size:12px}
+  .res .mini{font-size:13px;color:#7ef0bd;white-space:nowrap}
+  .dragons{display:flex;gap:6px;font-size:30px;justify-content:center;margin:6px 0;flex-wrap:wrap}
+  .dragons .on{filter:drop-shadow(0 2px 6px rgba(62,207,142,.5))}.dragons .off{opacity:.2;filter:grayscale(1)}
+  .kidname{text-align:center;font-size:19px;font-weight:700}
+  .sub{text-align:center;color:#9fb3ab;font-size:13px;margin-bottom:8px}
+  .count{text-align:center;font-size:14px;color:#cfe6dc}
+  .banner{border-radius:12px;padding:12px;text-align:center;font-weight:700;font-size:14px;margin:12px 0}
+  .banner.gift{background:rgba(240,190,70,.14);border:1px solid rgba(240,190,70,.4);color:#f6cf7a}
+  .banner.free{background:rgba(62,207,142,.16);border:1px solid rgba(62,207,142,.5);color:#7ef0bd}
+  .btnrow{display:flex;gap:8px;margin-top:12px}.btnrow button{flex:1}
+  .err{color:#ff9a8f;font-size:13px;text-align:center;margin-top:10px;min-height:14px}
+  .hide{display:none}
+  .share{background:#0f1318;border:1px dashed #2b3742;border-radius:11px;padding:11px;font-size:12px;color:#9fb3ab;word-break:break-all}
+  .share b{color:#cfe6dc}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1f2a24;
+    border:1px solid #3ecf8e;color:#7ef0bd;padding:11px 16px;border-radius:12px;font-size:13px;font-weight:600;opacity:0;transition:.25s;pointer-events:none}
+  .toast.on{opacity:1}
+</style>
+</head><body>
+<div class="wrap">
+  <div class="top"><h1>🐉 Stand fidélité</h1><a href="/app">← App</a></div>
+  <div class="stats">
+    <div class="stat"><b id="stCust">–</b><span>clients</span></div>
+    <div class="stat"><b id="stDragons">–</b><span>dragons</span></div>
+    <div class="stat"><b id="stCards">–</b><span>cartes pleines</span></div>
+  </div>
+
+  <div class="card">
+    <label for="search">Numéro du client</label>
+    <input id="search" type="tel" inputmode="numeric" placeholder="06… ou prénom">
+    <div class="results" id="results"></div>
+    <button class="ghost" id="btnNew" style="width:100%;margin-top:10px">+ Nouveau client</button>
+    <div class="err" id="errSearch"></div>
+  </div>
+
+  <!-- Détail client sélectionné -->
+  <div class="card hide" id="detail">
+    <div class="kidname" id="dName"></div>
+    <div class="sub" id="dPhone"></div>
+    <div class="dragons" id="dDragons"></div>
+    <div class="count" id="dCount"></div>
+    <div id="dBanner"></div>
+    <button class="big" id="btnCredit">+1 🐉</button>
+    <div class="btnrow">
+      <button class="warn hide" id="btnMinor">🎁 Cadeau remis</button>
+      <button class="warn hide" id="btnMajor">🐉 Dragon offert remis</button>
+    </div>
+    <div class="btnrow">
+      <button class="ghost" id="btnUndo">↩︎ Annuler</button>
+      <button class="ghost" id="btnClose">Fermer</button>
+    </div>
+    <div class="err" id="errDetail"></div>
+  </div>
+
+  <!-- Création client -->
+  <div class="card hide" id="newForm">
+    <label for="nPhone">Numéro de téléphone</label>
+    <input id="nPhone" type="tel" inputmode="numeric" placeholder="06 12 34 56 78">
+    <label for="nChild" style="margin-top:10px">Prénom de l'enfant (optionnel)</label>
+    <input id="nChild" type="text" placeholder="Ex. Léo">
+    <div class="btnrow">
+      <button id="btnCreate" style="flex:2">Créer + 1er 🐉</button>
+      <button class="ghost" id="btnCancelNew">Annuler</button>
+    </div>
+    <div class="err" id="errNew"></div>
+  </div>
+
+  <div class="card">
+    <label>Lien à partager avec tes clients (QR ou copier)</label>
+    <div class="share">🔗 <b>${escHtml(publicUrl)}</b></div>
+    <div class="btnrow"><button class="ghost" id="btnCopy" style="width:100%">Copier le lien</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  var PUBLIC_URL = ${JSON.stringify(publicUrl)};
+  var $ = function(id){ return document.getElementById(id); };
+  var current = null, searchTimer = null;
+  function toast(msg){ var t=$('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(function(){ t.classList.remove('on'); },1600); }
+  function api(path, method, body){
+    return fetch('/api/loyalty'+path, {method:method||'GET',headers:{'Content-Type':'application/json'},
+      body:body?JSON.stringify(body):undefined}).then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); });
+  }
+  function loadStats(){
+    api('/me').then(function(r){ if(r.ok){ $('stCust').textContent=r.j.stats.customers; $('stDragons').textContent=r.j.stats.dragons; $('stCards').textContent=r.j.stats.cardsCompleted; } });
+  }
+  function renderDragons(el, stamps, size){
+    var d=''; for(var i=0;i<size;i++){ d+='<span class="'+(i<stamps?'on':'off')+'">🐉</span>'; } el.innerHTML=d;
+  }
+  function openDetail(v){
+    current = v; $('detail').classList.remove('hide'); $('newForm').classList.add('hide');
+    $('dName').textContent = v.childName ? v.childName : 'Client';
+    $('dPhone').textContent = v.phoneDisplay + (v.cardsCompleted?(' · '+v.cardsCompleted+' carte(s) pleine(s)'):'');
+    renderDragons($('dDragons'), v.stamps, v.cardSize);
+    $('dCount').textContent = v.stamps + ' / ' + v.cardSize;
+    var b='';
+    if (v.cardFull) b='<div class="banner free">🐉 CARTE PLEINE — dragon offert à remettre !</div>';
+    else if (v.minorPending) b='<div class="banner gift">🎁 Petit cadeau à remettre (3ᵉ dragon)</div>';
+    $('dBanner').innerHTML=b;
+    $('btnMinor').classList.toggle('hide', !v.minorPending);
+    $('btnMajor').classList.toggle('hide', !v.cardFull);
+    $('errDetail').textContent='';
+    $('detail').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  function doSearch(){
+    var q = $('search').value.trim();
+    if (!q){ $('results').innerHTML=''; return; }
+    api('/customers?q='+encodeURIComponent(q)).then(function(r){
+      if(!r.ok){ return; }
+      var html='';
+      r.j.customers.forEach(function(v){
+        html += '<div class="res" data-id="'+v.id+'"><div><b>'+(v.childName||'—')+'</b>'
+          + '<small>'+v.phoneDisplay+'</small></div>'
+          + '<div class="mini">'+v.stamps+'/'+v.cardSize+(v.cardFull?' 🐉':(v.minorPending?' 🎁':''))+'</div></div>';
+      });
+      if(!r.j.customers.length) html='<div class="sub" style="margin:8px 0">Aucun client. Utilise « + Nouveau client ».</div>';
+      $('results').innerHTML=html;
+      Array.prototype.forEach.call(document.querySelectorAll('.res'), function(el){
+        el.onclick=function(){ var id=el.getAttribute('data-id');
+          api('/customers?q='+encodeURIComponent(q)).then(function(rr){
+            var found=rr.j.customers.filter(function(x){return x.id===id;})[0]; if(found) openDetail(found); }); };
+      });
+    });
+  }
+  $('search').addEventListener('input', function(){ clearTimeout(searchTimer); searchTimer=setTimeout(doSearch,250); });
+  $('btnCredit').onclick=function(){ if(!current) return;
+    api('/credit','POST',{customerId:current.id}).then(function(r){
+      if(r.ok){ openDetail(r.j.customer); loadStats();
+        if(r.j.customer.cardFull) toast('🐉 Carte pleine !'); else if(r.j.customer.minorPending) toast('🎁 Cadeau débloqué !'); else toast('+1 🐉'); }
+      else $('errDetail').textContent=r.j.error||'Erreur'; }); };
+  $('btnUndo').onclick=function(){ if(!current) return;
+    api('/undo','POST',{customerId:current.id}).then(function(r){ if(r.ok){ openDetail(r.j.customer); loadStats(); toast('Annulé'); } else $('errDetail').textContent=r.j.error||'Erreur'; }); };
+  $('btnMinor').onclick=function(){ if(!current) return;
+    api('/redeem','POST',{customerId:current.id,kind:'minor'}).then(function(r){ if(r.ok){ openDetail(r.j.customer); toast('🎁 Cadeau remis'); } else $('errDetail').textContent=r.j.error||'Erreur'; }); };
+  $('btnMajor').onclick=function(){ if(!current) return;
+    api('/redeem','POST',{customerId:current.id,kind:'major'}).then(function(r){ if(r.ok){ openDetail(r.j.customer); loadStats(); toast('🐉 Nouvelle carte !'); } else $('errDetail').textContent=r.j.error||'Erreur'; }); };
+  $('btnClose').onclick=function(){ current=null; $('detail').classList.add('hide'); };
+  $('btnNew').onclick=function(){ $('newForm').classList.remove('hide'); $('detail').classList.add('hide');
+    $('nPhone').value=$('search').value.trim().replace(/[^0-9+ ]/g,''); $('nChild').value=''; $('errNew').textContent=''; $('nPhone').focus(); };
+  $('btnCancelNew').onclick=function(){ $('newForm').classList.add('hide'); };
+  $('btnCreate').onclick=function(){
+    api('/customer','POST',{phone:$('nPhone').value.trim(),childName:$('nChild').value.trim(),credit:true}).then(function(r){
+      if(r.ok){ $('newForm').classList.add('hide'); $('search').value=''; $('results').innerHTML=''; openDetail(r.j.customer); loadStats(); toast('Client créé · +1 🐉'); }
+      else $('errNew').textContent=r.j.error||'Erreur'; }); };
+  $('btnCopy').onclick=function(){ (navigator.clipboard?navigator.clipboard.writeText(PUBLIC_URL):Promise.reject()).then(function(){ toast('Lien copié'); }).catch(function(){ toast(PUBLIC_URL); }); };
+  loadStats();
+</script>
+</body></html>`;
+}
+
 // Notifie Discord en fire-and-forget (n'attend pas la réponse). On ignore
 // les erreurs réseau pour ne pas bloquer la création du feedback côté DB.
 function notifyDiscord(feedback, user) {
@@ -1550,6 +2024,24 @@ http.createServer(async (req, res) => {
       if (user) { res.writeHead(302, { Location: '/app' }); res.end(); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(landingCache);
+      return;
+    }
+    // ── FIDÉLITÉ : page stand (vendeur, session requise) ────────────────
+    if (req.method === 'GET' && (url === '/fidelite' || url === '/fidelite/')) {
+      const user = getSessionUser(req);
+      if (!user) { res.writeHead(302, { Location: '/' }); res.end(); return; }
+      const slug = ensureLoyaltySlug(user.id);
+      const publicUrl = `${PUBLIC_BASE}/fid/${slug}`;
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(renderLoyaltyVendorPage(user.name || user.email, slug, publicUrl));
+      return;
+    }
+    // ── FIDÉLITÉ : page publique parent (/fid/<slug>) ───────────────────
+    if (req.method === 'GET' && parts[0] === 'fid' && parts[1] && !parts[2]) {
+      const vendor = db.prepare('SELECT id, name, email FROM users WHERE loyalty_slug=?').get(parts[1]);
+      res.writeHead(vendor ? 200 : 404, { 'Content-Type': 'text/html; charset=utf-8' });
+      if (!vendor) { res.end('<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;background:#0f0f13;color:#e9eef0;text-align:center;padding:60px 20px"><h2>🐉 Lien introuvable</h2><p>Cette carte fidélité n\'existe pas ou plus.</p></body>'); return; }
+      res.end(renderLoyaltyPublicPage(parts[1], vendor.name || 'Le stand'));
       return;
     }
     if (req.method === 'GET' && (url === '/app' || url === '/app/')) {
@@ -1708,6 +2200,43 @@ http.createServer(async (req, res) => {
           .run(code, host || null, ua || null);
       } catch { /* ignore */ }
       json(res, { ok: true });
+      return;
+    }
+
+    // ── FIDÉLITÉ : API publique (parent), pas d'auth ────────────────────
+    // POST /api/fid/:slug/status  { phone } → { found, card? }
+    if (req.method === 'POST' && parts[0] === 'api' && parts[1] === 'fid' && parts[2] && parts[3] === 'status') {
+      if (!rateLimit('fidstat:' + clientIp(req), 40, 600_000)) { json(res, { error: 'Trop de tentatives, patiente un instant.' }, 429); return; }
+      const vendor = db.prepare('SELECT id FROM users WHERE loyalty_slug=?').get(parts[2]);
+      if (!vendor) { json(res, { error: 'Programme introuvable' }, 404); return; }
+      const b = await parseBody(req);
+      const phone = normalizePhone(b?.phone || '');
+      if (phone.replace(/[^0-9]/g, '').length < 6) { json(res, { error: 'Numéro invalide' }, 400); return; }
+      const c = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? AND phone=?').get(vendor.id, phone);
+      if (!c) { json(res, { found: false }); return; }
+      json(res, { found: true, card: loyaltyPublicView(c) });
+      return;
+    }
+    // POST /api/fid/:slug/join  { phone, childName, consent } → { card }
+    if (req.method === 'POST' && parts[0] === 'api' && parts[1] === 'fid' && parts[2] && parts[3] === 'join') {
+      if (!rateLimit('fidjoin:' + clientIp(req), 12, 3600_000)) { json(res, { error: 'Trop d\'inscriptions, réessaie plus tard.' }, 429); return; }
+      const vendor = db.prepare('SELECT id FROM users WHERE loyalty_slug=?').get(parts[2]);
+      if (!vendor) { json(res, { error: 'Programme introuvable' }, 404); return; }
+      const b = await parseBody(req);
+      if (!b?.consent) { json(res, { error: 'Consentement requis' }, 400); return; }
+      const phone = normalizePhone(b?.phone || '');
+      if (phone.replace(/[^0-9]/g, '').length < 6) { json(res, { error: 'Numéro invalide' }, 400); return; }
+      const childName = (typeof b?.childName === 'string' ? b.childName.trim() : '').slice(0, 40) || null;
+      const existing = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? AND phone=?').get(vendor.id, phone);
+      if (existing) { json(res, { card: loyaltyPublicView(existing) }); return; }
+      const now = new Date().toISOString();
+      const cid = nanoid();
+      db.prepare(`INSERT INTO loyalty_customers
+        (id, owner_id, phone, child_name, consent, stamps, total_dragons, cards_completed, minor_pending, minor_given, created_at, updated_at)
+        VALUES (?,?,?,?,1,0,0,0,0,0,?,?)`).run(cid, vendor.id, phone, childName, now, now);
+      db.prepare('INSERT INTO loyalty_events (owner_id, customer_id, type) VALUES (?,?,?)').run(vendor.id, cid, 'join');
+      const c = db.prepare('SELECT * FROM loyalty_customers WHERE id=?').get(cid);
+      json(res, { card: loyaltyPublicView(c) });
       return;
     }
 
@@ -2062,6 +2591,113 @@ http.createServer(async (req, res) => {
       const user = getSessionUser(req);
       if (!user) { json(res, { error: 'Non authentifié' }, 401); return; }
       const userId = user.id;
+
+      // ── FIDÉLITÉ : API vendeur (session requise) ─────────────────────
+      // GET /api/loyalty/me → slug, lien public, stats globales
+      if (req.method === 'GET' && url === '/api/loyalty/me') {
+        const slug = ensureLoyaltySlug(userId);
+        const agg = db.prepare(`SELECT COUNT(*) AS customers,
+            COALESCE(SUM(total_dragons),0) AS dragons,
+            COALESCE(SUM(cards_completed),0) AS cardsCompleted
+          FROM loyalty_customers WHERE owner_id=?`).get(userId);
+        json(res, { slug, publicUrl: `${PUBLIC_BASE}/fid/${slug}`,
+          cardSize: LOYALTY_CARD_SIZE, minorAt: LOYALTY_MINOR_AT,
+          stats: { customers: agg.customers, dragons: agg.dragons, cardsCompleted: agg.cardsCompleted } });
+        return;
+      }
+      // GET /api/loyalty/customers?q= → recherche par numéro ou prénom
+      if (req.method === 'GET' && parts[1] === 'loyalty' && parts[2] === 'customers') {
+        const q = new URLSearchParams(req.url.split('?')[1] || '').get('q') || '';
+        const term = q.trim();
+        // Normalise pour une recherche par prénom insensible à la casse ET
+        // aux accents (SQLite LOWER() ne gère pas les diacritiques).
+        const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        let rows;
+        if (!term) {
+          rows = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? ORDER BY updated_at DESC LIMIT 15').all(userId);
+        } else {
+          const digits = term.replace(/[^0-9]/g, '');
+          if (digits) {
+            // Recherche par numéro : SQL exact (jamais tronquée par un cap).
+            rows = db.prepare(`SELECT * FROM loyalty_customers
+              WHERE owner_id=? AND phone LIKE ? ORDER BY updated_at DESC LIMIT 15`).all(userId, '%' + digits + '%');
+          } else {
+            // Recherche par prénom : filtrage accent-insensible côté Node sur
+            // les clients récents (volume par vendeur raisonnable sur un stand).
+            const nt = norm(term);
+            rows = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? ORDER BY updated_at DESC LIMIT 500')
+              .all(userId).filter(r => norm(r.child_name).includes(nt)).slice(0, 15);
+          }
+        }
+        json(res, { customers: rows.map(loyaltyVendorView) });
+        return;
+      }
+      // POST /api/loyalty/customer { phone, childName?, credit? } → crée (ou récupère) un client
+      if (req.method === 'POST' && parts[1] === 'loyalty' && parts[2] === 'customer') {
+        const b = await parseBody(req);
+        const phone = normalizePhone(b?.phone || '');
+        if (phone.replace(/[^0-9]/g, '').length < 6) { json(res, { error: 'Numéro invalide' }, 400); return; }
+        const childName = (typeof b?.childName === 'string' ? b.childName.trim() : '').slice(0, 40) || null;
+        const now = new Date().toISOString();
+        let c = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? AND phone=?').get(userId, phone);
+        if (!c) {
+          const cid = nanoid();
+          db.prepare(`INSERT INTO loyalty_customers
+            (id, owner_id, phone, child_name, consent, stamps, total_dragons, cards_completed, minor_pending, minor_given, created_at, updated_at)
+            VALUES (?,?,?,?,1,0,0,0,0,0,?,?)`).run(cid, userId, phone, childName, now, now);
+          db.prepare('INSERT INTO loyalty_events (owner_id, customer_id, type) VALUES (?,?,?)').run(userId, cid, 'join');
+          c = db.prepare('SELECT * FROM loyalty_customers WHERE id=?').get(cid);
+        } else if (childName && !c.child_name) {
+          db.prepare('UPDATE loyalty_customers SET child_name=?, updated_at=? WHERE id=?').run(childName, now, c.id);
+          c = db.prepare('SELECT * FROM loyalty_customers WHERE id=?').get(c.id);
+        }
+        if (b?.credit) c = loyaltyCredit(userId, c.id) || c;
+        json(res, { customer: loyaltyVendorView(c) });
+        return;
+      }
+      // POST /api/loyalty/credit { customerId } → +1 dragon
+      if (req.method === 'POST' && parts[1] === 'loyalty' && parts[2] === 'credit') {
+        const b = await parseBody(req);
+        const c = loyaltyCredit(userId, b?.customerId);
+        if (!c) { json(res, { error: 'Client introuvable' }, 404); return; }
+        json(res, { customer: loyaltyVendorView(c) });
+        return;
+      }
+      // POST /api/loyalty/undo { customerId } → annule le dernier dragon
+      if (req.method === 'POST' && parts[1] === 'loyalty' && parts[2] === 'undo') {
+        const b = await parseBody(req);
+        const c0 = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? AND id=?').get(userId, b?.customerId || '');
+        if (!c0) { json(res, { error: 'Client introuvable' }, 404); return; }
+        const stamps = Math.max(0, c0.stamps - 1);
+        const total  = Math.max(0, c0.total_dragons - 1);
+        const minorPending = (stamps >= LOYALTY_MINOR_AT && c0.minor_given === 0) ? 1 : 0;
+        db.prepare('UPDATE loyalty_customers SET stamps=?, total_dragons=?, minor_pending=?, updated_at=? WHERE id=?')
+          .run(stamps, total, minorPending, new Date().toISOString(), c0.id);
+        db.prepare('INSERT INTO loyalty_events (owner_id, customer_id, type) VALUES (?,?,?)').run(userId, c0.id, 'undo');
+        const c = db.prepare('SELECT * FROM loyalty_customers WHERE id=?').get(c0.id);
+        json(res, { customer: loyaltyVendorView(c) });
+        return;
+      }
+      // POST /api/loyalty/redeem { customerId, kind: 'minor'|'major' }
+      if (req.method === 'POST' && parts[1] === 'loyalty' && parts[2] === 'redeem') {
+        const b = await parseBody(req);
+        const c0 = db.prepare('SELECT * FROM loyalty_customers WHERE owner_id=? AND id=?').get(userId, b?.customerId || '');
+        if (!c0) { json(res, { error: 'Client introuvable' }, 404); return; }
+        const now = new Date().toISOString();
+        if (b?.kind === 'minor') {
+          if (!c0.minor_pending) { json(res, { error: 'Aucun cadeau à remettre' }, 400); return; }
+          db.prepare('UPDATE loyalty_customers SET minor_pending=0, minor_given=minor_given+1, updated_at=? WHERE id=?').run(now, c0.id);
+          db.prepare('INSERT INTO loyalty_events (owner_id, customer_id, type) VALUES (?,?,?)').run(userId, c0.id, 'redeem_minor');
+        } else if (b?.kind === 'major') {
+          if (c0.stamps < LOYALTY_CARD_SIZE) { json(res, { error: 'Carte pas encore pleine' }, 400); return; }
+          // Carte terminée : dragon offert remis → on repart sur une carte vierge.
+          db.prepare('UPDATE loyalty_customers SET stamps=0, cards_completed=cards_completed+1, minor_pending=0, updated_at=? WHERE id=?').run(now, c0.id);
+          db.prepare('INSERT INTO loyalty_events (owner_id, customer_id, type) VALUES (?,?,?)').run(userId, c0.id, 'redeem_major');
+        } else { json(res, { error: 'Type de récompense invalide' }, 400); return; }
+        const c = db.prepare('SELECT * FROM loyalty_customers WHERE id=?').get(c0.id);
+        json(res, { customer: loyaltyVendorView(c) });
+        return;
+      }
 
       // ── UPLOAD PHOTO ─────────────────────────────────────────────────
       if (req.method === 'POST' && url === '/api/upload') {
