@@ -1,0 +1,19 @@
+{
+  "name": "bridge-h2d-spike",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spike étape 1 : valider MQTT local, FTP time-lapse et RTSPS sur une Bambu Lab H2D",
+  "main": "spike.js",
+  "scripts": {
+    "all": "node spike.js all",
+    "mqtt": "node spike.js mqtt",
+    "ftp": "node spike.js ftp",
+    "rtsp": "node spike.js rtsp",
+    "play": "node spike.js play"
+  },
+  "engines": { "node": ">=20.0.0" },
+  "dependencies": {
+    "basic-ftp": "^5.0.5",
+    "mqtt": "^5.10.1"
+  }
+}

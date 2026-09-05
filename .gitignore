@@ -29,3 +29,7 @@ start.bat
 # OS
 .DS_Store
 Thumbs.db
+
+# Spike bridge (credentials imprimante + échantillons vidéo)
+.env
+spike/**/out/
