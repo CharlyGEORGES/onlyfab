@@ -448,6 +448,12 @@ function loadConfig(parts){
     if(c.size.ref!==undefined) delete c.size.ref;
     if(c.size.refCm===undefined) c.size.refCm=c.size.value||10;
     if(c.size.exp===undefined) c.size.exp=2;
+    // Défaut et référence de prix sont stockés en % de la plage : ils suivent
+    // la plage quand on la change, au lieu de rester figés en cm.
+    { const rng=(c.size.max-c.size.min)||1;
+      const pct=cm=>Math.max(0,Math.min(100,Math.round((cm-c.size.min)/rng*100)));
+      if(c.size.valuePct===undefined) c.size.valuePct=pct(c.size.value);
+      if(c.size.refPct===undefined)   c.size.refPct=pct(c.size.refCm); }
     if(c.size.pricePerCm!==undefined) delete c.size.pricePerCm;
     const e=c.engraving||{};
     let minPct=(e.minPct!=null?e.minPct:null);
@@ -1310,16 +1316,41 @@ function renderAtelier(P){
   // taille & prix : facteur volumétrique
   const gt=el("div","group");gt.appendChild(el("h2",null,"<span>Taille & prix</span>"));
   const sz=state.config.size;
-  const clampVal=()=>{ if(sz.min>sz.max){const t=sz.min;sz.min=sz.max;sz.max=t;} if(sz.value<sz.min)sz.value=sz.min; if(sz.value>sz.max)sz.value=sz.max; if(!(sz.refCm>0))sz.refCm=sz.value||10; };
+  // Les cm restent la donnée servie au client ; en atelier on saisit des %,
+  // et les cm en sont recalculés à chaque changement de plage.
+  const pctToCm=p=>{ const rng=(sz.max-sz.min)||0; return Math.round((sz.min+rng*(p/100))*2)/2; };
+  const syncFromPct=()=>{
+    if(sz.valuePct==null) sz.valuePct=50;
+    if(sz.refPct==null)   sz.refPct=sz.valuePct;
+    sz.value=pctToCm(sz.valuePct);
+    sz.refCm=pctToCm(sz.refPct) || sz.value || 10;
+  };
+  const clampVal=()=>{ if(sz.min>sz.max){const t=sz.min;sz.min=sz.max;sz.max=t;} syncFromPct();
+    if(sz.value<sz.min)sz.value=sz.min; if(sz.value>sz.max)sz.value=sz.max; if(!(sz.refCm>0))sz.refCm=sz.value||10; };
   let exHint=null;
   const priceAt=cm=>{const v=activeVariant();const base=v?v.price:0;const r=sz.refCm||10,e=(sz.exp!=null?sz.exp:2);return round1(base*Math.pow((cm||r)/r,e));};
   const updEx=()=>{ if(!exHint)return; const v=activeVariant();
     exHint.innerHTML=`Prix de base = prix à <b>${sz.refCm} cm</b>. ${v?v.name:""} : ${sz.min} cm → <b>${money(priceAt(sz.min))}</b> · ${sz.refCm} cm → <b>${money(v?v.price:0)}</b> · ${sz.max} cm → <b>${money(priceAt(sz.max))}</b>`; };
-  const mk=(lab,key,step)=>{const f=el("div","field");f.innerHTML=`<label>${lab}</label>`;
-    const i=el("input");i.type="number";i.min="0";i.step=step;i.value=sz[key];
-    i.oninput=()=>{sz[key]=parseFloat(i.value)||0;clampVal();updEx();saveConfig();priceHead();applySizeScale();};f.appendChild(i);return f;};
-  const sr1=el("div","fieldrow");sr1.appendChild(mk("Min (cm)","min",0.5));sr1.appendChild(mk("Max (cm)","max",0.5));
-  const sr2=el("div","fieldrow");sr2.appendChild(mk("Défaut (cm)","value",0.5));sr2.appendChild(mk("Réf. prix (cm)","refCm",0.5));
+  // Champ en % de la plage, avec son équivalent en cm sous le champ.
+  const mkPct=(lab,key)=>{
+    const f=el("div","field"); f.innerHTML=`<label>${lab}</label>`;
+    const i=el("input"); i.type="number"; i.min="0"; i.max="100"; i.step="1"; i.value=(sz[key]!=null?sz[key]:50);
+    const eq=el("p","zonefinishnote");
+    const refresh=()=>{ eq.textContent="= "+(key==="valuePct"?sz.value:sz.refCm)+" cm (plage "+sz.min+"–"+sz.max+" cm)"; };
+    i.oninput=()=>{ sz[key]=Math.max(0,Math.min(100,parseFloat(i.value)||0)); clampVal(); refresh(); updEx();
+      saveConfig(); priceHead(); applySizeScale(); };
+    f.appendChild(i); f.appendChild(eq); refresh();
+    return { field:f, refresh };
+  };
+  const fDef=mkPct("Défaut (% de la plage)","valuePct");
+  const fRef=mkPct("Réf. prix (% de la plage)","refPct");
+  const mkCm=(lab,key)=>{ const f=el("div","field"); f.innerHTML=`<label>${lab}</label>`;
+    const i=el("input"); i.type="number"; i.min="0"; i.step="0.5"; i.value=sz[key];
+    i.oninput=()=>{ sz[key]=parseFloat(i.value)||0; clampVal();
+      fDef.refresh(); fRef.refresh(); updEx(); saveConfig(); priceHead(); applySizeScale(); };
+    f.appendChild(i); return f; };
+  const sr1=el("div","fieldrow");sr1.appendChild(mkCm("Min (cm)","min"));sr1.appendChild(mkCm("Max (cm)","max"));
+  const sr2=el("div","fieldrow");sr2.appendChild(fDef.field);sr2.appendChild(fRef.field);
   gt.appendChild(sr1);gt.appendChild(sr2);
   // effet de la taille sur le prix (exposant 1..3)
   const ef=el("div","field");ef.style.marginTop="10px";ef.innerHTML='<label>Effet de la taille sur le prix — <b id="expLbl"></b></label>';
@@ -1335,7 +1366,7 @@ function renderAtelier(P){
   gcb.onchange=()=>{sz.gauge=gcb.checked;saveConfig();setGauge();};
   gw.appendChild(gcb);gw.appendChild(document.createTextNode(" Afficher les cotes (L / H / P) sur l'aperçu"));
   gt.appendChild(gw);
-  gt.appendChild(el("p","hintline","Prix = prix de base × (taille ÷ taille de réf.)^effet. « Volumique » (×2–3) ≈ coût matière + temps d'impression. Le client choisit sa taille en cm entre min et max ; le prix suit en direct."));
+  gt.appendChild(el("p","hintline","Défaut et référence de prix sont exprimés en % de la plage min–max : ils se recalculent tout seuls si tu changes la plage. 0 % = min, 100 % = max. Prix = prix de base × (taille ÷ taille de réf.)^effet. « Volumique » (×2–3) ≈ coût matière + temps d'impression. Le client, lui, choisit sa taille en cm ; le prix suit en direct."));
   P.appendChild(gt);
 
   // ecriteau Onlyfab - positionnable par modele
