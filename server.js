@@ -91,6 +91,20 @@ const CONFIGURATOR_FILE = path.join(__dirname, 'configurateur.html');
 // Surchargable via CONFIGURATOR_FRAME_ANCESTORS (liste séparée par des espaces).
 const CONFIGURATOR_FRAME_ANCESTORS = process.env.CONFIGURATOR_FRAME_ANCESTORS
   || "'self' https://onlyfab.fr https://www.onlyfab.fr https://*.myshopify.com";
+// ── Accès au mode atelier : OAuth Shopify (staff de la boutique) ───────────
+// Le mode atelier n'a rien à voir avec les comptes de cette app : seul un
+// membre du staff Shopify de SHOPIFY_SHOP peut éditer les configs.
+// Secrets attendus (flyctl secrets set …) :
+//   SHOPIFY_SHOP        ex. hy2ahz-qx.myshopify.com
+//   SHOPIFY_API_KEY     client_id de l'app Shopify
+//   SHOPIFY_API_SECRET  client secret (sert aussi à signer le cookie atelier)
+const SHOPIFY_SHOP       = (process.env.SHOPIFY_SHOP || '').trim().toLowerCase();
+const SHOPIFY_API_KEY    = process.env.SHOPIFY_API_KEY || '';
+const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || '';
+const CONFIGURATOR_BASE_URL = (process.env.CONFIGURATOR_BASE_URL || 'https://onlyfab.fly.dev').replace(/\/+$/, '');
+const ATELIER_SCOPES     = 'read_products';
+const ATELIER_TTL_MS     = 12 * 3600 * 1000;
+const shopifyOAuthReady  = () => !!(SHOPIFY_SHOP && SHOPIFY_API_KEY && SHOPIFY_API_SECRET);
 
 // ── BASE DE DONNÉES ───────────────────────────────────────────────────────
 const db = new Database(DB_FILE);
@@ -905,6 +919,56 @@ function setSessionCookie(res, token) {
   res.setHeader('Set-Cookie', `bs_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30*24*3600}`);
 }
 
+// ── SESSION ATELIER (staff Shopify) ───────────────────────────────────────
+function readCookie(req, name) {
+  const m = (req.headers.cookie || '').match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function appendCookie(res, value) {
+  const prev = res.getHeader('Set-Cookie');
+  res.setHeader('Set-Cookie', prev ? [].concat(prev, value) : value);
+}
+const b64url    = buf => Buffer.from(buf).toString('base64url');
+const signBlob  = payload => crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(payload).digest('base64url');
+function timingEqual(a, b) {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+// Cookie atelier : <payload base64url>.<hmac>. Aucun token Shopify n'est stocké,
+// on ne garde que l'identité du staff et une date d'expiration.
+function issueAtelierCookie(res, user) {
+  const payload = b64url(JSON.stringify({
+    uid:  String(user.id || ''),
+    name: user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : (user.email || 'staff'),
+    exp:  Date.now() + ATELIER_TTL_MS,
+  }));
+  const value = `${payload}.${signBlob(payload)}`;
+  appendCookie(res, `ofab_atelier=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ATELIER_TTL_MS / 1000}`);
+}
+function getAtelierUser(req) {
+  if (!shopifyOAuthReady()) return null;
+  const raw = readCookie(req, 'ofab_atelier');
+  if (!raw) return null;
+  const i = raw.lastIndexOf('.');
+  if (i <= 0) return null;
+  const payload = raw.slice(0, i), sig = raw.slice(i + 1);
+  if (!timingEqual(sig, signBlob(payload))) return null;
+  try {
+    const d = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return (d && d.exp > Date.now()) ? d : null;
+  } catch { return null; }
+}
+// Vérifie la signature Shopify d'un retour OAuth (doc: tous les paramètres sauf
+// hmac, triés, joints par &, HMAC-SHA256 avec le client secret).
+function shopifyHmacValid(params) {
+  const given = params.get('hmac') || '';
+  const pairs = [];
+  for (const [k, v] of params) { if (k !== 'hmac' && k !== 'signature') pairs.push(`${k}=${v}`); }
+  pairs.sort();
+  const expected = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(pairs.join('&')).digest('hex');
+  return timingEqual(given, expected);
+}
+
 function nanoid() {
   return crypto.randomBytes(10).toString('base64url').slice(0, 14);
 }
@@ -1624,6 +1688,71 @@ http.createServer(async (req, res) => {
       return;
     }
 
+    // ── CONNEXION ATELIER (OAuth Shopify, staff de la boutique) ──────────
+    // /configurateur/login redirige vers l'écran d'autorisation Shopify.
+    // grant_options[]=per-user donne un jeton « online » dont la réponse
+    // contient associated_user : c'est lui qui prouve qu'on parle à un humain
+    // du staff, et pas seulement à quelqu'un qui connaît l'URL.
+    if (req.method === 'GET' && url === '/configurateur/login') {
+      if (!shopifyOAuthReady()) {
+        res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end("Connexion atelier non configurée (SHOPIFY_SHOP, SHOPIFY_API_KEY, SHOPIFY_API_SECRET).");
+        return;
+      }
+      const nonce = crypto.randomBytes(16).toString('hex');
+      appendCookie(res, `ofab_oauth_state=${nonce}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+      const redirectUri = `${CONFIGURATOR_BASE_URL}/configurateur/auth/callback`;
+      const auth = `https://${SHOPIFY_SHOP}/admin/oauth/authorize`
+        + `?client_id=${encodeURIComponent(SHOPIFY_API_KEY)}`
+        + `&scope=${encodeURIComponent(ATELIER_SCOPES)}`
+        + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+        + `&state=${nonce}`
+        + `&grant_options[]=per-user`;
+      res.writeHead(302, { Location: auth });
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && parts[0] === 'configurateur' && parts[1] === 'auth' && parts[2] === 'callback') {
+      const fail = (code, msg) => { res.writeHead(code, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(msg); };
+      if (!shopifyOAuthReady()) { fail(503, 'Connexion atelier non configurée.'); return; }
+      const q = new URL(req.url, `https://${req.headers.host}`).searchParams;
+      const stateCookie = readCookie(req, 'ofab_oauth_state');
+      appendCookie(res, 'ofab_oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+      if (!stateCookie || !timingEqual(q.get('state') || '', stateCookie)) { fail(400, 'État OAuth invalide.'); return; }
+      if ((q.get('shop') || '').toLowerCase() !== SHOPIFY_SHOP)            { fail(400, 'Boutique inattendue.'); return; }
+      if (!shopifyHmacValid(q))                                            { fail(400, 'Signature Shopify invalide.'); return; }
+      const code = q.get('code');
+      if (!code) { fail(400, 'Code manquant.'); return; }
+      let data;
+      try {
+        const r = await fetch(`https://${SHOPIFY_SHOP}/admin/oauth/access_token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ client_id: SHOPIFY_API_KEY, client_secret: SHOPIFY_API_SECRET, code }),
+        });
+        if (!r.ok) { fail(502, 'Shopify a refusé l\'échange du code.'); return; }
+        data = await r.json();
+      } catch { fail(502, 'Shopify injoignable.'); return; }
+      // Sans associated_user, le jeton est « offline » : ce n'est pas une
+      // identité de staff, on refuse. Le jeton lui-même n'est pas conservé.
+      if (!data || !data.associated_user || !data.associated_user.id) {
+        fail(403, "Cette connexion n'identifie pas un membre du staff de la boutique.");
+        return;
+      }
+      issueAtelierCookie(res, data.associated_user);
+      res.writeHead(302, { Location: '/configurateur.html' });
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && url === '/configurateur/logout') {
+      appendCookie(res, 'ofab_atelier=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+      res.writeHead(302, { Location: '/configurateur.html' });
+      res.end();
+      return;
+    }
+
     // ── CONFIGURATEUR 3D (embarqué dans la page produit Shopify) ─────────
     // Sert le configurateur autonome, avec des en-têtes qui autorisent son
     // embarquement en iframe depuis la boutique. Aucune auth : c'est une page
@@ -1645,20 +1774,20 @@ http.createServer(async (req, res) => {
     // page produit, a besoin des déclinaisons et des prix pour s'afficher.
     // Le champ `admin` dit au front s'il peut proposer le mode atelier.
     if (req.method === 'GET' && url === '/api/configurator/configs') {
-      const u = getSessionUser(req);
+      const staff = getAtelierUser(req);
       const rows = db.prepare('SELECT model_key, config FROM configurator_configs').all();
       const configs = {};
       for (const r of rows) { try { configs[r.model_key] = JSON.parse(r.config); } catch {} }
-      json(res, { configs, admin: !!(u && u.is_admin) });
+      json(res, { configs, admin: !!staff, staff: staff ? staff.name : null,
+                  loginUrl: shopifyOAuthReady() ? '/configurateur/login' : null });
       return;
     }
 
     // PUT : écriture réservée aux admins (users.is_admin). C'est le serveur qui
     // fait autorité — masquer le bouton côté client ne protège rien.
     if (req.method === 'PUT' && url === '/api/configurator/config') {
-      const u = getSessionUser(req);
-      if (!u)           { json(res, { error: 'Connexion requise' }, 401); return; }
-      if (!u.is_admin)  { json(res, { error: 'Accès admin requis' }, 403); return; }
+      const staff = getAtelierUser(req);
+      if (!staff) { json(res, { error: 'Connexion Shopify requise' }, 401); return; }
       const b = await parseBody(req).catch(() => null);
       if (!b || typeof b.model !== 'string' || !b.model.trim() ||
           !b.config || typeof b.config !== 'object' || Array.isArray(b.config)) {
@@ -1670,7 +1799,7 @@ http.createServer(async (req, res) => {
                     config     = excluded.config,
                     updated_at = excluded.updated_at,
                     updated_by = excluded.updated_by`)
-        .run(b.model.trim(), JSON.stringify(b.config), new Date().toISOString(), u.id);
+        .run(b.model.trim(), JSON.stringify(b.config), new Date().toISOString(), staff.uid);
       json(res, { ok: true });
       return;
     }
