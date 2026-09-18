@@ -86,6 +86,11 @@ const FAKE_BETA_REMAINING = parseInt(process.env.BETA_FAKE_REMAINING || '7',  10
 const FAKE_BETA_MAX       = parseInt(process.env.BETA_FAKE_MAX       || '100', 10);
 const HTML_FILE     = path.join(__dirname, 'index.html');
 const LANDING_FILE  = path.join(__dirname, 'landing.html');
+const CONFIGURATOR_FILE = path.join(__dirname, 'configurateur.html');
+// Domaines autorisés à embarquer le configurateur dans une iframe (page produit Shopify).
+// Surchargable via CONFIGURATOR_FRAME_ANCESTORS (liste séparée par des espaces).
+const CONFIGURATOR_FRAME_ANCESTORS = process.env.CONFIGURATOR_FRAME_ANCESTORS
+  || "'self' https://onlyfab.fr https://www.onlyfab.fr https://*.myshopify.com";
 
 // ── BASE DE DONNÉES ───────────────────────────────────────────────────────
 const db = new Database(DB_FILE);
@@ -551,6 +556,8 @@ function downloadToUploads(remoteUrl) {
 // Cache HTML — chargé une seule fois au démarrage (pm2 restart à chaque déploiement)
 let htmlCache     = fs.readFileSync(HTML_FILE, 'utf8');
 let landingCache  = fs.readFileSync(LANDING_FILE, 'utf8');
+let configuratorCache = fs.existsSync(CONFIGURATOR_FILE)
+  ? fs.readFileSync(CONFIGURATOR_FILE, 'utf8') : null;
 
 // Nettoyage des fichiers orphelins dans /uploads (pas référencés en BDD)
 (function cleanOrphanUploads() {
@@ -1604,6 +1611,22 @@ http.createServer(async (req, res) => {
         'Service-Worker-Allowed': '/',
       });
       res.end(SERVICE_WORKER);
+      return;
+    }
+
+    // ── CONFIGURATEUR 3D (embarqué dans la page produit Shopify) ─────────
+    // Sert le configurateur autonome, avec des en-têtes qui autorisent son
+    // embarquement en iframe depuis la boutique. Aucune auth : c'est une page
+    // publique destinée au storefront.
+    if (req.method === 'GET' && (url === '/configurateur.html' || url === '/configurator' || url === '/configurateur')) {
+      if (!configuratorCache) { res.writeHead(404); res.end('Configurateur non déployé'); return; }
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600',
+        // Autorise l'embarquement iframe uniquement depuis les domaines de la boutique.
+        'Content-Security-Policy': `frame-ancestors ${CONFIGURATOR_FRAME_ANCESTORS}`,
+      });
+      res.end(configuratorCache);
       return;
     }
 
