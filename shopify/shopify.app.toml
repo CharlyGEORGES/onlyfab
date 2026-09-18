@@ -1,0 +1,23 @@
+# Configuration de l'app Shopify Onlyfab (configurateur 3D de dragons).
+#
+# Cette app ne contient QU'UNE extension de thème (theme app extension) : le bloc
+# "configurateur" à poser sur la page produit. Elle n'a pas besoin de scopes admin
+# ni de backend OAuth — le panier est géré nativement par Shopify (/cart/add.js).
+#
+# `client_id` est renseigné automatiquement par `shopify app dev` la première fois.
+# Voir shopify/README.md pour les étapes de déploiement.
+
+name = "onlyfab-configurateur"
+# client_id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"   # rempli par `shopify app dev`
+application_url = "https://www.onlyfab.fr"
+embedded = false
+
+[access_scopes]
+# Aucune donnée admin n'est lue : le configurateur s'appuie sur le panier storefront.
+scopes = ""
+
+[webhooks]
+api_version = "2024-10"
+
+[pos]
+embedded = false

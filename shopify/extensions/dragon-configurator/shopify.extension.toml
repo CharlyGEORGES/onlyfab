@@ -1,0 +1,9 @@
+# Extension de thème : bloc "Configurateur Dragon" à ajouter sur la page produit.
+# Type `theme` = theme app extension (blocs Liquid + assets servis par Shopify CDN).
+
+api_version = "2024-10"
+
+[[extensions]]
+name = "Configurateur Dragon"
+handle = "dragon-configurator"
+type = "theme"

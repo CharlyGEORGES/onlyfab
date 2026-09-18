@@ -1,0 +1,169 @@
+{%- comment -%}
+  Bloc "Configurateur Dragon" — à poser dans la section produit d'un thème OS 2.0.
+
+  Il affiche le configurateur 3D dans une iframe (mode embarqué) et fait le pont
+  avec le panier natif Shopify : quand le client clique "Ajouter au panier" dans le
+  configurateur, ce bloc sélectionne la variante correspondante
+  (Taille × Finition × Gravure) et appelle /cart/add.js avec la configuration
+  complète en propriétés de ligne.
+
+  Le prix affiché DANS le configurateur est le prix réel de la variante Shopify
+  (source de vérité), renvoyé au configurateur par postMessage.
+{%- endcomment -%}
+
+{%- assign origin = request.origin -%}
+{%- assign cfg_id = block.id -%}
+
+<div
+  class="onlyfab-configurator"
+  id="onlyfab-cfg-{{ cfg_id }}"
+  data-onlyfab-configurator
+  data-block-id="{{ cfg_id }}"
+  style="--onlyfab-height: {{ block.settings.height | default: 760 }}px;"
+>
+  {%- if product == blank -%}
+    <p class="onlyfab-configurator__warn">
+      Ce bloc doit être placé sur une page produit.
+    </p>
+  {%- else -%}
+    <iframe
+      class="onlyfab-configurator__frame"
+      title="Configurateur 3D"
+      loading="lazy"
+      allow="autoplay; xr-spatial-tracking"
+      src="{{ block.settings.configurator_url }}?embed=1&model={{ block.settings.model_key | url_encode }}&origin={{ origin | url_encode }}"
+    ></iframe>
+
+    {%- comment -%} Données produit + réglages, lues par onlyfab-configurator.js {%- endcomment -%}
+    <script type="application/json" data-onlyfab-data>
+      {
+        "origin": {{ origin | json }},
+        "settings": {
+          "modelKey": {{ block.settings.model_key | json }},
+          "optionSize": {{ block.settings.option_size | json }},
+          "optionFinish": {{ block.settings.option_finish | json }},
+          "optionEngraving": {{ block.settings.option_engraving | json }},
+          "valuePremium": {{ block.settings.value_premium | json }},
+          "valueEngravingYes": {{ block.settings.value_engraving_yes | json }},
+          "afterAdd": {{ block.settings.after_add | json }}
+        },
+        "shop": {
+          "currency": {{ shop.currency | json }},
+          "moneyFormat": {{ shop.money_format | json }}
+        },
+        "routes": {
+          "cartAdd": {{ routes.cart_add_url | json }},
+          "cart": {{ routes.cart_url | json }},
+          "cartChange": {{ routes.cart_change_url | json }}
+        },
+        "product": {
+          "id": {{ product.id | json }},
+          "title": {{ product.title | json }},
+          "options": {{ product.options | json }},
+          "variants": [
+            {%- for v in product.variants -%}
+              {
+                "id": {{ v.id | json }},
+                "title": {{ v.title | json }},
+                "price": {{ v.price | json }},
+                "available": {{ v.available | json }},
+                "options": {{ v.options | json }}
+              }{%- unless forloop.last -%},{%- endunless -%}
+            {%- endfor -%}
+          ]
+        }
+      }
+    </script>
+  {%- endif -%}
+</div>
+
+{% schema %}
+{
+  "name": "Configurateur Dragon",
+  "target": "section",
+  "stylesheet": "onlyfab-configurator.css",
+  "javascript": "onlyfab-configurator.js",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Configurateur"
+    },
+    {
+      "type": "url",
+      "id": "configurator_url",
+      "label": "URL du configurateur",
+      "info": "Page HTML autonome du configurateur, servie avec l'en-tête frame-ancestors (ex. https://www.onlyfab.fr/configurateur.html)."
+    },
+    {
+      "type": "text",
+      "id": "model_key",
+      "label": "Modèle de dragon",
+      "info": "Clé du modèle à charger : baby, rose, or, petit…",
+      "default": "baby"
+    },
+    {
+      "type": "range",
+      "id": "height",
+      "label": "Hauteur (px)",
+      "min": 480,
+      "max": 1000,
+      "step": 20,
+      "unit": "px",
+      "default": 760
+    },
+    {
+      "type": "header",
+      "content": "Correspondance des variantes"
+    },
+    {
+      "type": "paragraph",
+      "content": "Noms des options du produit qui portent le prix. Les couleurs et le texte de gravure passent en propriétés de ligne (sans surcoût)."
+    },
+    {
+      "type": "text",
+      "id": "option_size",
+      "label": "Option Taille",
+      "default": "Taille"
+    },
+    {
+      "type": "text",
+      "id": "option_finish",
+      "label": "Option Finition",
+      "default": "Finition"
+    },
+    {
+      "type": "text",
+      "id": "option_engraving",
+      "label": "Option Gravure",
+      "default": "Gravure"
+    },
+    {
+      "type": "text",
+      "id": "value_premium",
+      "label": "Valeur « premium » de l'option Finition",
+      "default": "Premium"
+    },
+    {
+      "type": "text",
+      "id": "value_engraving_yes",
+      "label": "Valeur « avec gravure » de l'option Gravure",
+      "default": "Avec"
+    },
+    {
+      "type": "header",
+      "content": "Après l'ajout au panier"
+    },
+    {
+      "type": "select",
+      "id": "after_add",
+      "label": "Comportement",
+      "options": [
+        { "value": "drawer", "label": "Ouvrir le tiroir panier du thème" },
+        { "value": "cart", "label": "Rediriger vers /cart" },
+        { "value": "stay", "label": "Rester sur la page" }
+      ],
+      "default": "drawer"
+    }
+  ]
+}
+{% endschema %}
