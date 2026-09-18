@@ -1,0 +1,44 @@
+.onlyfab-live { max-width: 720px; margin: 0 auto; }
+.onlyfab-live__title { font-size: 1.4rem; margin: 0 0 16px; }
+.onlyfab-live__gate { text-align: center; padding: 24px; }
+.onlyfab-live__btn {
+  display: inline-block; margin-top: 10px; padding: 10px 18px;
+  background: #c7972c; color: #fff; border-radius: 10px; text-decoration: none; font-weight: 600;
+}
+.onlyfab-live__loading, .onlyfab-live__empty { color: #777; font-size: 0.95rem; }
+
+.onlyfab-live__card {
+  display: flex; align-items: center; gap: 20px;
+  padding: 18px; margin: 0 0 14px;
+  border: 1px solid #e6e1d6; border-radius: 16px; background: #fbf9f4;
+}
+.onlyfab-live__card.is-done { border-color: #1f6b4f; background: #f0f7f2; }
+.onlyfab-live__card.is-paused { border-color: #c99a2e; }
+
+.onlyfab-live__ringwrap { flex: 0 0 auto; }
+.onlyfab-live__ring { transform: rotate(-90deg); }
+.onlyfab-live__ring-bg { fill: none; stroke: #e6e1d6; stroke-width: 10; }
+.onlyfab-live__ring-fg {
+  fill: none; stroke: #c7972c; stroke-width: 10; stroke-linecap: round;
+  transition: stroke-dashoffset .6s ease;
+}
+.onlyfab-live__card.is-done .onlyfab-live__ring-fg { stroke: #1f6b4f; }
+.onlyfab-live__ring-pct {
+  transform: rotate(90deg); transform-origin: 60px 60px;
+  text-anchor: middle; dominant-baseline: middle;
+  font-size: 26px; font-weight: 700; fill: #2b2b30;
+}
+
+.onlyfab-live__info { min-width: 0; }
+.onlyfab-live__order { font-size: 0.8rem; color: #999; text-transform: uppercase; letter-spacing: .04em; }
+.onlyfab-live__label { font-size: 1.1rem; font-weight: 600; margin: 2px 0 6px; }
+.onlyfab-live__state { font-weight: 600; color: #c7972c; }
+.onlyfab-live__card.is-done .onlyfab-live__state { color: #1f6b4f; }
+.onlyfab-live__stale { color: #b06; font-weight: 400; font-size: 0.85em; }
+.onlyfab-live__meta { list-style: none; padding: 0; margin: 6px 0 0; color: #666; font-size: 0.9rem; }
+.onlyfab-live__meta li { margin: 2px 0; }
+
+@media (max-width: 560px) {
+  .onlyfab-live__card { flex-direction: column; text-align: center; gap: 12px; }
+  .onlyfab-live__ring { width: 100px; height: 100px; }
+}

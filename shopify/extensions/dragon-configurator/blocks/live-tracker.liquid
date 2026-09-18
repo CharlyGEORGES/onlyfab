@@ -1,0 +1,64 @@
+{%- comment -%}
+  Bloc "Suivi de production" — à placer sur une page réservée au client connecté
+  (ex. une page "Mon impression" liée depuis le compte client / l'email de commande).
+
+  Réservé au client connecté : si personne n'est connecté, on invite à se connecter.
+  Sinon, on interroge l'App Proxy Shopify (/apps/onlyfab/live) qui est signé par
+  Shopify et vérifié côté serveur Onlyfab : le client ne voit que SES impressions.
+{%- endcomment -%}
+
+<div class="onlyfab-live" data-onlyfab-live>
+  {%- if customer == blank -%}
+    <div class="onlyfab-live__gate">
+      <h2 class="onlyfab-live__title">{{ block.settings.heading | default: 'Suivi de production' }}</h2>
+      <p>Connecte-toi à ton compte pour suivre la fabrication de ta commande en direct.</p>
+      <a class="onlyfab-live__btn" href="{{ routes.account_login_url }}">Se connecter</a>
+    </div>
+  {%- else -%}
+    <h2 class="onlyfab-live__title">{{ block.settings.heading | default: 'Suivi de production' }}</h2>
+    <div class="onlyfab-live__list" data-onlyfab-live-list>
+      <p class="onlyfab-live__loading">Chargement de tes impressions…</p>
+    </div>
+    <script type="application/json" data-onlyfab-live-config>
+      {
+        "endpoint": {{ block.settings.proxy_path | default: '/apps/onlyfab/live' | json }},
+        "email": {{ customer.email | json }},
+        "pollMs": {{ block.settings.poll_seconds | default: 5 | times: 1000 }}
+      }
+    </script>
+  {%- endif -%}
+</div>
+
+{% schema %}
+{
+  "name": "Suivi de production",
+  "target": "section",
+  "stylesheet": "onlyfab-live.css",
+  "javascript": "onlyfab-live.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Titre",
+      "default": "Suivi de production"
+    },
+    {
+      "type": "text",
+      "id": "proxy_path",
+      "label": "Chemin de l'App Proxy",
+      "info": "Doit correspondre au proxy de l'app (prefix/subpath). Défaut : /apps/onlyfab/live",
+      "default": "/apps/onlyfab/live"
+    },
+    {
+      "type": "range",
+      "id": "poll_seconds",
+      "label": "Rafraîchissement",
+      "min": 3,
+      "max": 30,
+      "step": 1,
+      "unit": "s",
+      "default": 5
+    }
+  ]
+}
+{% endschema %}

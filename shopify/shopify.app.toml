@@ -16,6 +16,14 @@ embedded = false
 # Aucune donnée admin n'est lue : le configurateur s'appuie sur le panier storefront.
 scopes = ""
 
+# App Proxy : la boutique expose /apps/onlyfab/* et Shopify le proxifie (signé)
+# vers le serveur Onlyfab. Sert le suivi de production live au client connecté.
+# storefront /apps/onlyfab/live  ->  https://onlyfab.fly.dev/proxy/live
+[app_proxy]
+url = "https://onlyfab.fly.dev/proxy"
+subpath = "onlyfab"
+prefix = "apps"
+
 [webhooks]
 api_version = "2024-10"
 

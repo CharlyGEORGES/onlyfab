@@ -177,3 +177,66 @@ Chaque ligne de commande porte :
 
 Le prix, le stock et la disponibilité restent gérés dans Shopify. Le configurateur
 n'invente aucun prix : il montre celui de la variante sélectionnée.
+
+---
+
+## 8. Production Live (suivi d'impression pour le client)
+
+Le client suit la fabrication de sa commande **en direct depuis son compte
+Shopify** (progression, couche, temps restant, étape). v1 = statut/progression
+(pas de caméra vidéo — voir plus bas).
+
+### Flux
+
+```
+Imprimante Bambu (H2D…) ──MQTT cloud──▶ serveur Onlyfab (Fly)
+   report en continu → état live en mémoire (par imprimante)
+
+Compte client Shopify (connecté)
+   page "Suivi de production" (bloc live-tracker)
+      └─ fetch /apps/onlyfab/live?email=…            (relatif, sur la boutique)
+           └─ Shopify App Proxy : signe + ajoute logged_in_customer_id
+                └─ serveur Onlyfab /proxy/live : vérifie la signature,
+                   ne renvoie que les impressions de CE client (progression only)
+```
+
+### Côté serveur (déjà en place sur cette branche)
+
+- `bambu.js` remonte l'état d'impression en continu (`onReport`) — plus seulement
+  la fin d'impression.
+- Table `live_prints` : association commande ↔ imprimante.
+- Endpoint public **signé** `GET /proxy/live` (+ `?order=`) : vérifie la
+  signature App Proxy (`SHOPIFY_APP_SECRET`), exige un client connecté, et ne
+  renvoie que les impressions dont l'email/`customer_gid` correspond.
+- API atelier (session requise) :
+  - `GET  /api/live-prints` — liste les associations actives + leur live.
+  - `POST /api/live-prints` — `{order_number, printer_serial, customer_email, label, shop}`.
+  - `PATCH/DELETE /api/live-prints/:id` — clôture (`done`) / annule (`cancelled`).
+
+### À configurer
+
+1. **Secret app** sur Fly : `flyctl secrets set SHOPIFY_APP_SECRET=<client secret de l'app>`
+   (indispensable : sans lui, `/proxy/live` répond `503 proxy-not-configured`).
+2. **App Proxy** : déjà déclaré dans `shopify.app.toml` (`/apps/onlyfab` →
+   `https://onlyfab.fly.dev/proxy`). Ajuster l'URL si le domaine du serveur diffère,
+   puis `shopify app deploy`.
+3. **Page client** : créer une page (ex. « Suivi de production »), y ajouter le bloc
+   **Suivi de production**, et la lier depuis le compte client / l'email de commande.
+   Le bloc est réservé au client connecté (sinon il invite à se connecter).
+
+### Associer une commande à une imprimante
+
+Quand l'atelier lance l'impression d'une commande, il crée l'association
+(`POST /api/live-prints` avec le n° de commande, l'email client et le serial de
+l'imprimante). Le client voit alors le live sur son compte.
+
+> ⛏️ **À faire** : l'écran atelier (dans `index.html`) pour créer/clôturer ces
+> associations en un clic n'est pas encore branché — l'API est prête, l'UI reste
+> à ajouter. Automatisation possible ensuite via un webhook `orders/create` Shopify.
+
+### Caméra vidéo (phase 2, non incluse)
+
+La caméra de la H2D n'est pas un flux public. Un flux vidéo public nécessiterait
+un **agent tournant à l'atelier** (sur le réseau de l'imprimante) qui capte la
+caméra et la relaie (WebRTC/HLS). La page client est conçue pour l'accueillir plus
+tard sans refonte.

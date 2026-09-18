@@ -92,6 +92,27 @@ const CONFIGURATOR_FILE = path.join(__dirname, 'configurateur.html');
 const CONFIGURATOR_FRAME_ANCESTORS = process.env.CONFIGURATOR_FRAME_ANCESTORS
   || "'self' https://onlyfab.fr https://www.onlyfab.fr https://*.myshopify.com";
 
+// Secret de l'app Shopify (client secret) — sert à vérifier la signature des
+// requêtes App Proxy. À définir en prod (Fly secret SHOPIFY_APP_SECRET).
+const SHOPIFY_APP_SECRET = process.env.SHOPIFY_APP_SECRET || '';
+// Vérifie la signature d'une requête App Proxy Shopify (HMAC-SHA256 hex des
+// paramètres triés, concaténés sans séparateur, valeurs multiples jointes par ',').
+function verifyProxySignature(query, secret) {
+  const sig = query.signature;
+  if (!sig || !secret) return false;
+  const message = Object.keys(query)
+    .filter(k => k !== 'signature')
+    .sort()
+    .map(k => { const v = query[k]; return `${k}=${Array.isArray(v) ? v.join(',') : v}`; })
+    .join('');
+  const digest = crypto.createHmac('sha256', secret).update(message, 'utf8').digest('hex');
+  try {
+    const a = Buffer.from(digest, 'utf8');
+    const b = Buffer.from(String(sig), 'utf8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch { return false; }
+}
+
 // ── BASE DE DONNÉES ───────────────────────────────────────────────────────
 const db = new Database(DB_FILE);
 db.exec('PRAGMA journal_mode = WAL');
@@ -172,6 +193,30 @@ db.exec(`
 addColumnIfMissing('print_jobs', 'thumbnail', 'TEXT');
 addColumnIfMissing('print_jobs', 'weight',    'REAL');
 addColumnIfMissing('print_jobs', 'duration',  'INTEGER');
+
+// ── PRODUCTION LIVE ───────────────────────────────────────────────────────
+// Associe une commande Shopify (n° + email client) à une imprimante, pour que
+// le client suive la fabrication en direct depuis son compte Shopify.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS live_prints (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        TEXT NOT NULL,           -- l'atelier propriétaire de l'association
+    shop           TEXT,                    -- domaine boutique Shopify
+    order_number   TEXT NOT NULL,           -- n° / nom de commande (ex. "1042" ou "#1042")
+    customer_email TEXT,                    -- email client (indicatif)
+    customer_gid   TEXT,                    -- id client Shopify (revendiqué à la 1re consultation)
+    printer_serial TEXT NOT NULL,           -- imprimante qui fabrique cette commande
+    label          TEXT,                    -- libellé montré au client (ex. "Baby Crystal Dragon")
+    status         TEXT DEFAULT 'active',   -- active | done | cancelled
+    created_at     TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at     TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_live_prints_order    ON live_prints(order_number);
+  CREATE INDEX IF NOT EXISTS idx_live_prints_customer ON live_prints(customer_gid);
+  CREATE INDEX IF NOT EXISTS idx_live_prints_user     ON live_prints(user_id, status);
+`);
+// Normalise un n° de commande pour comparer "#1042", "1042", " 1042 " à l'identique.
+function normOrderNo(s) { return String(s == null ? '' : s).replace(/[^0-9a-z]/gi, '').toLowerCase(); }
 
 // ── TABLES MULTI-TENANT ───────────────────────────────────────────────────
 db.exec(`
@@ -903,6 +948,26 @@ function nanoid() {
 const sseByUser   = new Map(); // userId → Set<res>
 const bambuByUser = new Map(); // userId → { status, client? }
 
+// État "live" d'impression par imprimante (serial → snapshot fusionné).
+// En mémoire uniquement : c'est de l'éphémère temps réel, pas de persistance.
+// Fusion des deltas MQTT (on n'écrase jamais un champ connu par un absent).
+const liveByPrinter = new Map(); // printerSerial → { state, percent, layer, ... , updatedAt }
+function updateLive(snap) {
+  if (!snap || !snap.printerSerial) return;
+  const serial = snap.printerSerial;
+  const prev = liveByPrinter.get(serial) || {};
+  const next = { ...prev };
+  Object.keys(snap).forEach(k => { if (snap[k] !== undefined && snap[k] !== null) next[k] = snap[k]; });
+  next.updatedAt = Date.now();
+  liveByPrinter.set(serial, next);
+}
+function getLive(serial) {
+  const s = liveByPrinter.get(serial);
+  if (!s) return null;
+  // Considère "périmé" au-delà de 2 min sans message (imprimante hors ligne).
+  return { ...s, stale: (Date.now() - (s.updatedAt || 0)) > 120000 };
+}
+
 function broadcast(userId, event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   const clients = sseByUser.get(userId) || new Set();
@@ -1207,6 +1272,7 @@ function connectBambu(userId, token, printers, userEmail) {
     onStateChange: status => {
       if ((bambuByUser.get(userId) || {}).client === client) onStateChange(userId, status);
     },
+    onReport: snap => updateLive(snap),
   });
   bambuByUser.set(userId, { status: 'connecting', client });
 }
@@ -1627,6 +1693,44 @@ http.createServer(async (req, res) => {
         'Content-Security-Policy': `frame-ancestors ${CONFIGURATOR_FRAME_ANCESTORS}`,
       });
       res.end(configuratorCache);
+      return;
+    }
+
+    // ── PRODUCTION LIVE — endpoints publics via App Proxy Shopify ────────
+    // La boutique appelle /apps/onlyfab/live(/list) ; Shopify proxifie vers
+    // /proxy/live(/list) en signant la requête (HMAC du secret app) et en
+    // ajoutant logged_in_customer_id. On vérifie la signature avant tout.
+    if (req.method === 'GET' && parts[0] === 'proxy' && parts[1] === 'live') {
+      const q = {};
+      const usp = new URL(req.url, 'http://x').searchParams;
+      for (const key of new Set([...usp.keys()])) { const all = usp.getAll(key); q[key] = all.length > 1 ? all : all[0]; }
+
+      if (!SHOPIFY_APP_SECRET) { json(res, { error: 'proxy-not-configured' }, 503); return; }
+      if (!verifyProxySignature(q, SHOPIFY_APP_SECRET)) { json(res, { error: 'bad-signature' }, 401); return; }
+
+      const gid = String(q.logged_in_customer_id || '').trim();
+      const email = String(q.email || '').trim();
+      if (!gid) { json(res, { loggedIn: false, prints: [] }); return; }
+
+      const single = normOrderNo(q.order || '');
+      const rows = db.prepare("SELECT * FROM live_prints WHERE status='active'").all();
+      const out = [];
+      const claim = db.prepare("UPDATE live_prints SET customer_gid=:gid, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=:id");
+      for (const r of rows) {
+        if (single && normOrderNo(r.order_number) !== single) continue;
+        const gidMatch = r.customer_gid && r.customer_gid === gid;
+        const emailMatch = !r.customer_gid && email && r.customer_email
+          && r.customer_email.trim().toLowerCase() === email.toLowerCase();
+        if (!gidMatch && !emailMatch) continue;
+        if (emailMatch) { try { claim.run({ gid, id: r.id }); } catch {} }
+        out.push({
+          order: r.order_number,
+          label: r.label || 'Votre impression',
+          status: r.status,
+          live: getLive(r.printer_serial),   // progression uniquement, aucune donnée perso
+        });
+      }
+      json(res, { loggedIn: true, prints: out });
       return;
     }
 
@@ -2191,6 +2295,45 @@ http.createServer(async (req, res) => {
       if (req.method === 'PATCH' && parts[1] === 'print-jobs' && id && sub === 'done') {
         db.prepare('UPDATE print_jobs SET status=:s WHERE id=:id AND user_id=:uid').run({ s: 'done', id, uid: userId });
         json(res, { ok: true });
+        return;
+      }
+
+      // ── PRODUCTION LIVE (atelier) ────────────────────────────────────
+      // Liste les associations commande ↔ imprimante de cet atelier, avec le
+      // snapshot live courant de chaque imprimante.
+      if (req.method === 'GET' && url === '/api/live-prints') {
+        const rows = db.prepare(
+          "SELECT * FROM live_prints WHERE user_id=? AND status='active' ORDER BY created_at DESC"
+        ).all(userId);
+        json(res, rows.map(r => ({ ...r, live: getLive(r.printer_serial) })));
+        return;
+      }
+      // Crée une association (au lancement d'une impression pour une commande).
+      if (req.method === 'POST' && url === '/api/live-prints') {
+        const b = await parseBody(req);
+        const orderNo = String(b.order_number || '').trim();
+        const serial  = String(b.printer_serial || '').trim();
+        if (!orderNo || !serial) { json(res, { error: 'order_number et printer_serial requis' }, 400); return; }
+        const row = db.prepare(
+          `INSERT INTO live_prints (user_id, shop, order_number, customer_email, printer_serial, label, status, updated_at)
+           VALUES (:uid, :shop, :ord, :email, :serial, :label, 'active', strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
+        ).run({
+          uid: userId,
+          shop: (b.shop || '').trim() || null,
+          ord: orderNo,
+          email: (b.customer_email || '').trim() || null,
+          serial,
+          label: (b.label || '').trim() || null,
+        });
+        json(res, db.prepare('SELECT * FROM live_prints WHERE id=?').get(row.lastInsertRowid));
+        return;
+      }
+      // Clôture / annule une association.
+      if ((req.method === 'PATCH' || req.method === 'DELETE') && parts[1] === 'live-prints' && id) {
+        const newStatus = (req.method === 'DELETE' || sub === 'cancel') ? 'cancelled' : 'done';
+        db.prepare("UPDATE live_prints SET status=:s, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=:id AND user_id=:uid")
+          .run({ s: newStatus, id, uid: userId });
+        json(res, { ok: true, status: newStatus });
         return;
       }
 

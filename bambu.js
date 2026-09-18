@@ -79,7 +79,57 @@ function isDuplicate(serial, fileName) {
 }
 
 // ── CONNEXION MQTT ────────────────────────────────────────────────────────────
-function connect({ token, printers, onPrintComplete, onStateChange, userEmail }) {
+// Étape courante Bambu (stg_cur) → libellé lisible. Liste partielle mais
+// couvre les étapes visibles par un client. Les codes inconnus tombent sur null.
+const STAGE_LABELS = {
+  '-1': 'Prêt',
+  0:  'Impression',
+  1:  'Auto-nivellement du plateau',
+  2:  'Position de départ du plateau',
+  3:  'Étalonnage extrudeur',
+  4:  'Nettoyage de la buse',
+  6:  'Chauffe du plateau chaud',
+  7:  'Nettoyage de la buse',
+  8:  'Étalonnage caméra',
+  9:  'Nivellement du premier layer',
+  10: 'Mesure du plateau',
+  11: 'Balayage du plateau',
+  12: 'Changement de filament',
+  13: 'Pause utilisateur',
+  14: 'Filament coincé',
+  16: 'Refroidissement de la chambre',
+  20: 'Reprise',
+};
+
+// Construit un instantané "live" à partir du bloc print d'un message report.
+// Les messages Bambu sont souvent des deltas partiels : les champs absents sont
+// laissés à undefined pour que l'appelant fusionne sans écraser l'état connu.
+function buildLiveSnapshot(print) {
+  const num = v => (v == null || v === '' ? undefined : Number(v));
+  const stg = (print.stg_cur != null) ? Number(print.stg_cur) : undefined;
+  let fileName;
+  if (print.subtask_name || print.gcode_file) {
+    fileName = (print.subtask_name || print.gcode_file)
+      .replace(/\.gcode\.3mf$|\.gcode$|\.3mf$/i, '').trim();
+  }
+  const snap = {
+    state:        print.gcode_state || undefined,           // IDLE/PREPARE/RUNNING/PAUSE/FINISH/FAILED
+    percent:      num(print.mc_percent),
+    layer:        num(print.layer_num),
+    totalLayers:  num(print.total_layer_num),
+    remainingMin: num(print.mc_remaining_time),
+    stage:        stg,
+    stageLabel:   (stg != null && STAGE_LABELS[stg] != null) ? STAGE_LABELS[stg] : undefined,
+    nozzleTemp:   num(print.nozzle_temper),
+    bedTemp:      num(print.bed_temper),
+    fileName,
+  };
+  // Retire les undefined pour que la fusion côté serveur soit propre.
+  Object.keys(snap).forEach(k => snap[k] === undefined && delete snap[k]);
+  return snap;
+}
+
+function connect({ token, printers, onPrintComplete, onStateChange, onReport, userEmail }) {
   let userId = parseUserId(token);
   if (!userId && userEmail) {
     // Fallback : Bambu MQTT accepte aussi le format "u_<email>" dans certains cas
@@ -116,6 +166,18 @@ function connect({ token, printers, onPrintComplete, onStateChange, userEmail })
       const data = JSON.parse(msg.toString());
       const print = data.print;
       if (!print) return;
+
+      const serialLive = topic.split('/')[1];
+
+      // ── LIVE ── remonte l'état d'impression en cours (progression, couche,
+      // temps restant, étape) à chaque message report. Indépendant du filtre
+      // FINISH ci-dessous : le live suit toute la durée de l'impression.
+      if (onReport) {
+        try {
+          const snap = buildLiveSnapshot(print);
+          if (Object.keys(snap).length) onReport(Object.assign({ printerSerial: serialLive }, snap));
+        } catch { /* le live ne doit jamais casser le flux */ }
+      }
 
       // On ne s'intéresse qu'aux impressions terminées…
       if (print.gcode_state !== 'FINISH') return;
@@ -216,4 +278,4 @@ async function fetchPrinters(token) {
   }
 }
 
-module.exports = { getToken, connect, fetchPrinters };
+module.exports = { getToken, connect, fetchPrinters, buildLiveSnapshot };
