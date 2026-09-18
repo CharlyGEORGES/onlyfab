@@ -11,6 +11,8 @@ RUN npm install --omit=dev
 
 # Copy app files
 COPY server.js bambu.js index.html landing.html configurateur.html ./
+# Modèles 3D d'origine : recopiés en base au premier démarrage, puis inutiles.
+COPY configurator/Dragon-light.glb configurator/Rose.glb ./configurator-assets/
 
 # Create uploads dir
 RUN mkdir -p /data/uploads
