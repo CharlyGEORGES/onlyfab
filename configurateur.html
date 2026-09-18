@@ -4562,6 +4562,18 @@ function modelAdmin(){
   box.innerHTML="";
   MODELS.forEach(m=>{
     const row=el("div","glbfile");
+    const active=state.modelKey===m.key;
+    row.style.cssText="align-items:center;border:1px solid "+(active?"var(--accent)":"var(--line)")
+      +";border-radius:9px;padding:7px 9px;margin-bottom:7px";
+    // Le bouton emoji sélectionne le modèle : c'est lui qu'on configure ensuite.
+    const pick=el("button",null,m.emoji||"🐉"); pick.type="button";
+    pick.title=active?"Modèle en cours de configuration":"Configurer ce modèle";
+    pick.setAttribute("aria-pressed",active);
+    pick.style.cssText="cursor:pointer;font-size:16px;line-height:1;padding:5px 7px;border-radius:8px;"
+      +"border:1px solid "+(active?"var(--accent)":"var(--line)")+";background:"
+      +(active?"color-mix(in srgb,var(--accent) 16%,transparent)":"transparent");
+    pick.onclick=async()=>{ if(state.modelKey===m.key) return; await selectModel(m); renderPanel(); };
+    row.appendChild(pick);
     const nm=el("input"); nm.type="text"; nm.value=m.name; nm.style.cssText="flex:1;min-width:0";
     nm.onchange=async()=>{ m.name=nm.value.trim()||m.name; if(await saveModel(m)){ toast("Renommé"); renderPanel(); } };
     const tag=el("span",null,m.src==="glb"?"3D":"procédural");
@@ -4814,8 +4826,8 @@ function makeCollapsible(P){
 function renderAtelier(P){
   // modele 3D + catalogue
   const g0=el("div","group");g0.appendChild(el("h2",null,"<span>Modèle 3D</span>"));
-  g0.appendChild(modelPicker());
-  g0.appendChild(el("p","hintline","Choisis le dragon à configurer. Chaque modèle a ses propres déclinaisons et réglages."));
+  // Une seule liste en atelier : les cartes du mode client feraient doublon
+  // avec les lignes éditables ci-dessous.
   g0.appendChild(modelAdmin());
   P.appendChild(g0);
 
@@ -4828,7 +4840,7 @@ function renderAtelier(P){
   state.config.variants.forEach((v,vi)=>{
     const box=el("div","zoneAdmin");
     const top=el("div","top");
-    const radio=el("input");radio.type="radio";radio.name="activeV";radio.checked=state.config.activeVariantId===v.id;radio.style.width="auto";radio.title="Prévisualiser cette variante";
+    const radio=el("input");radio.type="radio";radio.name="activeV";radio.checked=state.config.activeVariantId===v.id;radio.style.width="auto";radio.title="Variante par défaut : celle que voit le client à l'ouverture, et celle qui sert au calcul du prix";
     radio.onchange=()=>{state.config.activeVariantId=v.id;saveConfig();applyColors();renderPanel();};
     const nm=el("input");nm.type="text";nm.value=v.name;nm.oninput=()=>{v.name=nm.value;saveConfig();priceHead();};
     const pr=el("input");pr.type="number";pr.min="0";pr.step="0.5";pr.value=v.price;pr.style.maxWidth="58px";pr.title="Prix de base de la variante (à la taille de référence)";pr.oninput=()=>{v.price=parseFloat(pr.value)||0;saveConfig();priceHead();};
@@ -4869,7 +4881,7 @@ function renderAtelier(P){
     box.appendChild(addS);
     gv.appendChild(box);
   });
-  gv.appendChild(el("p","hintline","Le champ chiffré (€) = prix de base de la variante, à la taille de référence. Chaque couleur regroupe des parties (clique les puces). Le rond à gauche prévisualise la variante."));
+  gv.appendChild(el("p","hintline","Le rond à gauche désigne la variante par défaut : celle que voit le client à l'ouverture et celle qui sert au calcul du prix. Le champ chiffré (€) = prix de base de la variante, à la taille de référence. Chaque couleur regroupe des parties (clique les puces)."));
   P.appendChild(gv);
 
   // couleur figee des parties non incluses
