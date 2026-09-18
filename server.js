@@ -404,6 +404,16 @@ db.exec(`
     key   TEXT PRIMARY KEY,
     value TEXT
   );
+
+  -- Configs du configurateur 3D (une par modèle de dragon). Remplace le
+  -- localStorage : la config est désormais partagée et survit au navigateur.
+  -- Lecture publique (le configurateur client en a besoin), écriture admin.
+  CREATE TABLE IF NOT EXISTS configurator_configs (
+    model_key  TEXT PRIMARY KEY,
+    config     TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+  );
 `);
 
 // Flag onboarding : 0 = jamais terminé le wizard d'accueil (Bambu →
@@ -1627,6 +1637,41 @@ http.createServer(async (req, res) => {
         'Content-Security-Policy': `frame-ancestors ${CONFIGURATOR_FRAME_ANCESTORS}`,
       });
       res.end(configuratorCache);
+      return;
+    }
+
+    // ── CONFIGS DU CONFIGURATEUR ─────────────────────────────────────────
+    // GET : lecture publique. Le configurateur, y compris côté client sur la
+    // page produit, a besoin des déclinaisons et des prix pour s'afficher.
+    // Le champ `admin` dit au front s'il peut proposer le mode atelier.
+    if (req.method === 'GET' && url === '/api/configurator/configs') {
+      const u = getSessionUser(req);
+      const rows = db.prepare('SELECT model_key, config FROM configurator_configs').all();
+      const configs = {};
+      for (const r of rows) { try { configs[r.model_key] = JSON.parse(r.config); } catch {} }
+      json(res, { configs, admin: !!(u && u.is_admin) });
+      return;
+    }
+
+    // PUT : écriture réservée aux admins (users.is_admin). C'est le serveur qui
+    // fait autorité — masquer le bouton côté client ne protège rien.
+    if (req.method === 'PUT' && url === '/api/configurator/config') {
+      const u = getSessionUser(req);
+      if (!u)           { json(res, { error: 'Connexion requise' }, 401); return; }
+      if (!u.is_admin)  { json(res, { error: 'Accès admin requis' }, 403); return; }
+      const b = await parseBody(req).catch(() => null);
+      if (!b || typeof b.model !== 'string' || !b.model.trim() ||
+          !b.config || typeof b.config !== 'object' || Array.isArray(b.config)) {
+        json(res, { error: 'Requête invalide' }, 400); return;
+      }
+      db.prepare(`INSERT INTO configurator_configs (model_key, config, updated_at, updated_by)
+                  VALUES (?,?,?,?)
+                  ON CONFLICT(model_key) DO UPDATE SET
+                    config     = excluded.config,
+                    updated_at = excluded.updated_at,
+                    updated_by = excluded.updated_by`)
+        .run(b.model.trim(), JSON.stringify(b.config), new Date().toISOString(), u.id);
+      json(res, { ok: true });
       return;
     }
 
