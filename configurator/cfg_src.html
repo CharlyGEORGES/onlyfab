@@ -322,8 +322,8 @@
 
 <script>
 /* Modele 3D par defaut embarque (injecte au build). "__" = non injecte. */
-const DEFAULT_GLB_B64="__GLB_B64__";
-const ROSE_GLB_B64="__ROSE_B64__";
+/* Les modèles 3D ne sont plus encodés dans la page : ils viennent du serveur
+   (/api/configurator/models) et leurs .glb sont chargés à la demande. */
 const DEFAULT_GLB_NAME="BabyCrystalDragon.glb";
 
 /* ===================== CONFIG TENANT (specificite Onlyfab) ===================== */
@@ -377,16 +377,7 @@ function updatePriceDisplay(){
 /* ===================== CATALOGUE MODÈLES (simulation) ===================== */
 /* src:'glb' = utilise le dragon embarqué · 'placeholder' = dragon procédural.
    seed = couleurs/prix par défaut du modèle (appliqués à la 1re ouverture). */
-const MODELS=[
-  {key:"baby", name:"Baby Crystal Dragon", emoji:"🐉", src:"glb", glb:"baby",
-    seed:{body:"#2f5aa6", crist:"#c7972c", base:5, refCm:10}},
-  {key:"rose", name:"Baby Rose Dragon", emoji:"🌹", src:"glb", glb:"rose",
-    seed:{body:"#d98fb0", crist:"#c7972c", base:6, refCm:9}},
-  {key:"or", name:"Dragon d'Or", emoji:"✨", src:"glb", glb:"baby",
-    seed:{body:"#c7972c", crist:"#26262e", base:9, refCm:12}},
-  {key:"petit", name:"Petit Dragon", emoji:"🐲", src:"placeholder",
-    seed:{body:"#1f6b4f", crist:"#a3252f", base:4, refCm:8}}
-];
+let MODELS=[];   // rempli au démarrage depuis /api/configurator/models
 const modelByKey=k=>MODELS.find(m=>m.key===k)||MODELS[0];
 function seedConfig(cfg,key){
   const s=(modelByKey(key).seed)||{};
@@ -885,21 +876,98 @@ function loadGLBArrayBuffer(buf,name){
 function clearGLB(){ state.glb=null; state.modelKey="placeholder"; state.config=loadConfig(["body","wings","spine"]); rebuildModel(); render(); }
 
 /* ---- catalogue : sélection d'un modèle (simulation multi-modèles) ---- */
-const GLB_BUFFERS={};   // {baby:ArrayBuffer, rose:ArrayBuffer}
-function selectModel(m){
+const GLB_BUFFERS={};   // {cle: ArrayBuffer} — cache mémoire des .glb déjà chargés
+// Va chercher le .glb du modèle sur le serveur, une seule fois par modèle.
+async function glbBuffer(m){
+  if(GLB_BUFFERS[m.key]) return GLB_BUFFERS[m.key];
+  if(!m.glbUrl) return null;
+  const r=await fetch(m.glbUrl,{cache:"force-cache"});
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  const b=await r.arrayBuffer();
+  GLB_BUFFERS[m.key]=b;
+  return b;
+}
+async function selectModel(m){
   if(!m)return;
-  if(m.src==="placeholder"){
+  if(m.src==="placeholder"||!m.glbUrl){
     state.glb=null; state.modelKey=m.key; state.config=loadConfig(["body","wings","spine"]);
     rebuildModel(); render(); applyPendingShare(); return;
   }
-  const buf=GLB_BUFFERS[m.glb||"baby"];
-  if(!(GLTF_OK && buf)){ toast("Modèle 3D indisponible."); return; }
+  if(!GLTF_OK){ toast("Chargeur 3D indisponible."); return; }
+  let buf=null;
+  try{ buf=await glbBuffer(m); }catch(e){ console.error(e); toast("Modèle 3D injoignable."); return; }
+  if(!buf){ toast("Modèle 3D indisponible."); return; }
   new THREE.GLTFLoader().parse(buf,"",gltf=>{
     const parts=[]; gltf.scene.traverse(o=>{if(o.isMesh){const nm=o.name||(o.material&&o.material.name)||("part_"+parts.length);if(!parts.includes(nm))parts.push(nm);}});
     state.glb={name:m.name,scene:gltf.scene}; state.modelKey=m.key; state.config=loadConfig(parts);
     rebuildModel(); render(); applyPendingShare();
   },e=>{console.error(e);toast("Impossible de charger le modèle.");});
 }
+/* ---- gestion des modèles (atelier) : renommer, envoyer un .glb, supprimer ---- */
+async function apiModels(){
+  const r=await fetch("/api/configurator/models",{cache:"no-store",credentials:"same-origin"});
+  const d=await r.json();
+  MODELS=(d.models||[]).map(m=>Object.assign({},m,{glb:m.key}));
+  return MODELS;
+}
+async function saveModel(m){
+  const r=await fetch("/api/configurator/models",{method:"POST",credentials:"same-origin",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({key:m.key,name:m.name,emoji:m.emoji,seed:m.seed||{}})});
+  if(!r.ok){ toast("Enregistrement refusé ("+r.status+")"); return false; }
+  return true;
+}
+function modelAdmin(){
+  const box=el("div","importer");
+  if(!IS_ADMIN){ box.innerHTML="Choisis le dragon à configurer."; return box; }
+  box.innerHTML="";
+  MODELS.forEach(m=>{
+    const row=el("div","glbfile");
+    const nm=el("input"); nm.type="text"; nm.value=m.name; nm.style.cssText="flex:1;min-width:0";
+    nm.onchange=async()=>{ m.name=nm.value.trim()||m.name; if(await saveModel(m)){ toast("Renommé"); renderPanel(); } };
+    const tag=el("span",null,m.src==="glb"?"3D":"procédural");
+    tag.style.cssText="color:var(--muted);font-size:11px";
+    const up=el("label","btn-file"); up.textContent="…glb"; up.style.cssText="margin:0;padding:4px 8px;font-size:12px";
+    const inp=el("input"); inp.type="file"; inp.accept=".glb"; inp.hidden=true;
+    inp.addEventListener("change",async e=>{
+      const f=e.target.files[0]; if(!f) return;
+      toast("Envoi de "+f.name+"…");
+      const r=await fetch("/api/configurator/models/"+encodeURIComponent(m.key)+"/glb",
+        {method:"PUT",credentials:"same-origin",headers:{"Content-Type":"model/gltf-binary"},body:f});
+      if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||("Envoi refusé ("+r.status+")")); return; }
+      delete GLB_BUFFERS[m.key];
+      await apiModels(); toast("Modèle 3D remplacé");
+      const cur=MODELS.find(x=>x.key===state.modelKey); if(cur) await selectModel(cur);
+      renderPanel();
+    });
+    up.appendChild(inp);
+    const del=el("button","del","×"); del.title="Supprimer ce modèle";
+    del.onclick=async()=>{
+      if(MODELS.length<=1){ toast("Il faut garder au moins un modèle."); return; }
+      if(!confirm("Supprimer « "+m.name+" » ? Sa configuration est effacée aussi.")) return;
+      const r=await fetch("/api/configurator/models/"+encodeURIComponent(m.key),{method:"DELETE",credentials:"same-origin"});
+      if(!r.ok){ toast("Suppression refusée ("+r.status+")"); return; }
+      await apiModels();
+      if(state.modelKey===m.key && MODELS[0]){ state.modelKey=MODELS[0].key; await selectModel(MODELS[0]); }
+      toast("Modèle supprimé"); renderPanel();
+    };
+    row.appendChild(nm); row.appendChild(tag); row.appendChild(up); row.appendChild(del);
+    box.appendChild(row);
+  });
+  const add=el("button","addbtn","+ Modèle");
+  add.onclick=async()=>{
+    const name=prompt("Nom du nouveau modèle ?","Nouveau dragon"); if(!name) return;
+    const key=name.toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)||("m"+Date.now());
+    if(MODELS.find(x=>x.key===key)){ toast("Un modèle porte déjà cette clé."); return; }
+    if(!await saveModel({key,name,emoji:"🐉",seed:{}})) return;
+    await apiModels(); toast("Modèle créé, envoie-lui un .glb"); renderPanel();
+  };
+  box.appendChild(add);
+  const h=el("p","hintline","Le nom est modifiable, « …glb » remplace le modèle 3D, « × » supprime le modèle et sa configuration. Sans .glb, le modèle reste procédural.");
+  box.appendChild(h);
+  return box;
+}
+
 /* liste de cartes de modèles (client + atelier) */
 function modelPicker(){
   const wrap=el("div","mcards");
@@ -1109,16 +1177,7 @@ function renderAtelier(P){
   const g0=el("div","group");g0.appendChild(el("h2",null,"<span>Modèle 3D</span>"));
   g0.appendChild(modelPicker());
   g0.appendChild(el("p","hintline","Choisis le dragon à configurer. Chaque modèle a ses propres déclinaisons et réglages."));
-  if(state.glb){
-    const f=el("div","glbfile");f.innerHTML=`<span>✓ ${state.glb.name}</span>`;
-    const b=el("button",null,"retirer");b.onclick=clearGLB;f.appendChild(b);g0.appendChild(f);
-  }else{
-    const imp=el("div","importer");imp.innerHTML="Modèle procédural. Vous pouvez importer votre propre <b>.glb</b> (lu en local).";
-    const lab=el("label","btn-file");lab.textContent="Choisir un fichier .glb";
-    const inp=el("input");inp.type="file";inp.accept=".glb";inp.hidden=true;
-    inp.addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>loadGLBArrayBuffer(r.result,f.name);r.readAsArrayBuffer(f);});
-    lab.appendChild(inp);imp.appendChild(lab);g0.appendChild(imp);
-  }
+  g0.appendChild(modelAdmin());
   P.appendChild(g0);
 
   // variantes (declinaisons)
@@ -1622,11 +1681,8 @@ renderPanel();
 if(THREE_OK){
   initThree(); if(!GLTF_OK) toast("Chargeur GLB indisponible ici.");
   if(GLTF_OK){
-    const decode=(b64)=>{ const bs=atob(b64); const u=new Uint8Array(bs.length); for(let i=0;i<bs.length;i++)u[i]=bs.charCodeAt(i); return u.buffer; };
-    try{ if(DEFAULT_GLB_B64 && DEFAULT_GLB_B64.slice(0,2)!=="__") GLB_BUFFERS.baby=decode(DEFAULT_GLB_B64); }catch(err){ console.error("baby glb",err); }
-    try{ if(ROSE_GLB_B64 && ROSE_GLB_B64.slice(0,2)!=="__") GLB_BUFFERS.rose=decode(ROSE_GLB_B64); }catch(err){ console.error("rose glb",err); }
     const first=(pendingShare&&pendingShare.m&&MODELS.find(m=>m.key===pendingShare.m))||MODELS.find(m=>m.key===state.modelKey)||MODELS[0];
-    if(first.src==="placeholder"||GLB_BUFFERS.baby) selectModel(first);   // charge le modèle (partagé ou 1er)
+    if(first) selectModel(first);   // charge le modèle (partagé ou 1er)
   }
 }
 else document.querySelector(".stage").innerHTML='<div class="hint" style="position:static;padding:40px">Aperçu 3D indisponible.</div>';
@@ -1636,7 +1692,10 @@ if(EMBED){ postToHost("ready",{models:MODELS.map(m=>({key:m.key,name:m.name})), 
   try{
     const r=await fetch("/api/configurator/configs",{credentials:"same-origin"});
     if(r.ok){ const d=await r.json(); SERVER_CONFIGS=d.configs||{}; IS_ADMIN=!!d.admin; }
+    await apiModels();
   }catch(e){}
+  if(!MODELS.length){ MODELS=[{key:"dragon",name:"Dragon",emoji:"🐉",src:"placeholder",glbUrl:null,seed:{}}]; }
+  if(!MODELS.find(m=>m.key===state.modelKey)) state.modelKey=MODELS[0].key;
   if(!IS_ADMIN) document.body.classList.add("noadmin");
   else if(!EMBED) state.mode="atelier";   // l'admin arrive directement dans l'atelier
   boot();

@@ -422,6 +422,21 @@ db.exec(`
   -- Configs du configurateur 3D (une par modèle de dragon). Remplace le
   -- localStorage : la config est désormais partagée et survit au navigateur.
   -- Lecture publique (le configurateur client en a besoin), écriture admin.
+  -- Modèles 3D du configurateur. Avant, ils étaient codés en dur dans la page
+  -- (et les .glb encodés en base64 dedans, d'où ses 3 Mo). Ils sont désormais
+  -- des données : le staff peut en ajouter, en renommer et en supprimer.
+  CREATE TABLE IF NOT EXISTS configurator_models (
+    key        TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    emoji      TEXT,
+    src        TEXT NOT NULL DEFAULT 'placeholder',   -- 'glb' | 'placeholder'
+    glb_file   TEXT,
+    seed       TEXT,
+    position   INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS configurator_configs (
     model_key  TEXT PRIMARY KEY,
     config     TEXT NOT NULL,
@@ -494,6 +509,10 @@ if (process.env.ADMIN_EMAIL) {
 // ── DOSSIER UPLOADS ───────────────────────────────────────────────────────
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// Les .glb vivent sur le volume, pas en base : ce sont des fichiers d'un Mo.
+const MODELS_DIR = path.join(UPLOADS_DIR, 'configurator-models');
+const MODELS_SEED_DIR = path.join(__dirname, 'configurator-assets');
 
 // Télécharge une image distante et la stocke dans /uploads/, retourne le chemin local ou null
 function downloadToUploads(remoteUrl) {
@@ -582,6 +601,41 @@ let htmlCache     = fs.readFileSync(HTML_FILE, 'utf8');
 let landingCache  = fs.readFileSync(LANDING_FILE, 'utf8');
 let configuratorCache = fs.existsSync(CONFIGURATOR_FILE)
   ? fs.readFileSync(CONFIGURATOR_FILE, 'utf8') : null;
+
+// Premier démarrage : on reprend les quatre dragons qui étaient codés en dur,
+// pour ne rien perdre. Ensuite la table fait foi et ce bloc ne fait plus rien.
+(function seedConfiguratorModels() {
+  try {
+    fs.mkdirSync(MODELS_DIR, { recursive: true });
+    const n = db.prepare('SELECT COUNT(*) AS c FROM configurator_models').get().c;
+    if (n > 0) return;
+    const copy = (from, to) => {
+      const src = path.join(MODELS_SEED_DIR, from);
+      if (!fs.existsSync(src)) return null;
+      fs.copyFileSync(src, path.join(MODELS_DIR, to));
+      return to;
+    };
+    const baby = copy('Dragon-light.glb', 'baby.glb');
+    const rose = copy('Rose.glb', 'rose.glb');
+    const now = new Date().toISOString();
+    const ins = db.prepare(`INSERT INTO configurator_models
+      (key, name, emoji, src, glb_file, seed, position, updated_at, updated_by)
+      VALUES (?,?,?,?,?,?,?,?,NULL)`);
+    const rows = [
+      ['baby',  'Baby Crystal Dragon', '🐉', baby ? 'glb' : 'placeholder', baby, { body:'#2f5aa6', crist:'#c7972c', base:5, refCm:10 }, 0],
+      ['rose',  'Baby Rose Dragon',    '🌹', rose ? 'glb' : 'placeholder', rose, { body:'#d98fb0', crist:'#c7972c', base:6, refCm:9  }, 1],
+      ['or',    "Dragon d'Or",         '✨', baby ? 'glb' : 'placeholder', baby, { body:'#c7972c', crist:'#26262e', base:9, refCm:12 }, 2],
+      ['petit', 'Petit Dragon',        '🐲', 'placeholder',                null, { body:'#1f6b4f', crist:'#a3252f', base:4, refCm:8  }, 3],
+    ];
+    const tx = db.transaction(() => {
+      for (const [k, name, emoji, src, file, seed, pos] of rows) {
+        ins.run(k, name, emoji, src, file, JSON.stringify(seed), pos, now);
+      }
+    });
+    tx();
+    console.log('[configurateur] modèles initiaux repris en base');
+  } catch (e) { console.error('[configurateur] amorçage des modèles impossible', e); }
+})();
 
 // Nettoyage des fichiers orphelins dans /uploads (pas référencés en BDD)
 (function cleanOrphanUploads() {
@@ -822,6 +876,20 @@ function parseBody(req, maxBytes = 10 * 1024 * 1024) {
       raw += c;
     });
     req.on('end', () => { try { res(JSON.parse(raw)); } catch { rej(new Error('JSON invalide')); } });
+  });
+}
+
+// Corps binaire brut (upload de .glb). parseBody ne gère que du JSON.
+function readRawBody(req, maxBytes = 30 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0;
+    req.on('data', c => {
+      size += c.length;
+      if (size > maxBytes) { req.destroy(); reject(new Error('Fichier trop volumineux')); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
   });
 }
 
@@ -1766,6 +1834,104 @@ http.createServer(async (req, res) => {
         'Content-Security-Policy': `frame-ancestors ${CONFIGURATOR_FRAME_ANCESTORS}`,
       });
       res.end(configuratorCache);
+      return;
+    }
+
+    // ── MODÈLES DU CONFIGURATEUR ─────────────────────────────────────────
+    // Lecture publique : la page en a besoin pour afficher le catalogue.
+    if (req.method === 'GET' && url === '/api/configurator/models') {
+      const rows = db.prepare('SELECT * FROM configurator_models ORDER BY position, key').all();
+      json(res, {
+        models: rows.map(r => ({
+          key: r.key, name: r.name, emoji: r.emoji || '🐉',
+          src: r.glb_file ? 'glb' : 'placeholder',
+          glbUrl: r.glb_file ? `/configurateur/models/${encodeURIComponent(r.key)}.glb` : null,
+          seed: (() => { try { return JSON.parse(r.seed || '{}'); } catch { return {}; } })(),
+        })),
+        admin: !!getAtelierUser(req),
+      });
+      return;
+    }
+
+    // Fichier .glb d'un modèle : public, comme la page qui l'affiche.
+    if (req.method === 'GET' && parts[0] === 'configurateur' && parts[1] === 'models' && parts[2]) {
+      const key = decodeURIComponent(parts[2]).replace(/\.glb$/i, '');
+      const row = db.prepare('SELECT glb_file FROM configurator_models WHERE key=?').get(key);
+      const file = row && row.glb_file ? path.join(MODELS_DIR, path.basename(row.glb_file)) : null;
+      if (!file || !fs.existsSync(file)) { res.writeHead(404); res.end('Modèle introuvable'); return; }
+      res.writeHead(200, {
+        'Content-Type': 'model/gltf-binary',
+        'Content-Length': fs.statSync(file).size,
+        'Cache-Control': 'public, max-age=86400',
+      });
+      fs.createReadStream(file).pipe(res);
+      return;
+    }
+
+    // Création / mise à jour d'un modèle (staff Shopify).
+    if (req.method === 'POST' && url === '/api/configurator/models') {
+      const staff = getAtelierUser(req);
+      if (!staff) { json(res, { error: 'Connexion Shopify requise' }, 401); return; }
+      const b = await parseBody(req).catch(() => null);
+      const key = b && typeof b.key === 'string' ? b.key.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') : '';
+      if (!key || !b.name || typeof b.name !== 'string') { json(res, { error: 'Clé ou nom manquant' }, 400); return; }
+      const prev = db.prepare('SELECT * FROM configurator_models WHERE key=?').get(key);
+      const pos = Number.isInteger(b.position) ? b.position
+        : (prev ? prev.position : (db.prepare('SELECT COALESCE(MAX(position),-1)+1 AS p FROM configurator_models').get().p));
+      db.prepare(`INSERT INTO configurator_models (key,name,emoji,src,glb_file,seed,position,updated_at,updated_by)
+                  VALUES (?,?,?,?,?,?,?,?,?)
+                  ON CONFLICT(key) DO UPDATE SET
+                    name=excluded.name, emoji=excluded.emoji, seed=excluded.seed,
+                    position=excluded.position, updated_at=excluded.updated_at, updated_by=excluded.updated_by`)
+        .run(key, b.name.trim(), (b.emoji || '🐉').slice(0, 8),
+             prev && prev.glb_file ? 'glb' : 'placeholder',
+             prev ? prev.glb_file : null,
+             JSON.stringify(b.seed && typeof b.seed === 'object' ? b.seed : {}),
+             pos, new Date().toISOString(), staff.uid);
+      json(res, { ok: true, key });
+      return;
+    }
+
+    // Envoi du .glb d'un modèle (corps binaire brut).
+    if (req.method === 'PUT' && parts[0] === 'api' && parts[1] === 'configurator'
+        && parts[2] === 'models' && parts[3] && parts[4] === 'glb') {
+      const staff = getAtelierUser(req);
+      if (!staff) { json(res, { error: 'Connexion Shopify requise' }, 401); return; }
+      const key = decodeURIComponent(parts[3]);
+      const row = db.prepare('SELECT key FROM configurator_models WHERE key=?').get(key);
+      if (!row) { json(res, { error: 'Modèle inconnu' }, 404); return; }
+      let buf;
+      try { buf = await readRawBody(req); } catch (e) { json(res, { error: e.message }, 413); return; }
+      // Un .glb commence par la signature « glTF ».
+      if (buf.length < 12 || buf.slice(0, 4).toString('ascii') !== 'glTF') {
+        json(res, { error: "Ce fichier n'est pas un .glb" }, 400); return;
+      }
+      const file = `${key}.glb`;
+      fs.mkdirSync(MODELS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(MODELS_DIR, file), buf);
+      db.prepare("UPDATE configurator_models SET src='glb', glb_file=?, updated_at=?, updated_by=? WHERE key=?")
+        .run(file, new Date().toISOString(), staff.uid, key);
+      json(res, { ok: true, bytes: buf.length });
+      return;
+    }
+
+    // Suppression d'un modèle : la ligne, son .glb et sa config.
+    if (req.method === 'DELETE' && parts[0] === 'api' && parts[1] === 'configurator'
+        && parts[2] === 'models' && parts[3]) {
+      const staff = getAtelierUser(req);
+      if (!staff) { json(res, { error: 'Connexion Shopify requise' }, 401); return; }
+      const key = decodeURIComponent(parts[3]);
+      const row = db.prepare('SELECT * FROM configurator_models WHERE key=?').get(key);
+      if (!row) { json(res, { error: 'Modèle inconnu' }, 404); return; }
+      // Le .glb n'est effacé que si aucun autre modèle ne s'en sert.
+      if (row.glb_file) {
+        const shared = db.prepare('SELECT COUNT(*) AS c FROM configurator_models WHERE glb_file=? AND key<>?')
+          .get(row.glb_file, key).c;
+        if (!shared) { try { fs.unlinkSync(path.join(MODELS_DIR, path.basename(row.glb_file))); } catch {} }
+      }
+      db.prepare('DELETE FROM configurator_models WHERE key=?').run(key);
+      db.prepare('DELETE FROM configurator_configs WHERE model_key=?').run(key);
+      json(res, { ok: true });
       return;
     }
 
