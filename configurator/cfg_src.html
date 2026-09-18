@@ -284,6 +284,9 @@
     var(--line) var(--lo,0%), var(--line) 100%)}
   /* Mode embarqué (page produit Shopify) : on masque atelier + panier, le thème gère le reste */
   body.embed .modeswitch, body.embed #cartBtn{display:none}
+  /* Mode atelier reserve aux admins connectes : masque tant que /api/configurator/configs
+     n'a pas confirme la session admin. Le serveur refuse de toute facon les ecritures. */
+  body.noadmin .modeswitch{display:none}
   body.embed header{padding-top:10px;padding-bottom:10px}
 </style>
 
@@ -353,6 +356,10 @@ function postToHost(type,data){
 }
 /* Prix « source de vérité » fourni par le thème hôte (prix réel de la variante Shopify).
    Quand il est présent, il remplace l'estimation calculée localement. */
+/* Configs du configurateur : la source de verite est le serveur (table
+   configurator_configs). Lecture publique, ecriture reservee aux admins. */
+let SERVER_CONFIGS={};            // { modelKey: config }
+let IS_ADMIN=false;               // session admin confirmee par le serveur
 let embedPrice=null;              // { amount, currency, note }
 let embedSizeTiers=null;          // [cm,...] tailles réellement disponibles en variante
 const embMoney=n=>{ try{ return new Intl.NumberFormat((embedPrice&&embedPrice.locale)||TENANT.brand.locale,
@@ -394,7 +401,7 @@ function seedConfig(cfg,key){
 }
 
 /* ===================== ETAT ===================== */
-const state={ mode:"atelier", modelKey:"baby", glb:null, config:null, view:{mode:"ombre"} };  // view.mode: nuit | ombre | soleil
+const state={ mode:"client", modelKey:"baby", glb:null, config:null, view:{mode:"ombre"} };  // view.mode: nuit | ombre | soleil
 let partMaterials={};   // partName -> [THREE.Material]
 let partMeshes={};      // partName -> [THREE.Mesh]
 let partList=[];        // noms des parties du modele courant
@@ -436,7 +443,7 @@ function defaultConfigForParts(parts){
            size:{min:6,max:18,value:10,refCm:10,exp:2,gauge:true} };
 }
 function loadConfig(parts){
-  try{ const s=localStorage.getItem(cfgKey()); if(s){ const c=JSON.parse(s);
+  try{ const sc=SERVER_CONFIGS[state.modelKey]; if(sc){ const c=JSON.parse(JSON.stringify(sc));
     if(!c.variants) throw 0;   // ancienne config incompatible -> defauts
     if(!c.premium) c.premium={colors:TENANT.palette.filter(p=>p.premium).map(p=>p.hex),surcharge:2};
     if(!c.finishes) c.finishes=defaultFinishes();
@@ -460,7 +467,19 @@ function loadConfig(parts){
     return c; } }catch(e){}
   return seedConfig(defaultConfigForParts(parts), state.modelKey);   // 1re ouverture d'un modèle : défauts spécifiques
 }
-function saveConfig(){ try{ localStorage.setItem(cfgKey(),JSON.stringify(state.config)); }catch(e){} }
+let _saveTimer=null;
+function saveConfig(){
+  if(!IS_ADMIN) return;                       // seuls les admins persistent
+  try{ SERVER_CONFIGS[state.modelKey]=JSON.parse(JSON.stringify(state.config)); }catch(e){}
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(()=>{
+    fetch("/api/configurator/config",{method:"PUT",credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:state.modelKey,config:state.config})})
+      .then(r=>{ if(!r.ok) toast("Enregistrement refuse ("+r.status+")"); })
+      .catch(()=>toast("Enregistrement impossible (hors ligne ?)"));
+  },600);
+}
 /* undo (atelier) + réordonnancement */
 let undoStack=[];
 function snapshot(){ try{ undoStack.push(JSON.stringify(state.config)); if(undoStack.length>30)undoStack.shift(); }catch(e){} }
@@ -1557,9 +1576,12 @@ function applyPendingShare(){
 }
 
 /* ===================== BOOT ===================== */
+/* Le demarrage attend /api/configurator/configs : les configs viennent du
+   serveur et la reponse dit si la session est admin (mode atelier). */
+function boot(){
 document.getElementById("brandName").textContent=TENANT.brand.name;
 document.getElementById("brandTag").textContent=TENANT.brand.tagline;
-document.getElementById("modeAtelier").onclick=()=>{state.mode="atelier";renderPanel();};
+document.getElementById("modeAtelier").onclick=()=>{ if(!IS_ADMIN) return; state.mode="atelier";renderPanel();};
 document.getElementById("modeClient").onclick=()=>{state.mode="client";renderPanel();};
 document.getElementById("btnNight").onclick=()=>{state.view.mode="nuit";setViewMode();};
 document.getElementById("btnShade").onclick=()=>{state.view.mode="ombre";setViewMode();};
@@ -1609,4 +1631,14 @@ if(THREE_OK){
 }
 else document.querySelector(".stage").innerHTML='<div class="hint" style="position:static;padding:40px">Aperçu 3D indisponible.</div>';
 if(EMBED){ postToHost("ready",{models:MODELS.map(m=>({key:m.key,name:m.name})), model:state.modelKey}); }
+}
+(async()=>{
+  try{
+    const r=await fetch("/api/configurator/configs",{credentials:"same-origin"});
+    if(r.ok){ const d=await r.json(); SERVER_CONFIGS=d.configs||{}; IS_ADMIN=!!d.admin; }
+  }catch(e){}
+  if(!IS_ADMIN) document.body.classList.add("noadmin");
+  else if(!EMBED) state.mode="atelier";   // l'admin arrive directement dans l'atelier
+  boot();
+})();
 </script>
