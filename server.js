@@ -637,6 +637,53 @@ let configuratorCache = fs.existsSync(CONFIGURATOR_FILE)
   } catch (e) { console.error('[configurateur] amorçage des modèles impossible', e); }
 })();
 
+// Import ponctuel des modèles livrés avec l'image. Chaque entrée n'est tentée
+// qu'une fois (marqueur en app_settings) : un modèle supprimé depuis l'atelier
+// ne réapparaît pas au redémarrage suivant.
+(function importSeedModels() {
+  const SEEDS = [
+    { key: 'crystal2025', file: 'baby-crystal-2025.glb', name: 'Baby Crystal Dragon 2025', emoji: '💎',
+      seed: { body: '#20D560', crist: '#F22D5F', base: 6, refCm: 10 },
+      schemes: [['Vert / rose', '#20D560'], ['Vert / noir', '#20D560'], ['Bleu / rouge', '#0000FF'], ['Vert / magenta', '#00FF00']] },
+    { key: 'orchid', file: 'baby-orchid.glb', name: 'Baby Orchid Dragon', emoji: '🌸',
+      seed: { body: '#FC6FCF', crist: '#CCFF66', base: 6, refCm: 10 },
+      schemes: [['Orchidée', '#FC6FCF'], ['Gris / lime', '#666666']] },
+    { key: 'crystalwing', file: 'crystalwing.glb', name: 'Crystalwing Dragon', emoji: '🔮',
+      seed: { body: '#FF8000', crist: '#0000FF', base: 9, refCm: 12 },
+      schemes: [['2 couleurs', '#FF8000'], ['4 couleurs', '#0000FF'], ['5 couleurs', '#FF8000']] },
+  ];
+  const uid = () => crypto.randomBytes(6).toString('hex');
+  for (const m of SEEDS) {
+    const flag = 'configurator_seed_' + m.key;
+    try {
+      const done = db.prepare('SELECT value FROM app_settings WHERE key=?').get(flag);
+      if (done) continue;
+      db.prepare('INSERT OR REPLACE INTO app_settings (key,value) VALUES (?,?)')
+        .run(flag, new Date().toISOString());
+      const from = path.join(MODELS_SEED_DIR, m.file);
+      if (!fs.existsSync(from)) continue;
+      if (db.prepare('SELECT key FROM configurator_models WHERE key=?').get(m.key)) continue;
+      fs.mkdirSync(MODELS_DIR, { recursive: true });
+      fs.copyFileSync(from, path.join(MODELS_DIR, m.file));
+      const pos = db.prepare('SELECT COALESCE(MAX(position),-1)+1 AS p FROM configurator_models').get().p;
+      db.prepare(`INSERT INTO configurator_models
+        (key,name,emoji,src,glb_file,seed,position,updated_at,updated_by)
+        VALUES (?,?,?,'glb',?,?,?,?,NULL)`)
+        .run(m.key, m.name, m.emoji, m.file, JSON.stringify(m.seed), pos, new Date().toISOString());
+      // Une variante par schéma de couleurs du fichier 3MF d'origine. Le .glb
+      // n'a qu'un maillage « corps », donc une seule zone par variante.
+      const variants = m.schemes.map(([name, color], i) => ({
+        id: uid(), name, price: m.seed.base + i,
+        slots: [{ id: uid(), name: 'Couleur', parts: ['corps'], color }],
+      }));
+      db.prepare(`INSERT OR REPLACE INTO configurator_configs (model_key,config,updated_at,updated_by)
+                  VALUES (?,?,?,NULL)`)
+        .run(m.key, JSON.stringify({ variants, activeVariantId: variants[0].id }), new Date().toISOString());
+      console.log('[configurateur] modèle importé :', m.key);
+    } catch (e) { console.error('[configurateur] import', m.key, e); }
+  }
+})();
+
 // Nettoyage des fichiers orphelins dans /uploads (pas référencés en BDD)
 (function cleanOrphanUploads() {
   try {
