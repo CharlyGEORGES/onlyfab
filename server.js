@@ -425,6 +425,19 @@ db.exec(`
   -- Modèles 3D du configurateur. Avant, ils étaient codés en dur dans la page
   -- (et les .glb encodés en base64 dedans, d'où ses 3 Mo). Ils sont désormais
   -- des données : le staff peut en ajouter, en renommer et en supprimer.
+  -- Écarts détectés entre la configuration transmise par le navigateur et la
+  -- variante réellement facturée. Le pont panier tourne côté client : sans ce
+  -- contrôle, un client peut commander une config premium au tarif de base.
+  CREATE TABLE IF NOT EXISTS configurator_order_checks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id   TEXT,
+    order_name TEXT,
+    line_id    TEXT,
+    status     TEXT NOT NULL,          -- 'ok' | 'ecart'
+    detail     TEXT,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS configurator_models (
     key        TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -1725,11 +1738,80 @@ function notifyDiscord(feedback, user) {
   }).catch(err => console.warn('[discord] webhook failed:', err.message));
 }
 
+// Recoupe la fiche de production (_spec, posée par le configurateur) avec le
+// titre de la variante facturée. On ne bloque rien : on trace et on alerte,
+// la commande est déjà payée quand le webhook arrive.
+const norm = v => String(v == null ? '' : v).trim().toLowerCase();
+function checkConfiguredOrder(order) {
+  const lines = Array.isArray(order && order.line_items) ? order.line_items : [];
+  const now = new Date().toISOString();
+  const ins = db.prepare(`INSERT INTO configurator_order_checks
+    (order_id, order_name, line_id, status, detail, created_at) VALUES (?,?,?,?,?,?)`);
+  const ecarts = [];
+  for (const li of lines) {
+    const props = {};
+    for (const p of (li.properties || [])) props[p.name] = p.value;
+    if (!props._spec) continue;                       // ligne hors configurateur
+    let spec = {}; try { spec = JSON.parse(props._spec); } catch {}
+    const title = norm(li.variant_title);
+    const anomalies = [];
+
+    // Taille : la propriété doit se retrouver dans le titre de la variante.
+    const cm = String(props['Taille'] || '').match(/-?\d+(?:[.,]\d+)?/);
+    if (cm && title && !title.includes(cm[0].replace(',', '.')) && !title.includes(cm[0])) {
+      anomalies.push(`taille annoncée ${props['Taille']} absente de la variante « ${li.variant_title} »`);
+    }
+    // Premium : zone premium ou finition spéciale dans la fiche.
+    const zones = (spec && spec.zones) || [];
+    let premium = zones.some(z => z && (z.premium || (z.type && z.type !== 'uni')));
+    if (!premium) premium = Object.values(props).some(v => /\(premium\)|\(finition\)/i.test(String(v)));
+    if (premium && title && !title.includes('premium')) {
+      anomalies.push('configuration premium facturée sur une variante non premium');
+    }
+    // Gravure : texte présent dans la fiche.
+    const eng = props['Gravure'];
+    const engraved = !!(eng && norm(eng) !== '—' && norm(eng) !== '');
+    if (engraved && title && !/avec|gravure|oui/.test(title)) {
+      anomalies.push('gravure demandée sur une variante sans gravure');
+    }
+
+    const status = anomalies.length ? 'ecart' : 'ok';
+    ins.run(String(order.id || ''), order.name || '', String(li.id || ''), status,
+            anomalies.join(' ; ') || null, now);
+    if (anomalies.length) ecarts.push(`${li.title || 'ligne'} : ${anomalies.join(' ; ')}`);
+  }
+  if (ecarts.length) {
+    console.warn('[commande] écart de configuration', order.name, ecarts);
+    notifyConfigMismatch(order, ecarts);
+  }
+}
+
+// Alerte Discord si l'URL de webhook est configurée (même réglage que les
+// feedbacks). Silencieux sinon.
+function notifyConfigMismatch(order, ecarts) {
+  const url = getSetting('discord_webhook_url');
+  if (!url || !/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(url)) return;
+  fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ embeds: [{
+      title: '⚠️ Commande à vérifier — ' + (order.name || order.id),
+      description: ecarts.join('\n').slice(0, 1900),
+      color: 0xffa726, timestamp: new Date().toISOString(),
+    }] }),
+  }).catch(() => {});
+}
+
 // ── SERVEUR ───────────────────────────────────────────────────────────────
 http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // En-têtes de sécurité. Pas de X-Frame-Options : le configurateur doit
+  // rester embarquable, c'est Content-Security-Policy: frame-ancestors qui
+  // décide, route par route.
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   const url   = req.url.split('?')[0];
@@ -1881,6 +1963,26 @@ http.createServer(async (req, res) => {
         'Content-Security-Policy': `frame-ancestors ${CONFIGURATOR_FRAME_ANCESTORS}`,
       });
       res.end(configuratorCache);
+      return;
+    }
+
+    // ── VÉRIFICATION DES COMMANDES (webhook Shopify orders/create) ───────
+    // Le choix de la variante se fait dans le navigateur : un client peut
+    // envoyer à /cart/add.js la variante la moins chère avec des propriétés
+    // décrivant une configuration premium. On recoupe ici ce que décrit la
+    // fiche de production avec la variante réellement facturée.
+    if (req.method === 'POST' && url === '/api/shopify/webhooks/orders-create') {
+      if (!SHOPIFY_API_SECRET) { res.writeHead(503); res.end('non configuré'); return; }
+      let raw;
+      try { raw = await readRawBody(req, 5 * 1024 * 1024); }
+      catch { res.writeHead(413); res.end('trop volumineux'); return; }
+      const given = req.headers['x-shopify-hmac-sha256'] || '';
+      const expected = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(raw).digest('base64');
+      if (!timingEqual(given, expected)) { res.writeHead(401); res.end('signature invalide'); return; }
+      // Shopify renvoie la commande avec ses lignes et leurs propriétés.
+      let order; try { order = JSON.parse(raw.toString('utf8')); } catch { res.writeHead(400); res.end('json'); return; }
+      try { checkConfiguredOrder(order); } catch (e) { console.error('[commande] contrôle', e); }
+      res.writeHead(200); res.end('ok');
       return;
     }
 
