@@ -70,6 +70,20 @@ https://www.onlyfab.fr https://*.myshopify.com`).
 (ou l'URL du serveur d'app si le storefront et l'app sont sur des domaines
 différents — l'embarquement inter-domaine fonctionne, le postMessage est géré).
 
+### Persistance atelier (vraie BDD)
+
+Les réglages faits en **mode atelier** (variantes, couleurs, finitions, tailles,
+gravure) sont enregistrés côté serveur, par modèle :
+
+- Atelier (connecté à l'app, même origine) : `GET/PUT /api/configurator/config/:model`
+  (session requise). Sauvegarde auto à chaque modif (indicateur « ✓ Enregistré en ligne »).
+- Client : `GET /public/configurator?model=:model` sert la config publiée (lue par
+  l'iframe du storefront, sans auth).
+
+À régler en prod : `flyctl secrets set CONFIGURATOR_TENANT=<id de l'utilisateur atelier>`
+(l'atelier dont la config est servie au public). En mono-tenant, si absent, le
+serveur sert la config la plus récente du modèle.
+
 Pour régénérer `configurateur.html` après une modif du configurateur :
 
 ```bash

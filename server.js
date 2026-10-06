@@ -218,6 +218,33 @@ db.exec(`
 // Normalise un n° de commande pour comparer "#1042", "1042", " 1042 " à l'identique.
 function normOrderNo(s) { return String(s == null ? '' : s).replace(/[^0-9a-z]/gi, '').toLowerCase(); }
 
+// ── CONFIGURATEUR : persistance atelier ───────────────────────────────────
+// La config d'un modèle (variantes, couleurs, finitions, tailles, gravure) est
+// éditée par l'atelier et lue par le client. Une ligne par (atelier, modèle).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS configurator_configs (
+    user_id    TEXT NOT NULL,
+    model_key  TEXT NOT NULL,
+    config     TEXT NOT NULL,
+    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (user_id, model_key)
+  );
+`);
+// Tenant par défaut servi au client public (id de l'atelier). Si absent, on
+// sert la config du seul atelier qui en possède une pour ce modèle.
+const CONFIGURATOR_TENANT = process.env.CONFIGURATOR_TENANT || '';
+function publicConfigFor(modelKey, tenant) {
+  const owner = tenant || CONFIGURATOR_TENANT;
+  if (owner) {
+    const r = db.prepare('SELECT config FROM configurator_configs WHERE user_id=? AND model_key=?')
+      .get(owner, modelKey);
+    return r ? r.config : null;
+  }
+  const rows = db.prepare('SELECT config FROM configurator_configs WHERE model_key=? ORDER BY updated_at DESC')
+    .all(modelKey);
+  return rows.length ? rows[0].config : null;   // mono-tenant : la plus récente
+}
+
 // ── TABLES MULTI-TENANT ───────────────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -1696,6 +1723,18 @@ http.createServer(async (req, res) => {
       return;
     }
 
+    // ── CONFIGURATEUR : lecture publique de la config d'un modèle ────────
+    // Lu par le configurateur côté client (storefront). CORS déjà ouvert (*).
+    if (req.method === 'GET' && parts[0] === 'public' && parts[1] === 'configurator') {
+      const _sp = new URL(req.url, 'http://x').searchParams;
+      const model = _sp.get('model') || '';
+      if (!model) { json(res, { error: 'model requis' }, 400); return; }
+      const cfg = publicConfigFor(model, _sp.get('tenant') || '');   // chaîne JSON de la config, ou null
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end('{"config":' + (cfg || 'null') + '}');
+      return;
+    }
+
     // ── PRODUCTION LIVE — endpoints publics via App Proxy Shopify ────────
     // La boutique appelle /apps/onlyfab/live(/list) ; Shopify proxifie vers
     // /proxy/live(/list) en signant la requête (HMAC du secret app) et en
@@ -2294,6 +2333,37 @@ http.createServer(async (req, res) => {
       }
       if (req.method === 'PATCH' && parts[1] === 'print-jobs' && id && sub === 'done') {
         db.prepare('UPDATE print_jobs SET status=:s WHERE id=:id AND user_id=:uid').run({ s: 'done', id, uid: userId });
+        json(res, { ok: true });
+        return;
+      }
+
+      // ── CONFIGURATEUR (atelier) ──────────────────────────────────────
+      // Lecture de toutes les configs de cet atelier (model_key -> config).
+      if (req.method === 'GET' && url === '/api/configurator/configs') {
+        const rows = db.prepare('SELECT model_key, config, updated_at FROM configurator_configs WHERE user_id=?').all(userId);
+        const out = {};
+        for (const r of rows) { try { out[r.model_key] = JSON.parse(r.config); } catch {} }
+        json(res, { configs: out });
+        return;
+      }
+      // Lecture d'une config modèle.
+      if (req.method === 'GET' && parts[1] === 'configurator' && parts[2] === 'config' && parts[3]) {
+        const r = db.prepare('SELECT config FROM configurator_configs WHERE user_id=? AND model_key=?').get(userId, parts[3]);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' });
+        res.end('{"config":' + (r ? r.config : 'null') + '}');
+        return;
+      }
+      // Écriture (upsert) d'une config modèle.
+      if (req.method === 'PUT' && parts[1] === 'configurator' && parts[2] === 'config' && parts[3]) {
+        const b = await parseBody(req);
+        if (!b || !b.config || typeof b.config !== 'object') { json(res, { error: 'config invalide' }, 400); return; }
+        const cfgStr = JSON.stringify(b.config);
+        if (cfgStr.length > 500000) { json(res, { error: 'config trop volumineuse' }, 413); return; }
+        db.prepare(
+          `INSERT INTO configurator_configs (user_id, model_key, config, updated_at)
+           VALUES (:uid, :mk, :cfg, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+           ON CONFLICT(user_id, model_key) DO UPDATE SET config=excluded.config, updated_at=excluded.updated_at`
+        ).run({ uid: userId, mk: parts[3], cfg: cfgStr });
         json(res, { ok: true });
         return;
       }

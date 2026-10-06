@@ -285,6 +285,14 @@
   /* Mode embarqué (page produit Shopify) : on masque atelier + panier, le thème gère le reste */
   body.embed .modeswitch, body.embed #cartBtn{display:none}
   body.embed header{padding-top:10px;padding-bottom:10px}
+  /* Indicateur de persistance serveur (atelier) */
+  #cfgSync{position:fixed;left:14px;bottom:14px;z-index:60;font:500 12px/1.2 Instrument Sans,system-ui,sans-serif;
+    padding:7px 11px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.18);transition:opacity .4s}
+  #cfgSync.ok{background:#e7f3ec;color:#1f6b4f;border:1px solid #bfe0cc}
+  #cfgSync.wip{background:#f3efe4;color:#8a6d1f;border:1px solid #e3d6ab}
+  #cfgSync.warn{background:#fdf0e7;color:#b5622e;border:1px solid #f0cdb3}
+  #cfgSync.err{background:#fcecec;color:#a3252f;border:1px solid #f0c0c0}
+  #cfgSync.fade{opacity:0}
 </style>
 
 <header>
@@ -351,6 +359,62 @@ function postToHost(type,data){
   if(!EMBED) return;
   try{ window.parent.postMessage(Object.assign({source:"onlyfab-configurator",type},data||{}), EMBED_ORIGIN); }catch(e){}
 }
+
+/* ===================== PERSISTANCE SERVEUR (vraie BDD) =====================
+   Activée seulement quand le configurateur est servi par le serveur Onlyfab
+   (pas sur l'artifact claude.ai ni en file://). L'atelier écrit via /api
+   (session requise) ; le client lit la config publiée via /public. */
+const SERVER_SYNC = (location.protocol==="http:"||location.protocol==="https:")
+  && !/(^|\.)claude\.ai$/i.test(location.hostname) && !!location.hostname;
+const CFG_TENANT = (()=>{ try{ return new URLSearchParams(location.search).get("tenant")||""; }catch(e){ return ""; } })();
+function setSyncStatus(st){
+  if(!SERVER_SYNC) return;
+  let b=document.getElementById("cfgSync");
+  if(!b){ b=document.createElement("div"); b.id="cfgSync"; document.body.appendChild(b); }
+  b.hidden=(state.mode!=="atelier"||EMBED);
+  const map={saved:["✓ Enregistré en ligne","ok"],saving:["Enregistrement…","wip"],
+    auth:["Non connecté — connecte-toi à l'app pour publier","warn"],error:["Échec de l'enregistrement","err"]};
+  const m=map[st]||["",""]; b.textContent=m[0]; b.className=m[1];
+  if(st==="saved"){ clearTimeout(b._h); b._h=setTimeout(()=>{b.className="ok fade";},1500); }
+}
+async function serverGetConfig(mk){
+  if(!SERVER_SYNC) return null;
+  try{
+    let r;
+    if(state.mode==="atelier" && !EMBED){
+      r=await fetch("/api/configurator/config/"+encodeURIComponent(mk),{credentials:"same-origin"});
+      if(r.status===401){ setSyncStatus("auth"); r=await fetch("/public/configurator?model="+encodeURIComponent(mk)); }
+    }else{
+      r=await fetch("/public/configurator?model="+encodeURIComponent(mk)+(CFG_TENANT?"&tenant="+encodeURIComponent(CFG_TENANT):""));
+    }
+    if(!r||!r.ok) return null;
+    const d=await r.json();
+    return (d&&d.config)?normalizeConfig(d.config):null;
+  }catch(e){ return null; }
+}
+let _putTimer=null;
+function serverPutConfig(){
+  if(!SERVER_SYNC || EMBED || state.mode!=="atelier") return;
+  clearTimeout(_putTimer);
+  const mk=state.modelKey, body='{"config":'+JSON.stringify(state.config)+'}';
+  setSyncStatus("saving");
+  _putTimer=setTimeout(()=>{
+    fetch("/api/configurator/config/"+encodeURIComponent(mk),
+      {method:"PUT",headers:{"Content-Type":"application/json"},credentials:"same-origin",body})
+      .then(r=>setSyncStatus(r.ok?"saved":(r.status===401?"auth":"error")))
+      .catch(()=>setSyncStatus("error"));
+  },700);
+}
+/* remplace la config courante par celle du serveur si elle existe (async) */
+async function applyServerConfig(mk){
+  const c=await serverGetConfig(mk);
+  if(!c || mk!==state.modelKey) return;
+  state.config=c; saveLocal();
+  if(typeof applyEmbedSizeConstraint==="function") applyEmbedSizeConstraint();
+  if(root){ applyColors(); applySizeScale(); }
+  if(engraveCtx) drawEngrave();
+  renderPanel();
+}
 /* Prix « source de vérité » fourni par le thème hôte (prix réel de la variante Shopify).
    Quand il est présent, il remplace l'estimation calculée localement. */
 let embedPrice=null;              // { amount, currency, note }
@@ -359,6 +423,11 @@ const embMoney=n=>{ try{ return new Intl.NumberFormat((embedPrice&&embedPrice.lo
   {style:"currency",currency:(embedPrice&&embedPrice.currency)||TENANT.brand.currency}).format(n); }catch(e){ return money(n); } };
 function snapTier(v){ if(!embedSizeTiers||!embedSizeTiers.length) return v;
   return embedSizeTiers.reduce((best,t)=>Math.abs(t-v)<Math.abs(best-v)?t:best, embedSizeTiers[0]); }
+/* contraint la taille de la config courante aux tailles réellement en variante */
+function applyEmbedSizeConstraint(){
+  if(!embedSizeTiers||!embedSizeTiers.length||!state.config||!state.config.size) return;
+  const sz=state.config.size; sz.min=embedSizeTiers[0]; sz.max=embedSizeTiers[embedSizeTiers.length-1];
+  sz.value=snapTier(sz.value); }
 /* met à jour l'affichage du prix (header + facture) selon la source de vérité */
 function updatePriceDisplay(){
   const useEmbed = EMBED && embedPrice && isFinite(embedPrice.amount);
@@ -435,9 +504,11 @@ function defaultConfigForParts(parts){
            engrave:{dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""},
            size:{min:6,max:18,value:10,refCm:10,exp:2,gauge:true} };
 }
-function loadConfig(parts){
-  try{ const s=localStorage.getItem(cfgKey()); if(s){ const c=JSON.parse(s);
-    if(!c.variants) throw 0;   // ancienne config incompatible -> defauts
+/* normalise/migre un objet config (depuis localStorage OU le serveur).
+   Retourne la config corrigée, ou null si incompatible. */
+function normalizeConfig(c){
+  try{
+    if(!c||!c.variants) return null;   // ancienne config incompatible
     if(!c.premium) c.premium={colors:TENANT.palette.filter(p=>p.premium).map(p=>p.hex),surcharge:2};
     if(!c.finishes) c.finishes=defaultFinishes();
     if(c.fixedColor===undefined) c.fixedColor="#26262e";
@@ -457,10 +528,15 @@ function loadConfig(parts){
     c.engraving={ offered:(e.offered!==undefined?e.offered:true), added:!!e.added,
       fee:(e.fee!=null?e.fee:TENANT.defaults.engravingFee), maxLen:(e.maxLen||TENANT.defaults.engravingMax),
       minPct:minPct, rot:(e.rot||0), text:(e.text||"") };
-    return c; } }catch(e){}
+    return c;
+  }catch(e){ return null; }
+}
+function loadConfig(parts){
+  try{ const s=localStorage.getItem(cfgKey()); if(s){ const c=normalizeConfig(JSON.parse(s)); if(c) return c; } }catch(e){}
   return seedConfig(defaultConfigForParts(parts), state.modelKey);   // 1re ouverture d'un modèle : défauts spécifiques
 }
-function saveConfig(){ try{ localStorage.setItem(cfgKey(),JSON.stringify(state.config)); }catch(e){} }
+function saveLocal(){ try{ localStorage.setItem(cfgKey(),JSON.stringify(state.config)); }catch(e){} }
+function saveConfig(){ saveLocal(); serverPutConfig(); }
 /* undo (atelier) + réordonnancement */
 let undoStack=[];
 function snapshot(){ try{ undoStack.push(JSON.stringify(state.config)); if(undoStack.length>30)undoStack.shift(); }catch(e){} }
@@ -871,14 +947,16 @@ function selectModel(m){
   if(!m)return;
   if(m.src==="placeholder"){
     state.glb=null; state.modelKey=m.key; state.config=loadConfig(["body","wings","spine"]);
-    rebuildModel(); render(); applyPendingShare(); return;
+    applyEmbedSizeConstraint();
+    rebuildModel(); render(); applyPendingShare(); applyServerConfig(m.key); return;
   }
   const buf=GLB_BUFFERS[m.glb||"baby"];
   if(!(GLTF_OK && buf)){ toast("Modèle 3D indisponible."); return; }
   new THREE.GLTFLoader().parse(buf,"",gltf=>{
     const parts=[]; gltf.scene.traverse(o=>{if(o.isMesh){const nm=o.name||(o.material&&o.material.name)||("part_"+parts.length);if(!parts.includes(nm))parts.push(nm);}});
     state.glb={name:m.name,scene:gltf.scene}; state.modelKey=m.key; state.config=loadConfig(parts);
-    rebuildModel(); render(); applyPendingShare();
+    applyEmbedSizeConstraint();
+    rebuildModel(); render(); applyPendingShare(); applyServerConfig(m.key);
   },e=>{console.error(e);toast("Impossible de charger le modèle.");});
 }
 /* liste de cartes de modèles (client + atelier) */
@@ -1579,7 +1657,7 @@ if(EMBED){
   window.addEventListener("message",ev=>{
     const d=ev.data||{}; if(d.source!=="onlyfab-host") return;
     if(d.type==="select-model" && d.model && MODELS.find(m=>m.key===d.model)){
-      const m=MODELS.find(x=>x.key===d.model); state.modelKey=d.model; if(typeof selectModel==="function") selectModel(m); }
+      if(d.model!==state.modelKey){ const m=MODELS.find(x=>x.key===d.model); if(typeof selectModel==="function") selectModel(m); } }
     else if(d.type==="configure"){
       if(Array.isArray(d.sizeTiers)&&d.sizeTiers.length){ embedSizeTiers=d.sizeTiers.map(Number).filter(x=>isFinite(x)).sort((a,b)=>a-b);
         if(state.config&&state.config.size){ state.config.size.min=embedSizeTiers[0]; state.config.size.max=embedSizeTiers[embedSizeTiers.length-1];
