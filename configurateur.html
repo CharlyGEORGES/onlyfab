@@ -4098,6 +4098,7 @@ function defaultConfigForParts(parts){
            engraving:{offered:true,added:false,fee:TENANT.defaults.engravingFee,maxLen:TENANT.defaults.engravingMax,minPct:40,rot:0,text:""},
            placard:{dx:0,dy:0,dz:0,scale:1,visible:true},
            engrave:{dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""},
+           orient:{ry:0,rx:0},
            size:{min:6,max:18,value:10,refCm:10,exp:2,gauge:true} };
 }
 function loadConfig(parts){
@@ -4109,6 +4110,7 @@ function loadConfig(parts){
     if(!c.activeVariantId||!c.variants.find(v=>v.id===c.activeVariantId)) c.activeVariantId=(c.variants[0]||{}).id;
     if(!c.placard) c.placard={dx:0,dy:0,dz:0,scale:1,visible:true};
     if(!c.engrave) c.engrave={dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""}; else if(c.engrave.anchor===undefined) c.engrave.anchor="";
+    if(!c.orient) c.orient={ry:0,rx:0}; else{ if(c.orient.ry==null)c.orient.ry=0; if(c.orient.rx==null)c.orient.rx=0; }
     if(!c.size) c.size={min:6,max:18,value:10,refCm:10,exp:2,gauge:true};
     else if(c.size.max>40){ const f=x=>Math.round((x/10)*2)/2; const vv=f(c.size.value); c.size={min:f(c.size.min),max:f(c.size.max),value:vv,refCm:vv,exp:2,gauge:true}; }
     if(c.size.gauge===undefined) c.size.gauge=true;
@@ -4565,7 +4567,13 @@ function mountGLB(gltfScene){
 function rebuildModel(){
   if(root)scene.remove(root);
   root = state.glb ? mountGLB(state.glb.scene) : buildPlaceholder();
-  scene.add(root); applyColors(); applySizeScale(); frameScene();
+  scene.add(root); applyColors(); applyOrient(); applySizeScale(); frameScene();
+}
+/* orientation par défaut du dragon, définie en atelier (offset appliqué au root) */
+function applyOrient(){
+  if(!root||!state.config||!state.config.orient) return;
+  root.rotation.y=state.config.orient.ry||0;
+  root.rotation.x=state.config.orient.rx||0;
 }
 function applyVertexColors(geo,stops,banded){
   const pos=geo.attributes.position,n=pos.count; let mn=Infinity,mx=-Infinity;
@@ -4833,15 +4841,46 @@ function finishChipBg(f){
   return `linear-gradient(90deg,${cs.join(",")})`;
 }
 /* rangée couleurs d'un slot : pastilles unies + puces de finitions spéciales */
+/* palette proposée au client pour une zone (sous-ensemble de la base de référence) */
+function zonePalette(slot){ const a=slot&&slot.allowedColors; if(!a||!a.length) return TENANT.palette;
+  const set=new Set(a.map(h=>String(h).toLowerCase())); const f=TENANT.palette.filter(p=>set.has(p.hex.toLowerCase())); return f.length?f:TENANT.palette; }
+function zoneAllowOn(slot,hex){ const a=slot&&slot.allowedColors; if(!a||!a.length) return true; return a.map(h=>String(h).toLowerCase()).includes(String(hex).toLowerCase()); }
+function toggleZoneAllow(slot,hex){
+  const all=TENANT.palette.map(p=>p.hex);
+  let cur=(slot.allowedColors&&slot.allowedColors.length)?slot.allowedColors.slice():all.slice();
+  const lc=String(hex).toLowerCase(); const has=cur.some(h=>String(h).toLowerCase()===lc);
+  if(has){ if(cur.length<=1) return false; cur=cur.filter(h=>String(h).toLowerCase()!==lc); }
+  else cur.push(hex);
+  slot.allowedColors=(cur.length>=all.length)?[]:cur;   // tout coché => "tout autorisé"
+  if(slot.allowedColors.length && !slot.allowedColors.some(h=>String(h).toLowerCase()===String(slot.color||"").toLowerCase())) slot.color=slot.allowedColors[0];
+  return true;
+}
+/* éditeur atelier : active/désactive chaque couleur de référence pour la zone */
+function zoneAllowEditor(slot,onchange){
+  const wrap=el("div");wrap.style.marginTop="9px";
+  wrap.innerHTML='<div style="font-size:11.5px;color:var(--muted);margin-bottom:5px">Couleurs proposées au client (base de référence)</div>';
+  const sw=el("div","sw");
+  TENANT.palette.forEach(p=>{ const on=zoneAllowOn(slot,p.hex);
+    const s=el("button","swatch");s.type="button";s.style.background=p.hex;s.style.opacity=on?"1":"0.25";
+    s.setAttribute("aria-pressed",on);s.title=p.name+(on?"":" — désactivée");
+    if(on) s.innerHTML='<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;text-shadow:0 1px 2px rgba(0,0,0,.65)">✓</span>';
+    s.onclick=()=>{ if(toggleZoneAllow(slot,p.hex)) onchange(); else toast("Au moins une couleur par zone."); };
+    sw.appendChild(s); });
+  wrap.appendChild(sw);
+  return wrap;
+}
 function slotColorRow(slot,onchange){
   const wrap=el("div");
   const sw=el("div","sw");
-  TENANT.palette.forEach(p=>{const s=el("button","swatch");s.type="button";s.style.background=p.hex;
+  const pal=(state.mode==="atelier")?TENANT.palette:zonePalette(slot);
+  pal.forEach(p=>{const s=el("button","swatch");s.type="button";s.style.background=p.hex;
     const prem=colorIsPremium(p.hex);
     if(prem) s.innerHTML='<span style="position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:var(--premium);border:2px solid var(--card);box-sizing:content-box"></span>';
     s.setAttribute("aria-pressed",!slot.finishId&&(slot.color||"").toLowerCase()===p.hex.toLowerCase());
     s.title=p.name+(prem?" (premium)":"");s.setAttribute("aria-label",p.name+(prem?" premium":""));
-    s.onclick=()=>{slot.color=p.hex;slot.finishId=null;onchange();};sw.appendChild(s);});
+    s.onclick=()=>{slot.color=p.hex;slot.finishId=null;
+      if(state.mode==="atelier" && slot.allowedColors && slot.allowedColors.length && !slot.allowedColors.some(h=>h.toLowerCase()===p.hex.toLowerCase())) slot.allowedColors.push(p.hex);
+      onchange();};sw.appendChild(s);});
   wrap.appendChild(sw);
   const fins=(state.config&&state.config.finishes)||[];
   if(fins.length){
@@ -4858,7 +4897,7 @@ function slotColorRow(slot,onchange){
 /* wizard : couleurs unies seules (étape Couleurs) */
 function solidPickerRow(slot,onchange){
   const sw=el("div","sw");
-  TENANT.palette.forEach(p=>{const s=el("button","swatch");s.type="button";s.style.background=p.hex;
+  ((state.mode==="atelier")?TENANT.palette:zonePalette(slot)).forEach(p=>{const s=el("button","swatch");s.type="button";s.style.background=p.hex;
     const prem=colorIsPremium(p.hex);
     if(prem) s.innerHTML='<span style="position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:var(--premium);border:2px solid var(--card);box-sizing:content-box"></span>';
     s.setAttribute("aria-pressed",!slot.finishId&&(slot.color||"").toLowerCase()===p.hex.toLowerCase());
@@ -4933,6 +4972,27 @@ function makeCollapsible(P){
 }
 
 /* ---------- MODE ATELIER ---------- */
+function orientControls(){
+  const o=state.config.orient||(state.config.orient={ry:0,rx:0});
+  const wrap=el("div");
+  const row=el("div");row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;align-items:center";
+  const mk=(txt,title,fn)=>{const b=el("button","addbtn",txt);b.title=title;b.style.padding="7px 11px";
+    b.onclick=()=>{fn();saveConfig();applyOrient();frameScene();renderPanel();};return b;};
+  const d=Math.PI/12;   // 15°
+  row.appendChild(mk("↺ 15°","Tourner à gauche",()=>o.ry-=d));
+  row.appendChild(mk("↻ 15°","Tourner à droite",()=>o.ry+=d));
+  row.appendChild(mk("⤯ Incliner −","Pencher vers l'arrière",()=>o.rx-=Math.PI/36));
+  row.appendChild(mk("⤰ Incliner +","Pencher vers l'avant",()=>o.rx+=Math.PI/36));
+  row.appendChild(mk("Réinit.","Remettre à zéro",()=>{o.ry=0;o.rx=0;}));
+  wrap.appendChild(row);
+  const f=el("div","field");f.style.marginTop="10px";f.innerHTML='<label>Rotation (°)</label>';
+  const i=el("input");i.type="range";i.min="-180";i.max="180";i.step="1";i.value=Math.round((o.ry||0)*180/Math.PI);
+  i.oninput=()=>{o.ry=parseFloat(i.value)*Math.PI/180;applyOrient();};
+  i.onchange=()=>{saveConfig();frameScene();};
+  f.appendChild(i);wrap.appendChild(f);
+  wrap.appendChild(el("p","hintline","Oriente le dragon tel qu'il apparaîtra au client (appliqué partout)."));
+  return wrap;
+}
 function renderAtelier(P){
   // modele 3D + catalogue
   const g0=el("div","group");g0.appendChild(el("h2",null,"<span>Modèle 3D</span>"));
@@ -4940,6 +5000,11 @@ function renderAtelier(P){
   // avec les lignes éditables ci-dessous.
   g0.appendChild(modelAdmin());
   P.appendChild(g0);
+
+  // orientation du dragon (appliquée à tous : atelier + client)
+  const go=el("div","group");go.appendChild(el("h2",null,"<span>Orientation du dragon</span>"));
+  go.appendChild(orientControls());
+  P.appendChild(go);
 
   // variantes (declinaisons)
   const gv=el("div","group");const hv=el("h2",null,"<span>Variantes (déclinaisons)</span>");
@@ -4983,7 +5048,9 @@ function renderAtelier(P){
         c.style.cssText="font:inherit;font-size:11px;padding:4px 9px;border-radius:999px;cursor:pointer;color:var(--ink);border:1px solid "+(on?"var(--accent)":"var(--line)")+";background:"+(on?"color-mix(in srgb,var(--accent) 16%,transparent)":"transparent");
         c.onclick=()=>{if(on)s.parts=s.parts.filter(x=>x!==p);else{s.parts=s.parts||[];s.parts.push(p);}saveConfig();applyColors();renderPanel();};chips.appendChild(c);});
       sc.appendChild(chips);
+      sc.appendChild(el("div",null,'<span style="font-size:11.5px;color:var(--muted)">Couleur par défaut</span>'));
       sc.appendChild(slotColorRow(s,()=>{saveConfig();applyColors();renderPanel();}));
+      sc.appendChild(zoneAllowEditor(s,()=>{saveConfig();applyColors();renderPanel();}));
       box.appendChild(sc);
     });
     const addS=el("button","addbtn","+ Couleur");addS.style.marginTop="10px";
