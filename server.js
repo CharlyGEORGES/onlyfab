@@ -801,7 +801,7 @@ const RESET_PASSWORD_HTML = `<!DOCTYPE html><html lang="fr"><head>
 // revalidation silencieuse en arrière-plan. Le cache est purgé à la
 // déconnexion via postMessage('clear-cache').
 const SERVICE_WORKER = `
-const CACHE_VERSION = 'bs-v82';
+const CACHE_VERSION = 'bs-v83';
 const STATIC_ASSETS = ['/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -3761,7 +3761,7 @@ http.createServer(async (req, res) => {
         if (req.method === 'GET' && parts[2] === 'users' && parts[3] && !parts[4]) {
           const targetId = parts[3];
           const u = db.prepare(`
-            SELECT id, email, name, plan, is_admin, is_influencer,
+            SELECT id, email, email_verified, name, plan, is_admin, is_influencer,
                    referral_code, referred_by_code, referred_by_user_id,
                    referral_note, referral_commission_pct, admin_note,
                    bambu_email, created_at, last_login, last_seen,
@@ -3832,6 +3832,7 @@ http.createServer(async (req, res) => {
           json(res, {
             user: {
               id: u.id, email: u.email, name: u.name, plan: u.plan,
+              email_verified: !!u.email_verified,
               is_admin: !!u.is_admin, is_influencer: !!u.is_influencer,
               referral_code: u.referral_code,
               referral_note: u.referral_note || '',
@@ -4149,6 +4150,39 @@ http.createServer(async (req, res) => {
           });
           tx();
           json(res, { ok: true });
+          return;
+        }
+
+        // ── RÉCUPÉRATION DE COMPTE ─────────────────────────────────────
+        // POST /api/admin/users/:id/password-reset → génère un lien de reset
+        // pour n'importe quel user et le renvoie à l'admin. Indispensable
+        // quand l'infra email est HS ou que le user n'a plus accès à sa
+        // boîte : l'admin transmet le lien par le canal de son choix
+        // (SMS, WhatsApp, autre email, en direct, etc.).
+        if (req.method === 'POST' && parts[2] === 'users' && parts[3] && parts[4] === 'password-reset') {
+          const targetId = parts[3];
+          const target = db.prepare('SELECT id, email FROM users WHERE id=?').get(targetId);
+          if (!target) { json(res, { error: 'Utilisateur introuvable' }, 404); return; }
+          const token = crypto.randomBytes(32).toString('hex');
+          const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 h
+          db.prepare('INSERT INTO password_resets (token, user_id, expires_at) VALUES (?,?,?)')
+            .run(token, targetId, expiresAt);
+          const resetUrl = `${PUBLIC_BASE}/reset-password?token=${token}`;
+          console.log(`  [Admin Reset] ${target.email} généré par admin ${userId} → ${resetUrl}`);
+          json(res, { url: resetUrl, expires_at: expiresAt, email: target.email });
+          return;
+        }
+
+        // POST /api/admin/users/:id/verify-email → force la vérification
+        // email d'un user (débloque quand l'email de confirmation n'arrive
+        // pas et que le user ne peut pas prouver sa boîte).
+        if (req.method === 'POST' && parts[2] === 'users' && parts[3] && parts[4] === 'verify-email') {
+          const targetId = parts[3];
+          const target = db.prepare('SELECT id, email FROM users WHERE id=?').get(targetId);
+          if (!target) { json(res, { error: 'Utilisateur introuvable' }, 404); return; }
+          db.prepare('UPDATE users SET email_verified=1, email_verify_token=NULL WHERE id=?').run(targetId);
+          console.log(`  [Admin Verify] ${target.email} marqué vérifié par admin ${userId}`);
+          json(res, { ok: true, email: target.email });
           return;
         }
 
