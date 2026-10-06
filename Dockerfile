@@ -13,6 +13,8 @@ RUN npm install --omit=dev
 COPY server.js bambu.js index.html landing.html configurateur.html ./
 # Modèles 3D d'origine : recopiés en base au premier démarrage, puis inutiles.
 COPY configurator/*.glb ./configurator-assets/
+# Musique d'ambiance du configurateur.
+COPY media ./media/
 
 # Create uploads dir
 RUN mkdir -p /data/uploads

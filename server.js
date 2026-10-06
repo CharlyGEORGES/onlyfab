@@ -87,6 +87,8 @@ const FAKE_BETA_MAX       = parseInt(process.env.BETA_FAKE_MAX       || '100', 1
 const HTML_FILE     = path.join(__dirname, 'index.html');
 const LANDING_FILE  = path.join(__dirname, 'landing.html');
 const CONFIGURATOR_FILE = path.join(__dirname, 'configurateur.html');
+// Musique d'ambiance du configurateur (servie en asset, pas embarquée dans le HTML).
+const MUSIC_FILE = path.join(__dirname, 'media', 'mesure-douce.mp3');
 // Domaines autorisés à embarquer le configurateur dans une iframe (page produit Shopify).
 // Surchargable via CONFIGURATOR_FRAME_ANCESTORS (liste séparée par des espaces).
 const CONFIGURATOR_FRAME_ANCESTORS = process.env.CONFIGURATOR_FRAME_ANCESTORS
@@ -1881,6 +1883,34 @@ http.createServer(async (req, res) => {
         'Content-Security-Policy': `frame-ancestors ${CONFIGURATOR_FRAME_ANCESTORS}`,
       });
       res.end(configuratorCache);
+      return;
+    }
+
+    // Musique d'ambiance du configurateur (publique, avec support des requêtes Range).
+    if (req.method === 'GET' && parts[0] === 'configurateur' && parts[1] === 'music.mp3') {
+      if (!fs.existsSync(MUSIC_FILE)) { res.writeHead(404); res.end('no music'); return; }
+      const total = fs.statSync(MUSIC_FILE).size;
+      const range = req.headers.range;
+      if (range) {
+        const mm = /bytes=(\d*)-(\d*)/.exec(range) || [];
+        let start = mm[1] ? parseInt(mm[1], 10) : 0;
+        let end = mm[2] ? parseInt(mm[2], 10) : total - 1;
+        if (isNaN(start) || start < 0) start = 0;
+        if (isNaN(end) || end >= total) end = total - 1;
+        if (start > end) { res.writeHead(416, { 'Content-Range': `bytes */${total}` }); res.end(); return; }
+        res.writeHead(206, {
+          'Content-Type': 'audio/mpeg', 'Accept-Ranges': 'bytes',
+          'Content-Range': `bytes ${start}-${end}/${total}`, 'Content-Length': end - start + 1,
+          'Cache-Control': 'public, max-age=86400',
+        });
+        fs.createReadStream(MUSIC_FILE, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg', 'Accept-Ranges': 'bytes',
+          'Content-Length': total, 'Cache-Control': 'public, max-age=86400',
+        });
+        fs.createReadStream(MUSIC_FILE).pipe(res);
+      }
       return;
     }
 
