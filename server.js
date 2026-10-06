@@ -87,8 +87,8 @@ const FAKE_BETA_MAX       = parseInt(process.env.BETA_FAKE_MAX       || '100', 1
 const HTML_FILE     = path.join(__dirname, 'index.html');
 const LANDING_FILE  = path.join(__dirname, 'landing.html');
 const CONFIGURATOR_FILE = path.join(__dirname, 'configurateur.html');
-// Musique d'ambiance du configurateur (servie en asset, pas embarquée dans le HTML).
-const MUSIC_FILE = path.join(__dirname, 'media', 'mesure-douce.mp3');
+// Pistes audio du configurateur (ambiance + cinématique), servies en asset.
+const MEDIA_DIR = path.join(__dirname, 'media');
 // Domaines autorisés à embarquer le configurateur dans une iframe (page produit Shopify).
 // Surchargable via CONFIGURATOR_FRAME_ANCESTORS (liste séparée par des espaces).
 const CONFIGURATOR_FRAME_ANCESTORS = process.env.CONFIGURATOR_FRAME_ANCESTORS
@@ -1886,10 +1886,15 @@ http.createServer(async (req, res) => {
       return;
     }
 
-    // Musique d'ambiance du configurateur (publique, avec support des requêtes Range).
-    if (req.method === 'GET' && parts[0] === 'configurateur' && parts[1] === 'music.mp3') {
-      if (!fs.existsSync(MUSIC_FILE)) { res.writeHead(404); res.end('no music'); return; }
-      const total = fs.statSync(MUSIC_FILE).size;
+    // Pistes audio du configurateur (ambiance, cinématique…), publiques, Range.
+    // /configurateur/media/<nom>.mp3  (ancien /configurateur/music.mp3 conservé en alias)
+    if (req.method === 'GET' && parts[0] === 'configurateur'
+        && ((parts[1] === 'media' && parts[2]) || parts[1] === 'music.mp3')) {
+      const name = parts[1] === 'music.mp3' ? 'mesure-douce.mp3' : path.basename(decodeURIComponent(parts[2]));
+      if (!/^[\w.-]+\.mp3$/i.test(name)) { res.writeHead(404); res.end('nope'); return; }
+      const file = path.join(MEDIA_DIR, name);
+      if (!fs.existsSync(file)) { res.writeHead(404); res.end('no media'); return; }
+      const total = fs.statSync(file).size;
       const range = req.headers.range;
       if (range) {
         const mm = /bytes=(\d*)-(\d*)/.exec(range) || [];
@@ -1903,13 +1908,13 @@ http.createServer(async (req, res) => {
           'Content-Range': `bytes ${start}-${end}/${total}`, 'Content-Length': end - start + 1,
           'Cache-Control': 'public, max-age=86400',
         });
-        fs.createReadStream(MUSIC_FILE, { start, end }).pipe(res);
+        fs.createReadStream(file, { start, end }).pipe(res);
       } else {
         res.writeHead(200, {
           'Content-Type': 'audio/mpeg', 'Accept-Ranges': 'bytes',
           'Content-Length': total, 'Cache-Control': 'public, max-age=86400',
         });
-        fs.createReadStream(MUSIC_FILE).pipe(res);
+        fs.createReadStream(file).pipe(res);
       }
       return;
     }

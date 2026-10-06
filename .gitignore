@@ -29,3 +29,6 @@ start.bat
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifact local (généré par le Dockerfile depuis configurator/*.glb)
+configurator-assets/
