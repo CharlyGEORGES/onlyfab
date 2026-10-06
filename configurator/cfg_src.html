@@ -660,6 +660,9 @@ function cineBuildPath(THREE,meshes,allMeshes,markers,hint){
     const endA=AB.slice(0,k), endB=AB.slice(n-k);
     const mA=regionMass(endA,diag*0.1), mB=regionMass(endB,diag*0.1);
     let headIsA=mA>=mB;
+    if(hint&&hint.endScore){   // grosse pièce terminale (crâne) : décisif quand net, sinon volume de surface
+      const sA=hint.endScore(posOf(A)), sB=hint.endScore(posOf(B));
+      if(Math.max(sA,sB)>1.25*Math.min(sA,sB)) headIsA=sA>sB; }
     if(hint&&hint.plate){   // plaque de gravure placée en atelier « sous la tête » : indice décisif
       const dA=Math.min(...endA.map(ci=>{const p=posOf(ci);return (p.x-hint.plate.x)**2+(p.z-hint.plate.z)**2;}));
       const dB=Math.min(...endB.map(ci=>{const p=posOf(ci);return (p.x-hint.plate.x)**2+(p.z-hint.plate.z)**2;}));
@@ -701,7 +704,13 @@ function cineBuildPath(THREE,meshes,allMeshes,markers,hint){
     let s2=0; headCells.forEach(p=>{s2+=p.distanceToSquared(c);}); hr=Math.sqrt(s2/headCells.length)*1.35;
     headP=c.clone().lerp(P[M-1],0.35); }
   hr=Math.max(diag*0.05,Math.min(diag*0.2,hr));
-  const fwd=fwd0;
+  // axe de la tête : axe principal horizontal du nuage de la tête (museau), orienté vers l'avant du cou
+  let fwd=fwd0.clone();
+  if(headCells.length>8){ const c=new V(); headCells.forEach(p=>c.add(p)); c.multiplyScalar(1/headCells.length);
+    let sxx=0,sxz=0,szz=0; headCells.forEach(p=>{ const dx=p.x-c.x, dz=p.z-c.z; sxx+=dx*dx; sxz+=dx*dz; szz+=dz*dz; });
+    const th=0.5*Math.atan2(2*sxz,sxx-szz); const ax=new V(Math.cos(th),0,Math.sin(th));
+    const l1=sxx*ax.x*ax.x+2*sxz*ax.x*ax.z+szz*ax.z*ax.z, l2=sxx+szz-l1;
+    if(l1>l2*1.15){ if(ax.dot(fwd0)<0) ax.negate(); fwd.copy(ax); } }   // tête nettement allongée : on suit son axe
   let mouth=null, eyes=null;
   if(mk.mouth) mouth=toW(mk.mouth);
   else { let best=-Infinity; headCells.forEach(p=>{ const d=p.clone().sub(headP).dot(fwd); if(d>best){best=d;mouth=p.clone();} });
@@ -753,11 +762,6 @@ function dragonRig(THREE,gltfScene,isBody,markers,opts){
   meshes.forEach(m=>{ m.geometry.applyMatrix4(R0); m.geometry.computeBoundingBox(); });
   // --- 2) colonne vertébrale (espace « original debout »)
   meshes.forEach(m=>m.updateWorldMatrix(true,false));
-  const K=cineBuildPath(THREE,bodyM,meshes,markers||null,opts.hint||null);
-  if(!K) { return {bones:[],mode:"none",R0}; }
-  const M=K.P.length, len=K.len;
-  const frameAt=i=>{ const T=K.T[i].clone(); T.y=0; if(T.lengthSq()<1e-8)T.set(1,0,0); T.normalize(); const side=new V(0,1,0).cross(T).normalize(); return {P:K.P[i],T,side,a:len*i/(M-1)-len/2}; };
-  const nearestIdx=p=>{ let bi=0,bd=Infinity; for(let i=0;i<M;i++){ const d=K.P[i].distanceToSquared(p); if(d<bd){bd=d;bi=i;} } return bi; };
   // --- 3) composantes connexes (soudure par position) par maillage
   const comps=[];                                      // {mesh, idx:[...vertex indices], n, c:centroid, body}
   meshes.forEach(m=>{
@@ -774,6 +778,17 @@ function dragonRig(THREE,gltfScene,isBody,markers,opts){
     byRoot.forEach(idx=>{ const c=new V(); idx.forEach(i=>{ c.x+=pa.array[i*3]; c.y+=pa.array[i*3+1]; c.z+=pa.array[i*3+2]; }); c.multiplyScalar(1/idx.length);
       comps.push({mesh:m,idx,n:idx.length,c,body:bodyM.includes(m)}); });
   });
+  const compsInfo=comps.map(c=>{ const pa=c.mesh.geometry.attributes.position.array; const b=new THREE.Box3(); c.idx.forEach(i=>b.expandByPoint(new V(pa[i*3],pa[i*3+1],pa[i*3+2]))); return {n:c.n,c:c.c.clone(),body:c.body,size:b.getSize(new V())}; });
+  // score d'extrémité pour départager tête / queue : volume de la plus grosse pièce du corps près du bout
+  // (la tête est une grosse pièce unique ; la queue finit en petites pièces). Les pièces très hautes (ailes) sont ignorées.
+  const diag0=Math.max(S0.x,S0.y,S0.z);
+  const endScore=e=>{ let best=0; compsInfo.forEach(c=>{ if(!c.body||c.size.y>diag0*0.4) return; if(c.c.distanceTo(e)>diag0*0.3) return; const v=c.size.x*c.size.y*c.size.z; if(v>best) best=v; }); return best; };
+  const hint=Object.assign({},opts.hint||{},{endScore});
+  const K=cineBuildPath(THREE,bodyM,meshes,markers||null,hint);
+  if(!K) { return {bones:[],mode:"none",R0}; }
+  const M=K.P.length, len=K.len;
+  const frameAt=i=>{ const T=K.T[i].clone(); T.y=0; if(T.lengthSq()<1e-8)T.set(1,0,0); T.normalize(); const side=new V(0,1,0).cross(T).normalize(); return {P:K.P[i],T,side,a:len*i/(M-1)-len/2}; };
+  const nearestIdx=p=>{ let bi=0,bd=Infinity; for(let i=0;i<M;i++){ const d=K.P[i].distanceToSquared(p); if(d<bd){bd=d;bi=i;} } return bi; };
   const totalBody=bodyM.reduce((s,m)=>s+m.geometry.attributes.position.count,0);
   const big=comps.filter(c=>c.body&&c.n>=totalBody*0.012);
   const rigid=opts.mode?opts.mode==="rigid":(big.length>=4);
@@ -783,16 +798,21 @@ function dragonRig(THREE,gltfScene,isBody,markers,opts){
     pa[i*3]=F.a+x; pa[i*3+1]=py; pa[i*3+2]=z;
     const nx=na[i*3], nz=na[i*3+2]; na[i*3]=nx*F.T.x+nz*F.T.z; na[i*3+2]=nx*F.side.x+nz*F.side.z; };
   const sOfComp=new Map();
+  // la tête (et ce qui s'y rattache) est orientée selon son propre axe (museau vers +X), pas selon le cou
+  const headR=K.hr*1.7, iHead=nearestIdx(K.headP);
+  const headFrame=(()=>{ const F=frameAt(iHead); const T=K.fwd.clone(); T.y=0; if(T.lengthSq()<1e-8) return F; T.normalize();
+    return {P:K.headP, T, side:new V(0,1,0).cross(T).normalize(), a:F.a+ (K.headP.clone().sub(F.P)).dot(F.T)}; })();
+  const frameFor=p=>{ if(p.distanceTo(K.headP)<headR) return headFrame; return frameAt(nearestIdx(p)); };
   if(rigid){
-    comps.forEach(c=>{ const i=nearestIdx(c.c); sOfComp.set(c,i/(M-1)); const F=frameAt(i); const pa=c.mesh.geometry.attributes.position.array, na=c.mesh.geometry.attributes.normal.array; c.idx.forEach(v=>applyFrame(pa,na,v,F)); });
+    comps.forEach(c=>{ const i=nearestIdx(c.c); sOfComp.set(c,i/(M-1)); const F=frameFor(c.c); const pa=c.mesh.geometry.attributes.position.array, na=c.mesh.geometry.attributes.normal.array; c.idx.forEach(v=>applyFrame(pa,na,v,F)); });
   } else {
     meshes.forEach(m=>{ const pa=m.geometry.attributes.position.array, na=m.geometry.attributes.normal.array, n=m.geometry.attributes.position.count; const p=new V();
-      for(let v=0;v<n;v++){ p.set(pa[v*3],pa[v*3+1],pa[v*3+2]); applyFrame(pa,na,v,frameAt(nearestIdx(p))); } });
+      for(let v=0;v<n;v++){ p.set(pa[v*3],pa[v*3+1],pa[v*3+2]); applyFrame(pa,na,v,frameFor(p)); } });
     comps.forEach(c=>{ sOfComp.set(c,nearestIdx(c.c)/(M-1)); });
   }
   meshes.forEach(m=>{ const g=m.geometry; g.attributes.position.needsUpdate=true; g.attributes.normal.needsUpdate=true; g.computeBoundingBox(); g.computeBoundingSphere(); });
   // points clés (tête) dans l'espace déroulé
-  const toFlat=p=>{ const i=nearestIdx(p), F=frameAt(i); const px=p.x-F.P.x, pz=p.z-F.P.z; return new V(F.a+px*F.T.x+pz*F.T.z, p.y, px*F.side.x+pz*F.side.z); };
+  const toFlat=p=>{ const F=frameFor(p); const px=p.x-F.P.x, pz=p.z-F.P.z; return new V(F.a+px*F.T.x+pz*F.T.z, p.y, px*F.side.x+pz*F.side.z); };
   const headP=toFlat(K.headP), mouth=toFlat(K.mouth), eyes=toFlat(K.eyes), tailP=toFlat(K.tailP);
   const spineY=K.P.reduce((s,p)=>s+p.y,0)/M;
   // --- 5) os : un par grosse pièce (rigide) ou répartis (continu) ; deux chaînes depuis le bassin
@@ -837,7 +857,7 @@ function dragonRig(THREE,gltfScene,isBody,markers,opts){
   const flatOf=p=>{ // original debout -> déroulé : par le sommet d'origine le plus proche
     let best=null,bd=Infinity; meshes.forEach(m=>{ const o=m.userData.orig; if(!o)return; const pa=m.geometry.attributes.position.array; const t=new V();
       for(let i=0;i<o.pos.length;i+=3){ t.set(o.pos[i],o.pos[i+1],o.pos[i+2]).applyMatrix4(R0); const d=t.distanceToSquared(p); if(d<bd){bd=d;best=new V(pa[i],pa[i+1],pa[i+2]);} } }); return best; };
-  return {bones,hip,nB,boneX,len,spineY,headBone,anchors,skeleton,meshes:newMeshes,mode:rigid?"rigid":"fused",R0,K,origOf,flatOf,headRadius:K.hr,headP,mouth,eyes,tailP,comps:comps.length,big:big.length};
+  return {bones,hip,nB,boneX,len,spineY,headBone,anchors,skeleton,meshes:newMeshes,mode:rigid?"rigid":"fused",R0,K,origOf,flatOf,headRadius:K.hr,headP,mouth,eyes,tailP,comps:comps.length,big:big.length,compsInfo};
 }
 /* Pose du dragon à l'instant t (secondes de musique). Angles en radians sur chaque os.
    p = {wave, waveFreq, rear, lookYaw, nod, tailWag, pulse} dans [0..1] ou radians. */
