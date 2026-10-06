@@ -277,6 +277,8 @@
   body.cine .stage::after{content:"";position:absolute;inset:0;z-index:4;pointer-events:none;
     box-shadow:inset 0 0 180px 40px rgba(0,0,0,.55);opacity:0;animation:cineVig .8s ease forwards}
   @keyframes cineVig{to{opacity:1}}
+  #cinefade{position:absolute;inset:0;z-index:5;background:#000;opacity:0;pointer-events:none;transition:opacity .12s linear}
+  body.placing #view{cursor:crosshair}
   /* tiroir panier / commande */
   .sheet-backdrop{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.42);display:flex;justify-content:flex-end}
   .sheet{width:min(440px,100%);height:100%;background:var(--card);border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(0,0,0,.25);
@@ -341,6 +343,7 @@
     <button id="btnMusic" class="musicbtn" type="button" aria-pressed="false" title="Musique d'ambiance" aria-label="Musique d'ambiance">♪ Musique</button>
     <audio id="bgm" loop preload="none"></audio>
     <audio id="cineaudio" preload="none" crossorigin="anonymous"></audio>
+    <div id="cinefade" aria-hidden="true"></div>
     <button id="cineSkip" class="cineskip" type="button" hidden>Passer ✕</button>
     <div class="nightnote" id="nightnote" hidden>🌙 Mode Nuit — les couleurs classiques restent visibles, les finitions phospho brillent</div>
     <div class="hint">glisser · molette zoom · clic droit / 2 doigts : déplacer</div>
@@ -462,6 +465,7 @@ function defaultConfigForParts(parts){
            placard:{dx:0,dy:0,dz:0,scale:1,visible:true},
            engrave:{dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""},
            orient:{ry:0,rx:0},
+           cine:{tail:null,head:null,eyes:null,mouth:null,waypoints:[]},
            size:{min:6,max:18,value:10,refCm:10,exp:2,gauge:true} };
 }
 function loadConfig(parts){
@@ -474,6 +478,7 @@ function loadConfig(parts){
     if(!c.placard) c.placard={dx:0,dy:0,dz:0,scale:1,visible:true};
     if(!c.engrave) c.engrave={dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""}; else if(c.engrave.anchor===undefined) c.engrave.anchor="";
     if(!c.orient) c.orient={ry:0,rx:0}; else{ if(c.orient.ry==null)c.orient.ry=0; if(c.orient.rx==null)c.orient.rx=0; }
+    if(!c.cine||typeof c.cine!=="object") c.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]}; else if(!Array.isArray(c.cine.waypoints)) c.cine.waypoints=[];
     if(!c.size) c.size={min:6,max:18,value:10,refCm:10,exp:2,gauge:true};
     else if(c.size.max>40){ const f=x=>Math.round((x/10)*2)/2; const vv=f(c.size.value); c.size={min:f(c.size.min),max:f(c.size.max),value:vv,refCm:vv,exp:2,gauge:true}; }
     if(c.size.gauge===undefined) c.size.gauge=true;
@@ -588,26 +593,201 @@ let renderer,scene,camera,root,placardTex,placardCtx,placardGlowTex,placardGlowC
 let gaugeLabels=[];   // sprites de cotes (taille recalculée chaque frame => constante à l'écran)
 const WORLD_PER_CM=0.36;   // 10 cm ~ 3.6 unites (modele normalise)
 const cam={theta:0.7,phi:1.15,radius:7.4,target:0.4,tx:0,tz:0,auto:true};   // target = point visé (tx,target=y,tz)
-// État de la cinématique (récap) — déclaré tôt pour être défini avant loop().
+// Cinématique du récap — déclarée tôt pour être définie avant loop().
+const CINE_HITS=[0.22,0.7,3.17,3.87,5.67,7.5,9.3,11.57,12.69,14.07,14.74,15.19,15.67,16.34,17.24,17.47,18.39];
+const CINE_FIRE_HITS=[14.74,15.19,15.67,16.12,16.34,16.79,17.24,17.47];
+const CINE_DUR=20;
+const _sm=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/((b-a)||1)));return t*t*(3-2*t);};
+function cineBuildPath(THREE,meshes,allMeshes,markers,hint){
+  const V=THREE.Vector3;
+  // 1) nuage de points (sommets en espace monde)
+  const pts=[], ptsAll=[]; const b=new THREE.Box3();
+  const collect=(m,arr)=>{ m.updateWorldMatrix(true,false); const pa=m.geometry.attributes.position; if(!pa)return;
+    const n=pa.count, step=Math.max(1,Math.floor(n/16000)); const v=new V();
+    for(let i=0;i<n;i+=step){ v.fromBufferAttribute(pa,i).applyMatrix4(m.matrixWorld); arr.push(v.x,v.y,v.z); b.expandByPoint(v); } };
+  meshes.forEach(m=>collect(m,pts)); (allMeshes||meshes).forEach(m=>collect(m,ptsAll));
+  if(pts.length<30) return null;
+  const S=b.getSize(new V()), diag=Math.max(S.x,S.y,S.z);
+  const res=diag/46, nx=Math.ceil(S.x/res)+3, ny=Math.ceil(S.y/res)+3, nz=Math.ceil(S.z/res)+3, N=nx*ny*nz;
+  const ox=b.min.x-res*1.5, oy=b.min.y-res*1.5, oz=b.min.z-res*1.5;
+  const occ=new Uint8Array(N), occAll=new Uint8Array(N), idx=(x,y,z)=>(x*ny+y)*nz+z;
+  const vox=(arr,o)=>{ for(let i=0;i<arr.length;i+=3){ o[idx(Math.floor((arr[i]-ox)/res),Math.floor((arr[i+1]-oy)/res),Math.floor((arr[i+2]-oz)/res))]=1; } };
+  vox(pts,occ); vox(ptsAll,occAll);
+  // 2) fermeture : remplit l'intérieur et les petits creux (<= G cellules) le long des 3 axes
+  const G=5, fill=new Uint8Array(occ);
+  const run=(len,get,set)=>{ let last=-1; for(let i=0;i<len;i++){ if(get(i)){ if(last>=0&&i-last>1&&i-last<=G+1){for(let k=last+1;k<i;k++)set(k);} last=i; } } };
+  for(let x=0;x<nx;x++)for(let y=0;y<ny;y++) run(nz,z=>occ[idx(x,y,z)],z=>{fill[idx(x,y,z)]=1;});
+  for(let x=0;x<nx;x++)for(let z=0;z<nz;z++) run(ny,y=>occ[idx(x,y,z)],y=>{fill[idx(x,y,z)]=1;});
+  for(let y=0;y<ny;y++)for(let z=0;z<nz;z++) run(nx,x=>occ[idx(x,y,z)],x=>{fill[idx(x,y,z)]=1;});
+  // 3) profondeur (distance au vide) par BFS multi-source -> favorise le centre du corps
+  const depth=new Int16Array(N).fill(-1); let q=[];
+  for(let x=0;x<nx;x++)for(let y=0;y<ny;y++)for(let z=0;z<nz;z++){ const i=idx(x,y,z); if(!fill[i])continue;
+    if(x===0||y===0||z===0||x===nx-1||y===ny-1||z===nz-1||!fill[i-1]||!fill[i+1]||!fill[i-nz]||!fill[i+nz]||!fill[i-ny*nz]||!fill[i+ny*nz]){depth[i]=0;q.push(i);} }
+  const nb=[1,-1,nz,-nz,ny*nz,-ny*nz];
+  for(let h=0;h<q.length;h++){ const i=q[h]; for(const d of nb){ const j=i+d; if(j<0||j>=N||!fill[j]||depth[j]>=0)continue; depth[j]=depth[i]+1; q.push(j);} }
+  const cellOf=p=>{ const x=Math.max(0,Math.min(nx-1,Math.floor((p.x-ox)/res))),y=Math.max(0,Math.min(ny-1,Math.floor((p.y-oy)/res))),z=Math.max(0,Math.min(nz-1,Math.floor((p.z-oz)/res))); return idx(x,y,z); };
+  const posOf=i=>{ const x=Math.floor(i/(ny*nz)), y=Math.floor(i/nz)%ny, z=i%nz; return new V(ox+(x+0.5)*res,oy+(y+0.5)*res,oz+(z+0.5)*res); };
+  const nearestFilled=i=>{ if(fill[i])return i; const p=posOf(i); let best=-1,bd=Infinity;
+    for(let j=0;j<N;j++){ if(!fill[j])continue; const d=posOf(j).distanceToSquared(p); if(d<bd){bd=d;best=j;} } return best; };
+  // Dijkstra pondéré : coût 1 + K/(1+profondeur) -> le chemin passe au coeur du dragon
+  const dijkstra=(src,costK)=>{ const dist=new Float32Array(N).fill(Infinity), prev=new Int32Array(N).fill(-1);
+    const heap=[]; const push=(d,i)=>{heap.push([d,i]); let k=heap.length-1; while(k>0){const p=(k-1)>>1; if(heap[p][0]<=heap[k][0])break; [heap[p],heap[k]]=[heap[k],heap[p]]; k=p;}};
+    const pop=()=>{ const top=heap[0], last=heap.pop(); if(heap.length){ heap[0]=last; let k=0; for(;;){ let l=2*k+1,r=l+1,m=k; if(l<heap.length&&heap[l][0]<heap[m][0])m=l; if(r<heap.length&&heap[r][0]<heap[m][0])m=r; if(m===k)break; [heap[m],heap[k]]=[heap[k],heap[m]]; k=m; } } return top; };
+    dist[src]=0; push(0,src);
+    while(heap.length){ const [d,i]=pop(); if(d>dist[i])continue; for(const dd of nb){ const j=i+dd; if(j<0||j>=N||!fill[j])continue;
+      const c=1+costK/(1+depth[j]); if(d+c<dist[j]){dist[j]=d+c; prev[j]=i; push(d+c,j);} } }
+    return {dist,prev}; };
+  const yLim=oy+(ny*res)*0.62;   // extrémités cherchées dans la partie basse (évite les ailes / pointes hautes)
+  const farthest=(dist)=>{ let best=-1,bd=-1; for(let i=0;i<N;i++){ if(fill[i]&&dist[i]<Infinity&&dist[i]>bd&&posOf(i).y<yLim){bd=dist[i];best=i;} } return best; };
+  const cellPath=(from,to,K)=>{ const {prev,dist}=dijkstra(from,K); if(dist[to]===Infinity)return null; const seg=[]; for(let i=to;i>=0;i=prev[i])seg.push(i); return seg.reverse(); };
+  // volume de surface autour d'une portion de chemin (la tête est le bout le plus « volumineux »)
+  const regionMass=(cellsArr,R)=>{ const seen=new Uint8Array(N); let m=0; const r=Math.ceil(R/res), r2=R*R;
+    cellsArr.forEach(ci=>{ const p=posOf(ci), cx=Math.floor(ci/(ny*nz)), cy=Math.floor(ci/nz)%ny, cz=ci%nz;
+      for(let x=Math.max(0,cx-r);x<=Math.min(nx-1,cx+r);x++)for(let y=Math.max(0,cy-r);y<=Math.min(ny-1,cy+r);y++)for(let z=Math.max(0,cz-r);z<=Math.min(nz-1,cz+r);z++){
+        const j=idx(x,y,z); if(!occ[j]||seen[j])continue; if(posOf(j).distanceToSquared(p)<r2){seen[j]=1;m++;} } });
+    return m; };
+  // 4) extrémités : repères atelier sinon paire géodésique la plus éloignée ; tête = bout le plus volumineux
+  const mk=markers||{}; const toW=p=>new V(p.x,p.y,p.z);
+  let tailC=null, headC=null, dbg=null;
+  if(mk.tail) tailC=nearestFilled(cellOf(toW(mk.tail)));
+  if(mk.head) headC=nearestFilled(cellOf(toW(mk.head)));
+  if(tailC==null||headC==null){
+    let seed=-1,bd=-1; for(let i=0;i<N;i++){ if(depth[i]>bd){bd=depth[i];seed=i;} }
+    const A=farthest(dijkstra(seed,0).dist); const B=farthest(dijkstra(A,0).dist);
+    const AB=cellPath(A,B,6)||[A,B]; const n=AB.length, k=Math.max(2,Math.floor(n*0.18));
+    const endA=AB.slice(0,k), endB=AB.slice(n-k);
+    const mA=regionMass(endA,diag*0.1), mB=regionMass(endB,diag*0.1);
+    let headIsA=mA>=mB;
+    if(hint&&hint.plate){   // plaque de gravure placée en atelier « sous la tête » : indice décisif
+      const dA=Math.min(...endA.map(ci=>{const p=posOf(ci);return (p.x-hint.plate.x)**2+(p.z-hint.plate.z)**2;}));
+      const dB=Math.min(...endB.map(ci=>{const p=posOf(ci);return (p.x-hint.plate.x)**2+(p.z-hint.plate.z)**2;}));
+      headIsA=dA<dB; }
+    if(tailC!=null) headC=(tailC===A)?B:A;
+    else if(headC!=null) tailC=(headC===A)?B:A;
+    else { headC=headIsA?A:B; tailC=headIsA?B:A; }
+    dbg={A:posOf(A),B:posOf(B),mA,mB,headIsA};
+  }
+  // 5) chemin queue -> (points de passage) -> tête, pondéré vers le centre
+  const stops=[tailC].concat((mk.waypoints||[]).map(p=>nearestFilled(cellOf(toW(p)))).filter(i=>i>=0),[headC]);
+  let cells=[];
+  for(let s=0;s<stops.length-1;s++){ const seg=cellPath(stops[s],stops[s+1],6); if(!seg)continue; if(cells.length)seg.shift(); cells=cells.concat(seg); }
+  if(cells.length<4) return null;
+  let raw=cells.map(posOf);
+  // lissage + rééchantillonnage par abscisse curviligne
+  const smooth=(arr,w,passes)=>{ for(let p=0;p<passes;p++){ const out=arr.map((v,i)=>{ const acc=new V(); let n=0; for(let k=-w;k<=w;k++){ const j=Math.max(0,Math.min(arr.length-1,i+k)); acc.add(arr[j]); n++; } return acc.multiplyScalar(1/n); }); arr=out; } return arr; };
+  raw=smooth(raw,7,3);
+  const cum=[0]; for(let i=1;i<raw.length;i++)cum.push(cum[i-1]+raw[i].distanceTo(raw[i-1]));
+  const len=cum[cum.length-1]||1, M=240, P=[];
+  for(let k=0;k<M;k++){ const d=len*k/(M-1); let i=1; while(i<cum.length-1&&cum[i]<d)i++; const t=(d-cum[i-1])/((cum[i]-cum[i-1])||1); P.push(raw[i-1].clone().lerp(raw[i],t)); }
+  // tangentes, hauteur du dos (rase-motte) et largeur locale
+  const T=P.map((p,i)=>{ const a=P[Math.max(0,i-2)], c=P[Math.min(M-1,i+2)]; const t=c.clone().sub(a); return t.lengthSq()>1e-9?t.normalize():new V(0,0,1); });
+  const topY=P.map(p=>{ const cx=Math.floor((p.x-ox)/res), cz=Math.floor((p.z-oz)/res); let best=-Infinity;
+    for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++){ const x=cx+dx,z=cz+dz; if(x<0||z<0||x>=nx||z>=nz)continue;
+      for(let y=ny-1;y>=0;y--){ if(occAll[idx(x,y,z)]){ best=Math.max(best,oy+(y+1)*res); break; } } }
+    return best===-Infinity?p.y:best; });
+  const topS=[]; for(let i=0;i<M;i++){ let s=0,n=0; for(let k=-5;k<=5;k++){ const j=Math.max(0,Math.min(M-1,i+k)); s+=topY[j]; n++; } topS.push(s/n); }
+  const width=P.map(p=>Math.max(res,(depth[cellOf(p)]+0.5)*res));
+  // 6) tête : région (cellules proches des 12 % terminaux du chemin), centre, rayon, avant, yeux, gueule
+  const tailEnd=P.slice(0,Math.max(2,Math.floor(M*0.12)));
+  const headEnd=P.slice(M-Math.max(2,Math.floor(M*0.12)));
+  const fwd0=headEnd[headEnd.length-1].clone().sub(P[M-Math.floor(M*0.22)]); fwd0.y*=0.3; if(fwd0.lengthSq()<1e-6)fwd0.set(0,0,1); fwd0.normalize();
+  const headCells=[]; { const R=diag*0.16, r2=R*R; const marked=new Uint8Array(N);
+    for(let j=0;j<N;j++){ if(!occAll[j]||marked[j])continue; const p=posOf(j);
+      for(const q of headEnd){ if(p.distanceToSquared(q)<r2){ headCells.push(p); marked[j]=1; break; } } } }
+  let headP=P[M-1].clone(), hr=diag*0.07;
+  if(headCells.length>8){ const c=new V(); headCells.forEach(p=>c.add(p)); c.multiplyScalar(1/headCells.length);
+    let s2=0; headCells.forEach(p=>{s2+=p.distanceToSquared(c);}); hr=Math.sqrt(s2/headCells.length)*1.35;
+    headP=c.clone().lerp(P[M-1],0.35); }
+  hr=Math.max(diag*0.05,Math.min(diag*0.2,hr));
+  const fwd=fwd0;
+  let mouth=null, eyes=null;
+  if(mk.mouth) mouth=toW(mk.mouth);
+  else { let best=-Infinity; headCells.forEach(p=>{ const d=p.clone().sub(headP).dot(fwd); if(d>best){best=d;mouth=p.clone();} });
+    if(!mouth) mouth=headP.clone().addScaledVector(fwd,hr*1.3); mouth.lerp(headP,0.15); }
+  if(mk.eyes) eyes=toW(mk.eyes); else { eyes=headP.clone().lerp(mouth,0.4); eyes.y=Math.max(eyes.y,headP.y)+hr*0.45; }
+  return {P,T,topS,width,len,diag,res,headP,tailP:P[0],hr,fwd,mouth,eyes,center:b.getCenter(new V()),box:b,dbg};
+}
+/* Pose caméra à l'instant tSec (secondes de musique). Retourne {pos,look,roll,mode,fire,rear,fov}. */
+function cinePose(THREE,K,tSec,hasEng,hasFin,userMode,pulse,plateW){
+  const V=THREE.Vector3, up=new V(0,1,0), M=K.P.length, u=K.diag;
+  const at=s=>{ const f=Math.max(0,Math.min(M-1,s*(M-1))), i=Math.floor(f), j=Math.min(M-1,i+1), t=f-i; return K.P[i].clone().lerp(K.P[j],t); };
+  const tanAt=s=>K.T[Math.round(Math.max(0,Math.min(M-1,s*(M-1))))];
+  const topAt=s=>{ const f=Math.max(0,Math.min(M-1,s*(M-1))), i=Math.floor(f), j=Math.min(M-1,i+1), t=f-i; return K.topS[i]*(1-t)+K.topS[j]*t; };
+  const side=t=>new V().crossVectors(up,t).normalize();
+  const hfwd=K.fwd, hside=side(hfwd);
+  const pos=new V(), look=new V(); let roll=0, mode=userMode, fire=false, rear=0, fov=50, smooth=0.12;
+  const t=tSec;
+  if(t<7.5){                                           // 1) rase-motte : de la queue au cou, au ras des articulations
+    const sEnd=0.9;
+    const s=sEnd*(t<0.7 ? 0.0 : _sm(0.7,7.5,t)*0.85+ (t-0.7)/6.8*0.15);
+    const p=at(s), tg=tanAt(s), sd=side(tg);
+    const h=u*(0.095+0.03*pulse);
+    const weave=Math.sin(s*Math.PI*9)*K.width[Math.round(s*(M-1))]*0.9;
+    pos.copy(p).addScaledVector(sd,weave); pos.y=topAt(s)+h;
+    const la=Math.min(1,s+0.07), lp=at(la); look.copy(lp).addScaledVector(side(tanAt(la)),weave*0.3); look.y=topAt(la)+h*0.35;
+    // roulis dans les virages
+    const t2=tanAt(Math.min(1,s+0.05)); roll=-sd.dot(t2)*0.9;
+    fov=62; smooth=t<0.7?1:0.22;
+  } else if(t<11.57){                                  // 2) le visage : passe par-dessus la tête puis plonge sur les yeux
+    const k=_sm(7.5,9.3,t), hold=_sm(9.3,11.57,t);
+    const hr=K.hr;
+    const back=K.headP.clone().addScaledVector(hfwd,-hr*2.2).addScaledVector(up,hr*2.4).addScaledVector(hside,hr*0.8);
+    const front=K.eyes.clone().addScaledVector(hfwd,hr*2.6).addScaledVector(up,hr*0.55).addScaledVector(hside,hr*0.9);
+    const arc=back.clone().lerp(front,k); arc.y+=Math.sin(k*Math.PI)*hr*1.2;   // survol en cloche
+    const closer=front.clone().lerp(K.eyes.clone().addScaledVector(hfwd,hr*1.5).addScaledVector(up,hr*0.25),hold*0.8);
+    pos.copy(arc).lerp(closer,k);
+    look.copy(K.headP.clone().lerp(K.eyes,k));
+    fov=50-10*hold; smooth=0.1; mode=(hasFin&&hold>0.3)?"nuit":"ombre";
+  } else if(t<14.07){                                  // 3) sous la tête : la gravure (ou plan bas 3/4)
+    const k=_sm(11.57,12.69,t), k2=_sm(12.69,14.07,t);
+    const hr=K.hr;
+    if(hasEng){
+      const target=plateW||K.headP.clone().addScaledVector(up,-hr*0.9);
+      const start=K.eyes.clone().addScaledVector(hfwd,hr*1.6).addScaledVector(up,hr*0.25);
+      const under=target.clone().addScaledVector(up,-hr*2.3).addScaledVector(hfwd,hr*(1.6-1.1*k2));
+      pos.copy(start).lerp(under,k); look.copy(K.eyes.clone().lerp(target,k));
+      fov=48; smooth=0.1; mode="ombre";
+    } else {
+      const start=K.eyes.clone().addScaledVector(hfwd,hr*1.6).addScaledVector(up,hr*0.25);
+      const low=K.headP.clone().addScaledVector(hfwd,hr*2.6).addScaledVector(hside,-hr*2.4).addScaledVector(up,-hr*0.6);
+      pos.copy(start).lerp(low,k).addScaledVector(hside,-hr*0.8*k2); look.copy(K.headP.clone().lerp(K.mouth,0.3));
+      fov=50; smooth=0.1; mode=hasFin?"nuit":"ombre";
+    }
+  } else if(t<18.39){                                  // 4) le feu : face à la gueule, le dragon se cabre, recul héroïque
+    const k=_sm(14.07,14.74,t), r=_sm(14.74,18.39,t);
+    const hr=K.hr; rear=_sm(14.07,14.9,t);
+    const near=K.mouth.clone().addScaledVector(hfwd,hr*3.2).addScaledVector(up,hr*0.8).addScaledVector(hside,hr*0.6);
+    const far=K.center.clone().addScaledVector(hfwd,u*0.95).addScaledVector(up,u*0.55).addScaledVector(hside,u*0.35);
+    pos.copy(near).lerp(far,r*r); look.copy(K.mouth.clone().lerp(K.center,r*0.6)).addScaledVector(up,hr*0.4*(1-r));
+    fire=t>=14.6; fov=50+8*r; smooth=k<1?0.16:0.08; mode=userMode;
+  } else {                                             // 5) plan final héroïque
+    const k=_sm(18.39,20,t);
+    const far=K.center.clone().addScaledVector(hfwd,u*0.95).addScaledVector(up,u*0.55).addScaledVector(hside,u*0.35);
+    const end=K.center.clone().addScaledVector(hfwd,u*0.6).addScaledVector(up,u*0.5).addScaledVector(hside,u*0.62);
+    pos.copy(far).lerp(end,k); look.copy(K.center); fov=50; smooth=0.06; mode=userMode;
+  }
+  return {pos,look,roll,mode,fire,rear,fov,smooth};
+}
+
+/* ---- état + glue configurateur ---- */
 const cine={active:false,t0:0,audio:null,actx:null,srcNode:null,analyser:null,freq:null,
-  bassAvg:0,lastBeat:0,pulse:0,beat:0,theta:0,R0:9,curMode:null,userMode:"ombre",
-  baseRotY:0,basePosY:0,bgmWasOn:false};
+  bassAvg:0,lastBeat:0,pulse:0,beat:0,curMode:null,userMode:"ombre",K:null,phase:-1,
+  baseQ:null,basePosY:0,bgmWasOn:false,camPos:null,camLook:null,roll:0,fov:42,free:false,autoDone:false,placing:null,hitIdx:0,fireIdx:0};
 const CINE_URL="/configurateur/media/d-minor-resolve.mp3";
 const _lerp=(a,b,t)=>a+(b-a)*t;
-const _easeIO=x=>x<0.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
 function cineHasFinishes(){ try{const v=activeVariant();return !!(v&&v.slots&&v.slots.some(s=>s.finishId));}catch(e){return false;} }
 function cineHasEngrave(){ try{const e=state.config.engraving;return !!(e&&e.added&&(e.text||"").trim());}catch(e){return false;} }
 function cineSetMode(m){ if(cine.curMode===m)return; cine.curMode=m; state.view.mode=m; try{setViewMode();}catch(e){} }
 function cineAnalyse(){
-  if(!cine.analyser){ cine.pulse*=0.9; return {energy:0.4,beat:false}; }
+  if(!cine.analyser) return {energy:0.4,beat:false};
   cine.analyser.getByteFrequencyData(cine.freq); const f=cine.freq;
   let bass=0; for(let i=1;i<=6;i++)bass+=f[i]; bass/=(6*255);
   let mid=0; for(let i=7;i<40;i++)mid+=f[i]; mid/=((33)*255);
   const energy=Math.min(1,bass*0.7+mid*0.5);
   cine.bassAvg=_lerp(cine.bassAvg,bass,0.08);
   const now=performance.now(); let beat=false;
-  if(bass>cine.bassAvg*1.35 && bass>0.22 && now-cine.lastBeat>240){ beat=true; cine.lastBeat=now; cine.beat++; cine.pulse=1; }
-  cine.pulse*=0.90; return {energy,beat};
+  if(bass>cine.bassAvg*1.35 && bass>0.22 && now-cine.lastBeat>240){ beat=true; cine.lastBeat=now; cine.beat++; cine.pulse=Math.max(cine.pulse,0.7); }
+  return {energy,beat};
 }
 /* ---- souffle de feu (particules additives en espace monde) ---- */
 let fireSys=null;
@@ -617,7 +797,7 @@ function fireTexture(){ const c=document.createElement("canvas");c.width=c.heigh
   gr.addColorStop(0.6,"rgba(255,120,30,0.85)");gr.addColorStop(1,"rgba(255,60,0,0)");
   g.fillStyle=gr;g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); }
 function createFire(){ if(fireSys)return fireSys; if(typeof THREE==="undefined"||!scene)return null;
-  const N=200, geo=new THREE.BufferGeometry();
+  const N=400, geo=new THREE.BufferGeometry();
   geo.setAttribute("position",new THREE.BufferAttribute(new Float32Array(N*3),3));
   geo.setAttribute("color",new THREE.BufferAttribute(new Float32Array(N*3),3));
   const mat=new THREE.PointsMaterial({size:0.5,map:fireTexture(),transparent:true,depthWrite:false,
@@ -625,12 +805,12 @@ function createFire(){ if(fireSys)return fireSys; if(typeof THREE==="undefined"|
   const pts=new THREE.Points(geo,mat); pts.frustumCulled=false; pts.visible=false; pts.renderOrder=5;
   fireSys={pts,geo,mat,N,next:0,parts:Array.from({length:N},()=>({life:1,max:1,x:0,y:0,z:0,vx:0,vy:0,vz:0}))};
   scene.add(pts); return fireSys; }
-function emitFire(o,dir,u){ const F=createFire(); if(!F)return; const count=42;
+function emitFire(o,dir,u,count){ const F=createFire(); if(!F)return;
   for(let i=0;i<count;i++){ const p=F.parts[F.next]; F.next=(F.next+1)%F.N;
-    p.x=o.x;p.y=o.y;p.z=o.z; const sp=(1.5+Math.random()*2.0)*u, spread=0.5*u;
-    p.vx=dir.x*sp+(Math.random()-0.5)*spread; p.vy=dir.y*sp+(0.3+Math.random()*0.7)*u; p.vz=dir.z*sp+(Math.random()-0.5)*spread;
-    p.life=0; p.max=0.45+Math.random()*0.45; }
-  F.mat.size=0.55*u; F.pts.visible=true; }
+    p.x=o.x;p.y=o.y;p.z=o.z; const sp=(1.8+Math.random()*2.4)*u, spread=0.45*u;
+    p.vx=dir.x*sp+(Math.random()-0.5)*spread; p.vy=dir.y*sp+(0.2+Math.random()*0.6)*u; p.vz=dir.z*sp+(Math.random()-0.5)*spread;
+    p.life=0; p.max=0.4+Math.random()*0.5; }
+  F.mat.size=0.42*u; F.pts.visible=true; }
 function updateFire(dt){ if(!fireSys)return; const F=fireSys,pos=F.geo.attributes.position.array,col=F.geo.attributes.color.array,u=cine.scaleU||1; let any=false;
   for(let i=0;i<F.N;i++){ const p=F.parts[i];
     if(p.life<p.max){ p.life+=dt; const k=p.life/p.max; any=true;
@@ -641,94 +821,67 @@ function updateFire(dt){ if(!fireSys)return; const F=fireSys,pos=F.geo.attribute
   F.geo.attributes.position.needsUpdate=true; F.geo.attributes.color.needsUpdate=true; F.pts.visible=any; }
 function clearFire(){ if(!fireSys)return; fireSys.parts.forEach(p=>{p.life=p.max+1;}); updateFire(0); fireSys.pts.visible=false; }
 
-/* ancrages monde (tête via la plaque de gravure, queue par symétrie) */
-function cineAnchors(){
-  const b=new THREE.Box3(); let has=false;
-  Object.values(partMeshes).forEach(arr=>arr.forEach(m=>{b.expandByObject(m);has=true;}));
-  if(!has) return null;
-  const C=b.getCenter(new THREE.Vector3()), S=b.getSize(new THREE.Vector3());
-  let headW;
-  if(engravePlateGroup){ headW=engravePlateGroup.getWorldPosition(new THREE.Vector3()); headW.y=C.y+S.y*0.25; }
-  else headW=new THREE.Vector3(C.x,C.y+S.y*0.25,b.max.z);
-  const tailW=new THREE.Vector3(2*C.x-headW.x,C.y,2*C.z-headW.z);
-  const dir=new THREE.Vector3(0,0,1).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion())); dir.y+=0.25; dir.normalize();
-  return {b,C,S,headW,tailW,dir,diag:Math.max(S.x,S.y,S.z)||3.6,
-    plateW:engravePlateGroup?engravePlateGroup.getWorldPosition(new THREE.Vector3()):headW.clone()};
+/* repères atelier (coordonnées locales au dragon : indépendantes de la taille et de l'orientation) */
+function cineMarkers(){ const c=state.config&&state.config.cine; return c||{tail:null,head:null,eyes:null,mouth:null,waypoints:[]}; }
+function cineMarkersWorld(){
+  if(!root) return null; root.updateWorldMatrix(true,true);
+  const m=cineMarkers(), W=p=>p?root.localToWorld(new THREE.Vector3(p.x,p.y,p.z)):null;
+  return {tail:W(m.tail),head:W(m.head),eyes:W(m.eyes),mouth:W(m.mouth),waypoints:(m.waypoints||[]).map(W)};
+}
+/* construit (ou reconstruit) le squelette dans la pose de base */
+function cineBuild(){
+  if(!root||typeof THREE==="undefined") return null;
+  const {corps}=partGroups(partList);
+  const all=[]; Object.values(partMeshes).forEach(a=>a.forEach(m=>all.push(m)));
+  const body=[]; corps.forEach(p=>(partMeshes[p]||[]).forEach(m=>body.push(m)));
+  let hint=null;
+  try{ const ec=state.config.engrave||{}; if(engravePlateGroup&&state.config.engraving&&state.config.engraving.offered&&(ec.anchor||ec.dx||ec.dy||ec.dz)) hint={plate:engravePlateGroup.getWorldPosition(new THREE.Vector3())}; }catch(e){}
+  try{ return cineBuildPath(THREE,body.length?body:all,all,cineMarkersWorld(),hint); }catch(e){ console.warn("cine path",e); return null; }
 }
 function cineUpdate(){
-  const a=cine.audio; if(!a||!root) return;
+  const a=cine.audio, K=cine.K; if(!a||!root||!K) return;
   const now=performance.now(); const dt=Math.min(0.05,Math.max(0.001,(now-(cine._lt||now))/1000)); cine._lt=now;
-  const dur=(isFinite(a.duration)&&a.duration>1)?a.duration:60;
-  const t=Math.min(1,(a.currentTime||0)/dur);
+  const dur=(isFinite(a.duration)&&a.duration>1)?a.duration:CINE_DUR;
+  const t=(a.currentTime||0)*(CINE_DUR/dur);              // temps « musique » (la mise en scène est écrite pour 20 s)
   const {beat}=cineAnalyse();
-  const an=cineAnchors(); if(!an){ updateFire(dt); return; }
+  // temps forts programmés (connus de la piste) -> impulsion
+  while(cine.hitIdx<CINE_HITS.length && t>=CINE_HITS[cine.hitIdx]){ cine.pulse=1; cine.hitIdx++; }
+  cine.pulse*=Math.pow(0.08,dt);
   const hasFin=cineHasFinishes(), hasEng=cineHasEngrave();
-  const u=an.diag, el=(now-cine.t0)/1000; cine.scaleU=u*0.28;
-  const V=THREE.Vector3;
-  const up=new V(0,1,0);
-  const fwd=new V(an.headW.x-an.tailW.x,0,an.headW.z-an.tailW.z); if(fwd.lengthSq()<1e-6)fwd.set(0,0,1); fwd.normalize();
-  const side=new V().crossVectors(up,fwd).normalize();
-  const base=s=>an.tailW.clone().lerp(an.headW,s);
-
-  let tPos=new V(), tLook=new V(), fire=false, rear=0, mo=0.04, mode=cine.userMode;
-  if(t<0.08){                                   // 1) plan serré sur la queue
-    const k=_easeIO(t/0.08);
-    tLook.copy(an.tailW);
-    tPos.copy(an.tailW).addScaledVector(fwd,-0.55*u).addScaledVector(up,0.28*u*k).addScaledVector(side,0.22*u);
-    mode=cine.userMode==="nuit"?"ombre":cine.userMode;
-  } else if(t<0.46){                            // 2) flythrough queue->tête : serpente dessous/dessus entre les pointes
-    const s=_easeIO((t-0.08)/0.38);
-    const b=base(s);
-    const vy=Math.sin(s*Math.PI*3.0)*0.24*u;    // passe dessous puis dessus
-    const sx=Math.cos(s*Math.PI*2.2)*0.14*u;
-    tPos.copy(b).addScaledVector(up,vy).addScaledVector(side,sx).addScaledVector(fwd,-0.14*u);
-    tLook.copy(base(Math.min(1,s+0.14))).addScaledVector(up,vy*0.25);
-    mo=0.015; mode=(hasFin&&s>0.55)?"nuit":"ombre";
-  } else if(t<0.58){                            // 3) remonte vers le visage
-    const k=_easeIO((t-0.46)/0.12);
-    tLook.copy(an.headW);
-    tPos.copy(an.headW).addScaledVector(fwd,_lerp(0.7,0.42,k)*u).addScaledVector(up,_lerp(-0.1,0.1,k)*u).addScaledVector(side,0.12*u*(1-k));
-    mode="ombre"; mo=0.04;
-  } else if(t<0.66){                            // 4) les yeux : gros plan face
-    const k=_easeIO((t-0.58)/0.08);
-    tLook.copy(an.headW).addScaledVector(up,0.04*u);
-    tPos.copy(an.headW).addScaledVector(fwd,_lerp(0.42,0.3,k)*u).addScaledVector(up,0.13*u);
-    mode="ombre"; mo=0.03;
-  } else if(t<0.82 && hasEng){                  // 5) la gravure : passe dessous, regarde vers le haut
-    const k=_easeIO((t-0.66)/0.16);
-    if(engravePlateGroup) engravePlateGroup.visible=true;
-    tLook.copy(an.plateW);
-    tPos.copy(an.plateW).addScaledVector(up,-0.42*u).addScaledVector(fwd,(0.5*(1-k)+0.14)*u);
-    mode="ombre"; mo=0.02;
-  } else if(t<0.82){                            // 5bis) pas de gravure : plan tête 3/4
-    const k=_easeIO((t-0.66)/0.16);
-    tLook.copy(an.headW);
-    tPos.copy(an.headW).addScaledVector(fwd,0.55*u).addScaledVector(side,0.3*u).addScaledVector(up,0.12*u);
-    mode=hasFin?"soleil":"ombre"; mo=0.04;
-  } else {                                      // 6) les flammes puis recul héroïque
-    const k=_easeIO((t-0.82)/0.18);
-    fire=true; rear=Math.min(1,(t-0.82)/0.07);
-    tLook.copy(an.headW);
-    tPos.copy(an.headW).addScaledVector(fwd,_lerp(0.65,1.7,k)*u).addScaledVector(up,_lerp(0.12,0.5,k)*u).addScaledVector(side,0.22*u*k);
-    mode=cine.userMode; mo=0.06;
+  const u=K.diag; cine.scaleU=u*0.3;
+  // le dragon se cabre (phase feu) : rotation autour de l'axe latéral de la tête, par le centre
+  const up=new THREE.Vector3(0,1,0), hside=new THREE.Vector3().crossVectors(up,K.fwd).normalize();
+  const plateW=engravePlateGroup?engravePlateGroup.getWorldPosition(new THREE.Vector3()):null;
+  const pz=cinePose(THREE,K,t,hasEng,hasFin,cine.userMode,cine.pulse,plateW);
+  const rearA=-pz.rear*0.16;
+  root.quaternion.copy(cine.baseQ); if(rearA) root.rotateOnWorldAxis(hside,rearA);
+  root.position.y=cine.basePosY + pz.rear*0.03*u + cine.pulse*0.012*u*(t>14?1:0);
+  root.updateWorldMatrix(true,true);
+  if(hasEng&&engravePlateGroup&&t>=11.57&&t<14.07) engravePlateGroup.visible=true;
+  cineSetMode(pz.mode);
+  // caméra : coupe franche au changement de phase (sur un temps fort), lissage sinon
+  const phase=t<0.7?0:t<7.5?1:t<11.57?2:t<14.07?3:t<18.39?4:5;
+  if(!cine.camPos||phase!==cine.phase){ cine.camPos=pz.pos.clone(); cine.camLook=pz.look.clone(); cine.phase=phase; cine.fov=pz.fov; }
+  else { const lf=Math.min(1,pz.smooth*dt*60); cine.camPos.lerp(pz.pos,lf); cine.camLook.lerp(pz.look,lf); cine.fov=_lerp(cine.fov,pz.fov,lf); }
+  cine.roll=_lerp(cine.roll||0,pz.roll,Math.min(1,0.08*dt*60)); cine.free=true;
+  // feu : grosses bouffées sur les coups, filet continu entre deux
+  if(pz.fire){
+    const mouthW=root.localToWorld(K.mouthL.clone()), dir=K.fwd.clone().applyAxisAngle(hside,rearA); dir.y+=0.12; dir.normalize();
+    while(cine.fireIdx<CINE_FIRE_HITS.length && t>=CINE_FIRE_HITS[cine.fireIdx]){ emitFire(mouthW,dir,cine.scaleU,55); cine.fireIdx++; }
+    if(beat||Math.random()<dt*14) emitFire(mouthW,dir,cine.scaleU*0.8,10);
   }
-  cineSetMode(mode);
-
-  if(!cine.camPos){ cine.camPos=tPos.clone(); cine.camLook=tLook.clone(); }
-  const lf=(t<0.08?0.2:0.1);                    // lissage de la caméra libre
-  cine.camPos.lerp(tPos,lf); cine.camLook.lerp(tLook,lf); cine.free=true;
-
-  if(fire && (beat || cine.pulse>0.6)) emitFire(an.headW, an.dir, cine.scaleU);
   updateFire(dt);
-
-  // dragon vivant : amplitude mo selon la phase (quasi immobile pendant le flythrough)
-  root.rotation.y=cine.baseRotY+Math.sin(el*0.8)*mo*2.2;
-  root.rotation.x=(cine.baseRotX||0) - rear*0.22 + cine.pulse*0.02;
-  root.position.y=cine.basePosY + Math.sin(el*1.2)*mo*u + cine.pulse*0.05*u;
+  // fondu noir à l'ouverture et à la fermeture
+  const fade=document.getElementById("cinefade"); if(fade) fade.style.opacity=String(Math.max(1-_sm(0.0,0.7,t), _sm(19.3,19.95,t)));
 }
 function cineStart(auto){
   if(cine.active||!root) return;
   const a=document.getElementById("cineaudio"); if(!a) return;
+  cam.auto=false; try{frameScene();}catch(e){}
+  try{ root.updateWorldMatrix(true,true); }catch(e){}
+  cine.K=cineBuild();
+  if(!cine.K){ if(!auto) toast("Cinématique indisponible pour ce modèle."); return; }
+  cine.K.mouthL=root.worldToLocal(cine.K.mouth.clone());
   cine.audio=a; a.src=CINE_URL; try{a.currentTime=0;}catch(e){} a.volume=0.9;
   const bgm=document.getElementById("bgm"); cine.bgmWasOn=bgm&&!bgm.paused; if(cine.bgmWasOn) bgm.pause();
   try{ const AC=window.AudioContext||window.webkitAudioContext;
@@ -739,15 +892,14 @@ function cineStart(auto){
         cine.srcNode.connect(cine.analyser); cine.analyser.connect(cine.actx.destination); } }
   }catch(e){ cine.analyser=null; }
   cine.userMode=state.view.mode||"ombre"; cine.curMode=null;
-  cine.baseRotY=root.rotation.y; cine.baseRotX=root.rotation.x; cine.basePosY=root.position.y;
-  cine.bassAvg=0; cine.lastBeat=0; cine.pulse=0; cine.beat=0; cine._lt=performance.now();
+  cine.baseQ=root.quaternion.clone(); cine.basePosY=root.position.y;
+  cine.bassAvg=0; cine.lastBeat=0; cine.pulse=0; cine.beat=0; cine._lt=performance.now(); cine.hitIdx=0; cine.fireIdx=0; cine.phase=-1; cine.roll=0; cine.fov=42;
+  cine.camPos=null; cine.camLook=null; cine.free=false;
   try{ createFire(); clearFire(); }catch(e){}
-  cam.auto=false; try{frameScene();}catch(e){} cine.R0=Math.max(6,cam.radius); cine.theta=cam.theta;
-  // caméra libre : on part de la position actuelle (ease-in vers la queue)
-  cine.camPos=camera?camera.position.clone():new THREE.Vector3(0,cam.target,cam.radius);
-  cine.camLook=new THREE.Vector3(cam.tx,cam.target,cam.tz); cine.free=false;
   gaugeLabels.forEach(s=>{ s.userData._v=s.visible; s.visible=false; });   // cote masquée pendant la cinématique
+  if(cineMarkerGroup) cineMarkerGroup.visible=false;
   document.body.classList.add("cine");
+  const fade=document.getElementById("cinefade"); if(fade) fade.style.opacity="1";
   const sk=document.getElementById("cineSkip"); if(sk){ sk.hidden=false; sk.onclick=()=>cineStop(true); }
   a.onended=()=>cineStop(true);
   a.play().then(()=>{ cine.active=true; cine.t0=performance.now(); })
@@ -757,14 +909,69 @@ function cineStop(restore){
   const a=cine.audio; if(a){ try{a.pause();}catch(e){} a.onended=null; }
   cine.active=false; document.body.classList.remove("cine");
   const sk=document.getElementById("cineSkip"); if(sk) sk.hidden=true;
+  const fade=document.getElementById("cinefade"); if(fade) fade.style.opacity="0";
   try{ clearFire(); }catch(e){}
-  cine.free=false;
+  cine.free=false; cine.K=null;
   gaugeLabels.forEach(s=>{ if(s.userData._v!==undefined) s.visible=s.userData._v; });   // restaure la cote
-  if(root){ root.rotation.y=cine.baseRotY||0; root.rotation.x=cine.baseRotX||0; root.position.y=cine.basePosY||0; }
+  if(root){ if(cine.baseQ) root.quaternion.copy(cine.baseQ); root.position.y=cine.basePosY||0; }
+  if(camera){ camera.fov=42; camera.updateProjectionMatrix(); }
+  if(cineMarkerGroup) cineMarkerGroup.visible=(state.mode==="atelier");
   try{ updateEngraveVisibility(); }catch(e){}
   if(restore!==false){ state.view.mode=cine.userMode; try{setViewMode();}catch(e){} }
   cine.curMode=null; cam.auto=true; cam.tx=0; cam.tz=0; try{frameScene();}catch(e){}
   if(cine.bgmWasOn){ const bgm=document.getElementById("bgm"); if(bgm) bgm.play().catch(()=>{}); }
+}
+/* ---- repères de cinématique (atelier) : placement au clic sur le dragon ---- */
+let cineMarkerGroup=null;
+const CINE_MARKER_DEFS=[["tail","Bout de queue",0x4caf50],["head","Centre de la tête",0xffffff],["eyes","Yeux",0x2fd2ff],["mouth","Gueule (départ du feu)",0xff3fb0]];
+function cineMarkersRefresh(){
+  if(!root||typeof THREE==="undefined") return;
+  if(cineMarkerGroup){ root.remove(cineMarkerGroup); cineMarkerGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();}); cineMarkerGroup=null; }
+  if(state.mode!=="atelier") return;
+  const m=cineMarkers(); const g=new THREE.Group(); const s=1/((root.scale.x)||1);
+  const add=(p,col,r)=>{ if(!p)return; const mesh=new THREE.Mesh(new THREE.SphereGeometry(r*s,12,10),new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.9})); mesh.position.set(p.x,p.y,p.z); mesh.renderOrder=20; g.add(mesh); };
+  CINE_MARKER_DEFS.forEach(([k,,col])=>add(m[k],col,0.09));
+  (m.waypoints||[]).forEach(p=>add(p,0xffc400,0.06));
+  cineMarkerGroup=g; root.add(g);
+}
+function cineMarkerClick(e){
+  if(!cine.placing||!root||!camera) return false;
+  const c=document.getElementById("view"), rect=c.getBoundingClientRect();
+  const nx=((e.clientX-rect.left)/rect.width)*2-1, ny=-((e.clientY-rect.top)/rect.height)*2+1;
+  const rc=new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2(nx,ny),camera);
+  const meshes=[]; Object.values(partMeshes).forEach(a=>a.forEach(mm=>meshes.push(mm)));
+  const hits=rc.intersectObjects(meshes,false); if(!hits.length){ toast("Clique sur le dragon."); return true; }
+  const local=root.worldToLocal(hits[0].point.clone()); const p={x:+local.x.toFixed(4),y:+local.y.toFixed(4),z:+local.z.toFixed(4)};
+  snapshot(); const m=state.config.cine||(state.config.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]});
+  if(cine.placing==="waypoint"){ (m.waypoints=m.waypoints||[]).push(p); } else m[cine.placing]=p;
+  const def=CINE_MARKER_DEFS.find(d=>d[0]===cine.placing); toast((def?def[1]:"Point de passage")+" placé");
+  cine.placing=null; document.body.classList.remove("placing"); saveConfig(); cineMarkersRefresh(); renderPanel(); return true;
+}
+function cineControls(){
+  const wrap=el("div"); const m=cineMarkers();
+  wrap.appendChild(el("p","hintline","La cinématique du récap se construit <b>automatiquement</b> : squelette extrait du modèle (vol en rase-motte de la queue à la tête), puis yeux, gravure sous la tête et souffle de feu. Si la tête ou la queue sont mal détectées, place des repères en cliquant sur le dragon."));
+  const row=el("div"); row.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0";
+  const mkBtn=(label,key)=>{ const b=el("button","addbtn",(cine.placing===key?"Clique sur le dragon… ":"")+label); b.type="button";
+    if(cine.placing===key) b.style.background="var(--accent)";
+    b.onclick=()=>{ cine.placing=(cine.placing===key)?null:key; document.body.classList.toggle("placing",!!cine.placing); cam.auto=false; renderPanel(); }; return b; };
+  CINE_MARKER_DEFS.forEach(([k,label])=>row.appendChild(mkBtn((m[k]?"✓ ":"")+label,k)));
+  row.appendChild(mkBtn("+ Point de passage","waypoint")); wrap.appendChild(row);
+  const set=CINE_MARKER_DEFS.filter(([k])=>m[k]).map(([k,label])=>label).concat((m.waypoints||[]).map((p,i)=>"Passage "+(i+1)));
+  if(set.length){
+    const ul=el("div"); ul.style.cssText="display:flex;flex-direction:column;gap:4px;margin:4px 0";
+    CINE_MARKER_DEFS.filter(([k])=>m[k]).forEach(([k,label])=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;align-items:center;font-size:12.5px";
+      r.appendChild(el("span",null,label)); const x=el("button","addbtn","✕"); x.type="button"; x.onclick=()=>{snapshot();state.config.cine[k]=null;saveConfig();cineMarkersRefresh();renderPanel();}; r.appendChild(x); ul.appendChild(r); });
+    (m.waypoints||[]).forEach((p,i)=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;align-items:center;font-size:12.5px";
+      r.appendChild(el("span",null,"Point de passage "+(i+1))); const x=el("button","addbtn","✕"); x.type="button"; x.onclick=()=>{snapshot();state.config.cine.waypoints.splice(i,1);saveConfig();cineMarkersRefresh();renderPanel();}; r.appendChild(x); ul.appendChild(r); });
+    wrap.appendChild(ul);
+    const reset=el("button","addbtn","Tout remettre en automatique"); reset.type="button";
+    reset.onclick=()=>{snapshot();state.config.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]};saveConfig();cineMarkersRefresh();renderPanel();toast("Détection automatique");};
+    wrap.appendChild(reset);
+  } else wrap.appendChild(el("p","hintline","Aucun repère : tout est automatique. Les points de passage (dans l'ordre queue → tête) forcent le trajet du vol."));
+  const prev=el("button","cinebtn","▶ Aperçu de la cinématique"); prev.type="button"; prev.style.marginTop="10px";
+  prev.onclick=()=>{ if(!cine.active) cineStart(false); };
+  wrap.appendChild(prev);
+  return wrap;
 }
 const reduce=matchMedia("(prefers-reduced-motion:reduce)").matches;
 
@@ -1031,7 +1238,7 @@ function mountGLB(gltfScene){
 function rebuildModel(){
   if(root)scene.remove(root);
   root = state.glb ? mountGLB(state.glb.scene) : buildPlaceholder();
-  scene.add(root); applyColors(); applyOrient(); applySizeScale(); frameScene();
+  scene.add(root); applyColors(); applyOrient(); applySizeScale(); frameScene(); try{cineMarkersRefresh();}catch(e){}
 }
 /* orientation par défaut du dragon, définie en atelier (offset appliqué au root) */
 function applyOrient(){
@@ -1261,7 +1468,9 @@ function bindControls(c){
     else { cam.theta-=dx*.008; cam.phi=Math.max(.08,Math.min(3.06,cam.phi-dy*.008)); }
     lx=p.clientX;ly=p.clientY;if(e.cancelable)e.preventDefault();};
   const up=()=>{d=false;pan=false;};
-  c.addEventListener("mousedown",dn);addEventListener("mousemove",mv);addEventListener("mouseup",up);
+  let cx0=0,cy0=0;
+  c.addEventListener("mousedown",e=>{cx0=e.clientX;cy0=e.clientY;dn(e);});addEventListener("mousemove",mv);addEventListener("mouseup",up);
+  c.addEventListener("click",e=>{ if(Math.hypot(e.clientX-cx0,e.clientY-cy0)<5) cineMarkerClick(e); });
   c.addEventListener("contextmenu",e=>e.preventDefault());
   // tactile : 1 doigt = rotation · 2 doigts = pan + pinch zoom
   let pinch=0,tmx=0,tmy=0;
@@ -1281,6 +1490,8 @@ function bindControls(c){
 function loop(){requestAnimationFrame(loop);if(cine.active)cineUpdate();
   if(cine.active&&cine.free&&camera&&cine.camPos){   // cinématique : caméra libre (trajectoire)
     camera.position.copy(cine.camPos); camera.up.set(0,1,0); camera.lookAt(cine.camLook);
+    if(cine.roll) camera.rotateZ(cine.roll);
+    if(Math.abs(camera.fov-cine.fov)>0.05){ camera.fov=cine.fov; camera.updateProjectionMatrix(); }
     renderer.render(scene,camera); return;
   }
   if(cam.auto&&!reduce)cam.theta+=.0013;const r=cam.radius;
@@ -1415,13 +1626,14 @@ function renderPanel(){
   document.getElementById("modeAtelier").setAttribute("aria-pressed",state.mode==="atelier");
   document.getElementById("modeClient").setAttribute("aria-pressed",state.mode==="client");
   if(state.mode==="atelier"){ renderAtelier(P); makeCollapsible(P); } else renderClient(P);
+  try{ if(root && (state.mode==="atelier")!==!!cineMarkerGroup) cineMarkersRefresh(); }catch(e){}
   priceHead();
   if(nameplateGroup) positionNameplate();   // (ré)applique la visibilité selon le mode
   if(engravePlateGroup){ drawEngrave(); positionEngravePlate(); updateEngraveVisibility(); }
 }
 
 /* rend les sections repliables (atelier) + mémorise l'état */
-const ATELIER_DEFAULT_COLLAPSED=["Écriteau « Onlyfab »","Emplacement gravure (sous la tête)","Configuration"];
+const ATELIER_DEFAULT_COLLAPSED=["Écriteau « Onlyfab »","Emplacement gravure (sous la tête)","Cinématique du récap","Configuration"];
 function makeCollapsible(P){
   let ui={}; try{ui=JSON.parse(localStorage.getItem("onlyfab.atelierUI")||"{}");}catch(e){}
   [...P.querySelectorAll(":scope > .group")].forEach(g=>{
@@ -1474,6 +1686,11 @@ function renderAtelier(P){
   const go=el("div","group");go.appendChild(el("h2",null,"<span>Orientation du dragon</span>"));
   go.appendChild(orientControls());
   P.appendChild(go);
+
+  // cinématique du récap : automatique, repères optionnels
+  const gc=el("div","group");gc.appendChild(el("h2",null,"<span>Cinématique du récap</span>"));
+  gc.appendChild(cineControls());
+  P.appendChild(gc);
 
   // variantes (declinaisons)
   const gv=el("div","group");const hv=el("h2",null,"<span>Variantes (déclinaisons)</span>");
