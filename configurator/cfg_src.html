@@ -626,7 +626,7 @@ function cineUpdate(){
   root.rotation.y=cine.baseRotY+Math.sin(el*0.6)*0.12;
   root.position.y=cine.basePosY+Math.sin(el*1.1)*0.05+cine.pulse*0.04;
 }
-function cineStart(){
+function cineStart(auto){
   if(cine.active||!root) return;
   const a=document.getElementById("cineaudio"); if(!a) return;
   cine.audio=a; a.src=CINE_URL; try{a.currentTime=0;}catch(e){} a.volume=0.9;
@@ -646,7 +646,7 @@ function cineStart(){
   const sk=document.getElementById("cineSkip"); if(sk){ sk.hidden=false; sk.onclick=()=>cineStop(true); }
   a.onended=()=>cineStop(true);
   a.play().then(()=>{ cine.active=true; cine.t0=performance.now(); })
-    .catch(()=>{ toast("Lecture impossible ici."); cineStop(true); });
+    .catch(()=>{ if(!auto) toast("Lecture impossible ici."); cineStop(true); });
 }
 function cineStop(restore){
   const a=cine.audio; if(a){ try{a.pause();}catch(e){} a.onended=null; }
@@ -1678,9 +1678,12 @@ function stepRecap(P){
   if(state.qty==null)state.qty=1;
   P.appendChild(el("p","stepsub","Vérifie ta configuration avant d'ajouter au panier."));
   if(typeof THREE!=="undefined" && root){
-    const cb=el("button","cinebtn","▶ Voir l'aperçu animé");cb.type="button";
-    cb.onclick=()=>{ if(!cine.active) cineStart(); };
+    const cb=el("button","cinebtn","▶ Revoir l'aperçu animé");cb.type="button";
+    cb.onclick=()=>{ if(!cine.active) cineStart(false); };
     P.appendChild(cb);
+    // Lancement AUTOMATIQUE à la 1re arrivée au récap (l'utilisateur a déjà
+    // interagi via les étapes -> l'autoplay est autorisé). Repli silencieux sinon.
+    if(!cine.active && !cine.autoDone){ cine.autoDone=true; setTimeout(()=>{ if(!cine.active && state.step===clientSteps().length-1) cineStart(true); }, 450); }
   }
   // quantité
   const qrow=el("div");qrow.style.cssText="display:flex;align-items:center;justify-content:space-between;margin:2px 0 12px;font-size:14px";
