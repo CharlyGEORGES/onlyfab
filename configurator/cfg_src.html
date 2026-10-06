@@ -272,6 +272,8 @@
     color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));transition:filter .12s}
   .cinebtn:hover{filter:brightness(1.08)}
   body.cine .viewtoggles,body.cine .resetbtn,body.cine .musicbtn,body.cine .hint,body.cine #nightnote{opacity:0;pointer-events:none;transition:opacity .4s}
+  /* fond « cinéma » sombre pendant la cinématique (fait ressortir feu + glow, quel que soit le thème) */
+  body.cine .stage{background:radial-gradient(120% 100% at 50% 32%,#2a2620,#060504);transition:background .6s ease}
   body.cine .stage::after{content:"";position:absolute;inset:0;z-index:4;pointer-events:none;
     box-shadow:inset 0 0 180px 40px rgba(0,0,0,.55);opacity:0;animation:cineVig .8s ease forwards}
   @keyframes cineVig{to{opacity:1}}
@@ -607,30 +609,95 @@ function cineAnalyse(){
   if(bass>cine.bassAvg*1.35 && bass>0.22 && now-cine.lastBeat>240){ beat=true; cine.lastBeat=now; cine.beat++; cine.pulse=1; }
   cine.pulse*=0.90; return {energy,beat};
 }
+/* ---- souffle de feu (particules additives en espace monde) ---- */
+let fireSys=null;
+function fireTexture(){ const c=document.createElement("canvas");c.width=c.height=64;const g=c.getContext("2d");
+  const gr=g.createRadialGradient(32,32,0,32,32,32);
+  gr.addColorStop(0,"rgba(255,255,255,1)");gr.addColorStop(0.3,"rgba(255,224,130,1)");
+  gr.addColorStop(0.6,"rgba(255,120,30,0.85)");gr.addColorStop(1,"rgba(255,60,0,0)");
+  g.fillStyle=gr;g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); }
+function createFire(){ if(fireSys)return fireSys; if(typeof THREE==="undefined"||!scene)return null;
+  const N=200, geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(new Float32Array(N*3),3));
+  geo.setAttribute("color",new THREE.BufferAttribute(new Float32Array(N*3),3));
+  const mat=new THREE.PointsMaterial({size:0.5,map:fireTexture(),transparent:true,depthWrite:false,
+    blending:THREE.AdditiveBlending,vertexColors:true,sizeAttenuation:true});
+  const pts=new THREE.Points(geo,mat); pts.frustumCulled=false; pts.visible=false; pts.renderOrder=5;
+  fireSys={pts,geo,mat,N,next:0,parts:Array.from({length:N},()=>({life:1,max:1,x:0,y:0,z:0,vx:0,vy:0,vz:0}))};
+  scene.add(pts); return fireSys; }
+function emitFire(o,dir,u){ const F=createFire(); if(!F)return; const count=42;
+  for(let i=0;i<count;i++){ const p=F.parts[F.next]; F.next=(F.next+1)%F.N;
+    p.x=o.x;p.y=o.y;p.z=o.z; const sp=(1.5+Math.random()*2.0)*u, spread=0.5*u;
+    p.vx=dir.x*sp+(Math.random()-0.5)*spread; p.vy=dir.y*sp+(0.3+Math.random()*0.7)*u; p.vz=dir.z*sp+(Math.random()-0.5)*spread;
+    p.life=0; p.max=0.45+Math.random()*0.45; }
+  F.mat.size=0.55*u; F.pts.visible=true; }
+function updateFire(dt){ if(!fireSys)return; const F=fireSys,pos=F.geo.attributes.position.array,col=F.geo.attributes.color.array,u=cine.scaleU||1; let any=false;
+  for(let i=0;i<F.N;i++){ const p=F.parts[i];
+    if(p.life<p.max){ p.life+=dt; const k=p.life/p.max; any=true;
+      p.vy+=0.9*u*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.z+=p.vz*dt;
+      pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;
+      col[i*3]=1-k*0.5; col[i*3+1]=Math.max(0,(0.6-0.6*k)); col[i*3+2]=Math.max(0,0.15-0.3*k);
+    } else { pos[i*3+1]=1e6; col[i*3]=col[i*3+1]=col[i*3+2]=0; } }
+  F.geo.attributes.position.needsUpdate=true; F.geo.attributes.color.needsUpdate=true; F.pts.visible=any; }
+function clearFire(){ if(!fireSys)return; fireSys.parts.forEach(p=>{p.life=p.max+1;}); updateFire(0); fireSys.pts.visible=false; }
+
+/* ancrages monde (tête via la plaque de gravure, queue par symétrie) */
+function cineAnchors(){
+  const b=new THREE.Box3(); let has=false;
+  Object.values(partMeshes).forEach(arr=>arr.forEach(m=>{b.expandByObject(m);has=true;}));
+  if(!has) return null;
+  const C=b.getCenter(new THREE.Vector3()), S=b.getSize(new THREE.Vector3());
+  let headW;
+  if(engravePlateGroup){ headW=engravePlateGroup.getWorldPosition(new THREE.Vector3()); headW.y=C.y+S.y*0.25; }
+  else headW=new THREE.Vector3(C.x,C.y+S.y*0.25,b.max.z);
+  const tailW=new THREE.Vector3(2*C.x-headW.x,C.y,2*C.z-headW.z);
+  const dir=new THREE.Vector3(0,0,1).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion())); dir.y+=0.25; dir.normalize();
+  return {b,C,S,headW,tailW,dir,diag:Math.max(S.x,S.y,S.z)||3.6,
+    plateW:engravePlateGroup?engravePlateGroup.getWorldPosition(new THREE.Vector3()):headW.clone()};
+}
 function cineUpdate(){
   const a=cine.audio; if(!a||!root) return;
+  const now=performance.now(); const dt=Math.min(0.05,Math.max(0.001,(now-(cine._lt||now))/1000)); cine._lt=now;
   const dur=(isFinite(a.duration)&&a.duration>1)?a.duration:60;
   const t=Math.min(1,(a.currentTime||0)/dur);
-  const {energy}=cineAnalyse();
+  const {energy,beat}=cineAnalyse();
+  const an=cineAnchors(); if(!an){ updateFire(dt); return; }
   const hasFin=cineHasFinishes(), hasEng=cineHasEngrave();
-  const R0=cine.R0;
-  cine.theta+=0.004+energy*0.010;
-  let phi=cam.phi, radMul=1.3;
-  if(t<0.14){ const k=_easeIO(t/0.14); phi=_lerp(1.5,1.18,k); radMul=_lerp(2.0,1.5,k); cineSetMode(cine.userMode==="nuit"?"ombre":cine.userMode); }
-  else if(t<0.40){ const k=_easeIO((t-0.14)/0.26); phi=_lerp(1.18,0.92,k); radMul=_lerp(1.5,1.28,k); cineSetMode("ombre"); }
-  else if(t<0.60 && hasFin){ const k=_easeIO((t-0.40)/0.20); phi=_lerp(0.92,1.1,k); radMul=_lerp(1.28,1.15,k); cineSetMode("nuit"); }
-  else if(t<0.62){ phi=1.0; radMul=1.2; cineSetMode(hasFin?"nuit":"soleil"); }
-  else if(t<0.80 && hasEng){ const k=_easeIO((t-0.62)/0.18); phi=_lerp(1.5,1.92,k); radMul=_lerp(1.15,0.95,k); cineSetMode("ombre"); }
-  else if(t<0.80){ const k=_easeIO((t-0.62)/0.18); phi=_lerp(1.1,0.82,k); radMul=_lerp(1.15,1.0,k); cineSetMode(hasFin?"soleil":"ombre"); }
-  else { const k=_easeIO((t-0.80)/0.20); phi=_lerp(1.92,1.05,k); radMul=_lerp(0.95,1.45,k); cineSetMode(cine.userMode); }
-  const punch=cine.pulse*0.12;
+  const R0=cine.R0, u=an.diag*0.28; cine.scaleU=u;
+  cine.theta+=0.004+energy*0.012;
+
+  // cible du regard (lx,ly,lz), hauteur de vue phi, distance radMul, mode, feu, cabrage
+  let lx=an.C.x, ly=an.C.y, lz=an.C.z, phi=cam.phi, radMul=1.3, fire=false, rear=0, lookLerp=0.10;
+  if(t<0.12){ const k=_easeIO(t/0.12); phi=_lerp(1.5,1.2,k); radMul=_lerp(2.0,1.5,k); cineSetMode(cine.userMode==="nuit"?"ombre":cine.userMode); }
+  else if(t<0.34){ // longe le corps : queue -> tête
+    const k=_easeIO((t-0.12)/0.22); lx=_lerp(an.tailW.x,an.headW.x,k); ly=_lerp(an.tailW.y,an.headW.y,k); lz=_lerp(an.tailW.z,an.headW.z,k);
+    phi=1.26; radMul=0.62; lookLerp=0.18; cineSetMode("ombre"); }
+  else if(t<0.50){ // tête + souffle de feu
+    lx=an.headW.x; ly=an.headW.y; lz=an.headW.z; phi=1.1; radMul=0.72; lookLerp=0.14; rear=_easeIO((t-0.34)/0.16); fire=true; cineSetMode(hasFin?"soleil":cine.userMode==="nuit"?"ombre":cine.userMode); }
+  else if(t<0.64 && hasFin){ // révélation finitions en nuit
+    const k=_easeIO((t-0.50)/0.14); phi=_lerp(1.1,1.0,k); radMul=_lerp(0.72,1.05,k); cineSetMode("nuit"); }
+  else if(t<0.66){ phi=1.05; radMul=1.0; cineSetMode(hasFin?"nuit":"ombre"); }
+  else if(t<0.82 && hasEng){ // plonge sous la tête -> gravure
+    const k=_easeIO((t-0.66)/0.16); lx=an.plateW.x; ly=_lerp(an.headW.y,an.plateW.y,k); lz=an.plateW.z;
+    phi=_lerp(1.1,2.15,k); radMul=_lerp(1.0,0.6,k); lookLerp=0.14; if(engravePlateGroup)engravePlateGroup.visible=true; cineSetMode("ombre"); }
+  else if(t<0.82){ const k=_easeIO((t-0.66)/0.16); phi=_lerp(1.05,0.82,k); radMul=_lerp(1.0,0.95,k); cineSetMode(hasFin?"soleil":"ombre"); }
+  else { const k=_easeIO((t-0.82)/0.18); lx=an.C.x; ly=an.C.y; lz=an.C.z; phi=_lerp(2.15,1.05,k); radMul=_lerp(0.6,1.5,k); cineSetMode(cine.userMode); }
+
+  const punch=cine.pulse*0.14;
   cam.phi=_lerp(cam.phi,phi,0.08);
-  cam.radius=_lerp(cam.radius,R0*radMul*(1-punch),0.10);
-  cam.theta=cine.theta+cine.pulse*0.03;
-  cam.tx=0; cam.tz=0;
-  const el=(performance.now()-cine.t0)/1000;
-  root.rotation.y=cine.baseRotY+Math.sin(el*0.6)*0.12;
-  root.position.y=cine.basePosY+Math.sin(el*1.1)*0.05+cine.pulse*0.04;
+  cam.radius=_lerp(cam.radius,R0*radMul*(1-punch),0.09);
+  cam.theta=cine.theta+cine.pulse*0.035;
+  cam.tx=_lerp(cam.tx,lx,lookLerp); cam.target=_lerp(cam.target,ly,lookLerp); cam.tz=_lerp(cam.tz,lz,lookLerp);
+
+  // feu : rafales sur les temps forts pendant la phase de souffle
+  if(fire && (beat || cine.pulse>0.6)) emitFire(an.headW, an.dir, u);
+  updateFire(dt);
+
+  // dragon vivant : ondulation (lacet), flottement, cabrage pendant le feu, sursaut sur le beat
+  const el=(now-cine.t0)/1000;
+  root.rotation.y=cine.baseRotY+Math.sin(el*0.9)*0.16+Math.sin(el*0.37)*0.06;
+  root.rotation.x=(cine.baseRotX||0) - rear*0.22 + cine.pulse*0.02;
+  root.position.y=cine.basePosY + Math.sin(el*1.3)*0.08*u + cine.pulse*0.06*u;
 }
 function cineStart(auto){
   if(cine.active||!root) return;
@@ -645,8 +712,9 @@ function cineStart(auto){
         cine.srcNode.connect(cine.analyser); cine.analyser.connect(cine.actx.destination); } }
   }catch(e){ cine.analyser=null; }
   cine.userMode=state.view.mode||"ombre"; cine.curMode=null;
-  cine.baseRotY=root.rotation.y; cine.basePosY=root.position.y;
-  cine.bassAvg=0; cine.lastBeat=0; cine.pulse=0; cine.beat=0;
+  cine.baseRotY=root.rotation.y; cine.baseRotX=root.rotation.x; cine.basePosY=root.position.y;
+  cine.bassAvg=0; cine.lastBeat=0; cine.pulse=0; cine.beat=0; cine._lt=performance.now();
+  try{ createFire(); clearFire(); }catch(e){}
   cam.auto=false; try{frameScene();}catch(e){} cine.R0=Math.max(6,cam.radius); cine.theta=cam.theta;
   document.body.classList.add("cine");
   const sk=document.getElementById("cineSkip"); if(sk){ sk.hidden=false; sk.onclick=()=>cineStop(true); }
@@ -658,7 +726,9 @@ function cineStop(restore){
   const a=cine.audio; if(a){ try{a.pause();}catch(e){} a.onended=null; }
   cine.active=false; document.body.classList.remove("cine");
   const sk=document.getElementById("cineSkip"); if(sk) sk.hidden=true;
-  if(root){ root.rotation.y=cine.baseRotY; root.position.y=cine.basePosY; }
+  try{ clearFire(); }catch(e){}
+  if(root){ root.rotation.y=cine.baseRotY||0; root.rotation.x=cine.baseRotX||0; root.position.y=cine.basePosY||0; }
+  try{ updateEngraveVisibility(); }catch(e){}
   if(restore!==false){ state.view.mode=cine.userMode; try{setViewMode();}catch(e){} }
   cine.curMode=null; cam.auto=true; cam.tx=0; cam.tz=0; try{frameScene();}catch(e){}
   if(cine.bgmWasOn){ const bgm=document.getElementById("bgm"); if(bgm) bgm.play().catch(()=>{}); }
