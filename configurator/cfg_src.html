@@ -466,7 +466,7 @@ function defaultConfigForParts(parts){
            engrave:{dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""},
            orient:{ry:0,rx:0},
            cine:{tail:null,head:null,eyes:null,mouth:null,waypoints:[]},
-           pose:{flat:true},
+           pose:{unroll:false},
            size:{min:6,max:18,value:10,refCm:10,exp:2,gauge:true} };
 }
 function loadConfig(parts){
@@ -480,7 +480,7 @@ function loadConfig(parts){
     if(!c.engrave) c.engrave={dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""}; else if(c.engrave.anchor===undefined) c.engrave.anchor="";
     if(!c.orient) c.orient={ry:0,rx:0}; else{ if(c.orient.ry==null)c.orient.ry=0; if(c.orient.rx==null)c.orient.rx=0; }
     if(!c.cine||typeof c.cine!=="object") c.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]}; else if(!Array.isArray(c.cine.waypoints)) c.cine.waypoints=[];
-    if(!c.pose||typeof c.pose!=="object") c.pose={flat:true};
+    if(!c.pose||typeof c.pose!=="object") c.pose={unroll:false};   // v2 (redressement) : opt-in explicite
     if(!c.size) c.size={min:6,max:18,value:10,refCm:10,exp:2,gauge:true};
     else if(c.size.max>40){ const f=x=>Math.round((x/10)*2)/2; const vv=f(c.size.value); c.size={min:f(c.size.min),max:f(c.size.max),value:vv,refCm:vv,exp:2,gauge:true}; }
     if(c.size.gauge===undefined) c.size.gauge=true;
@@ -937,7 +937,7 @@ function clearFire(){ if(!fireSys)return; fireSys.parts.forEach(p=>{p.life=p.max
 
 /* ---- repères atelier : coordonnées « modèle d'origine, remis debout » (indépendantes du déroulé, de la taille, de l'orientation) ---- */
 function cineMarkers(){ const c=state.config&&state.config.cine; return c||{tail:null,head:null,eyes:null,mouth:null,waypoints:[]}; }
-const poseFlat=()=>!(state.config&&state.config.pose&&state.config.pose.flat===false);
+const poseFlat=()=>!!(state.config&&state.config.pose&&state.config.pose.unroll===true);   // redressement à plat : désactivé par défaut (v2, à reprendre)
 /* position monde d'un point du squelette (ancre de l'os de tête) */
 function rigWorld(name){ const r=state.rig; if(!r||!root) return null; const o=r.anchors[name]; if(!o) return null; return o.getWorldPosition(new THREE.Vector3()); }
 /* axe « avant » de la tête en monde (+X de l'os de tête) */
@@ -1027,6 +1027,7 @@ function cineUpdate(){
 }
 function cineStart(auto){
   if(cine.active||!root) return;
+  if(!state.rig){ if(!auto) toast("Active d'abord « Redresser le dragon à plat » (v2)."); return; }   // la cinématique animée demande le squelette
   const a=document.getElementById("cineaudio"); if(!a) return;
   cam.auto=false; try{frameScene();}catch(e){}
   cine.audio=a; a.src=CINE_URL; try{a.currentTime=0;}catch(e){} a.volume=0.9;
@@ -1829,13 +1830,13 @@ function makeCollapsible(P){
 function orientControls(){
   const o=state.config.orient||(state.config.orient={ry:0,rx:0});
   const wrap=el("div");
-  const pf=el("div","field");pf.style.marginBottom="10px";pf.innerHTML='<label>Redresser le dragon à plat (automatique)</label>';
+  const pf=el("div","field");pf.style.marginBottom="10px";pf.innerHTML='<label>Redresser le dragon à plat (v2, expérimental)</label>';
   const cbf=el("input");cbf.type="checkbox";cbf.checked=poseFlat();cbf.style.width="auto";
-  cbf.onchange=()=>{ snapshot(); state.config.pose=state.config.pose||{}; state.config.pose.flat=cbf.checked; saveConfig(); rebuildModel(); renderPanel(); toast(cbf.checked?"Dragon déroulé à plat":"Pose d'origine du fichier"); };
+  cbf.onchange=()=>{ snapshot(); state.config.pose=state.config.pose||{}; state.config.pose.unroll=cbf.checked; saveConfig(); rebuildModel(); renderPanel(); toast(cbf.checked?"Dragon déroulé à plat":"Pose d'origine du fichier"); };
   pf.appendChild(cbf); wrap.appendChild(pf);
   wrap.appendChild(el("p","hintline",state.rig
     ? `Le dragon est déroulé sur une ligne droite, à plat (${state.rig.nB} segments). La cote « Taille » mesure sa vraie longueur et la cinématique l'anime segment par segment.`
-    : "Pose du fichier conservée (pas de squelette : la cinématique n'animera pas le dragon)."));
+    : "Pose du fichier conservée, orientation de l'atelier appliquée (classique). Le redressement et la cinématique animée sont en attente d'une prochaine version."));
   const row=el("div");row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;align-items:center";
   const mk=(txt,title,fn)=>{const b=el("button","addbtn",txt);b.title=title;b.style.padding="7px 11px";
     b.onclick=()=>{fn();saveConfig();applyOrient();frameScene();renderPanel();};return b;};
@@ -2254,7 +2255,7 @@ function stepTaille(P){
 function stepRecap(P){
   if(state.qty==null)state.qty=1;
   P.appendChild(el("p","stepsub","Vérifie ta configuration avant d'ajouter au panier."));
-  if(typeof THREE!=="undefined" && root){
+  if(typeof THREE!=="undefined" && root && state.rig){
     const cb=el("button","cinebtn","▶ Revoir l'aperçu animé");cb.type="button";
     cb.onclick=()=>{ if(!cine.active) cineStart(false); };
     P.appendChild(cb);
