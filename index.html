@@ -5526,6 +5526,29 @@
   </div>
 </div>
 
+<!-- ADMIN : LIEN DE RÉINITIALISATION GÉNÉRÉ (affiche l'URL à partager) -->
+<div class="modal-overlay" id="adminResetLinkModal" role="dialog" aria-modal="true" aria-labelledby="adminResetLinkTitle" aria-hidden="true">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title" id="adminResetLinkTitle">Lien de réinitialisation</div>
+      <button class="close-btn" onclick="closeAdminResetLink()" aria-label="Fermer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="adminResetLinkFor" style="font-size:0.88rem;color:var(--text-muted);margin-bottom:6px"></div>
+      <div style="font-size:0.78rem;color:var(--text-muted);line-height:1.5;margin-bottom:14px">
+        Valable 1 heure. À transmettre à l'utilisateur par le canal de ton choix (SMS, WhatsApp, autre email, etc.). Il arrivera sur la page de choix d'un nouveau mot de passe.
+      </div>
+      <div id="adminResetLinkUrl" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.78rem;word-break:break-all;line-height:1.5;color:var(--text);margin-bottom:14px;user-select:all"></div>
+      <div style="display:flex;gap:10px">
+        <button type="button" onclick="_adminCopyResetLink()" style="flex:1;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:11px 16px;font-size:0.88rem;font-weight:700;cursor:pointer;font-family:inherit">📋 Copier le lien</button>
+        <button type="button" onclick="closeAdminResetLink()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 18px;font-size:0.88rem;font-weight:600;cursor:pointer;font-family:inherit">Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- VENTE (sortie de stock) -->
 <div class="modal-overlay" id="sellModal" role="dialog" aria-modal="true" aria-labelledby="sellModalTitle" aria-hidden="true">
   <div class="modal" style="max-width:430px">
@@ -8644,6 +8667,27 @@
             )}
           </div>
 
+          <!-- Récupération de compte : utile quand l'email n'arrive pas -->
+          <div style="margin-top:4px">
+            <h3 style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin:0 0 10px;font-weight:700">Récupération de compte</h3>
+            ${actionRow(
+              '🔑',
+              'Générer un lien de réinitialisation',
+              "L'utilisateur l'ouvre pour choisir un nouveau mot de passe. Valable 1 h — à partager par le canal de ton choix si l'email n'arrive pas.",
+              `<button onclick="adminGenerateResetLink('${escAttr(u.id)}')" style="background:var(--primary);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit">Générer</button>`
+            )}
+            ${actionRow(
+              '✉',
+              u.email_verified ? 'Email vérifié' : 'Forcer la vérification email',
+              u.email_verified
+                ? "Cet utilisateur a confirmé son adresse."
+                : "Débloque un compte dont l'email de confirmation n'arrive pas.",
+              u.email_verified
+                ? '<span style="font-size:0.78rem;color:var(--accent);font-weight:600">✓ Vérifié</span>'
+                : `<button onclick="adminMarkEmailVerified('${escAttr(u.id)}').then(() => openUserDetail('${escAttr(u.id)}'))" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;font-family:inherit">Vérifier</button>`
+            )}
+          </div>
+
           <!-- Zone sensible : carte rouge tintée pour bien la distinguer -->
           <div style="background:rgba(255,71,87,0.06);border:1px solid var(--danger);border-radius:10px;padding:14px">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -9329,6 +9373,63 @@
     await refreshAdminPanel();
   }
   window.adminEditInfluencer = adminEditInfluencer;
+
+  // ── RÉCUPÉRATION DE COMPTE (admin) ───────────────────────────────────
+  // Génère un lien de réinitialisation côté serveur et l'affiche dans une
+  // petite modale avec bouton "copier". L'admin le transmet au user par
+  // le canal qu'il veut (idéal quand Resend est HS ou boîte email cassée).
+  async function adminGenerateResetLink(uid) {
+    try {
+      const r = await fetch('/api/admin/users/' + encodeURIComponent(uid) + '/password-reset', { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { showToast(d.error || 'Erreur', 'error'); return; }
+      document.getElementById('adminResetLinkFor').textContent = 'Pour : ' + (d.email || '');
+      document.getElementById('adminResetLinkUrl').textContent = d.url;
+      document.getElementById('adminResetLinkModal').classList.add('open');
+    } catch (e) {
+      showToast('Erreur : ' + (e.message || ''), 'error');
+    }
+  }
+  window.adminGenerateResetLink = adminGenerateResetLink;
+
+  function closeAdminResetLink() {
+    document.getElementById('adminResetLinkModal').classList.remove('open');
+  }
+  window.closeAdminResetLink = closeAdminResetLink;
+
+  function _adminCopyResetLink() {
+    const url = document.getElementById('adminResetLinkUrl').textContent;
+    if (!url) return;
+    // navigator.clipboard peut échouer (HTTP non sécurisé, perm refusée) :
+    // on tombe sur un sélecteur de texte en secours pour que l'admin puisse
+    // Cmd/Ctrl+C manuellement.
+    const fallbackSelect = () => {
+      const r = document.createRange();
+      r.selectNodeContents(document.getElementById('adminResetLinkUrl'));
+      const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url)
+        .then(() => showToast('Lien copié'))
+        .catch(() => { fallbackSelect(); showToast('Copie auto refusée — sélectionné, fais Cmd/Ctrl+C', 'error'); });
+    } else {
+      fallbackSelect();
+      showToast('Sélectionné — fais Cmd/Ctrl+C');
+    }
+  }
+  window._adminCopyResetLink = _adminCopyResetLink;
+
+  async function adminMarkEmailVerified(uid) {
+    try {
+      const r = await fetch('/api/admin/users/' + encodeURIComponent(uid) + '/verify-email', { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { showToast(d.error || 'Erreur', 'error'); return; }
+      showToast('Email marqué vérifié');
+    } catch (e) {
+      showToast('Erreur : ' + (e.message || ''), 'error');
+    }
+  }
+  window.adminMarkEmailVerified = adminMarkEmailVerified;
   async function adminDeleteUser(uid, email) {
     if (!confirm('Supprimer définitivement ' + email + ' ? Toutes ses données seront effacées.')) return;
     let r = await fetch('/api/admin/users/' + encodeURIComponent(uid), { method: 'DELETE' });
