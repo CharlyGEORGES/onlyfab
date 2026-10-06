@@ -226,7 +226,10 @@
   @media (max-width:520px){.nightnote{font-size:10.5px;bottom:30px}}
 
   /* ===== Assistant client (wizard) ===== */
-  .stepper{display:flex;gap:2px;overflow-x:auto;padding:2px 0 14px;margin-bottom:8px;border-bottom:1px solid var(--line);scrollbar-width:thin}
+  .stepper{display:flex;gap:2px;overflow-x:auto;padding:2px 0 12px;margin-bottom:8px;border-bottom:1px solid var(--line);
+    scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch}
+  .stepper::-webkit-scrollbar{display:none;width:0;height:0}
+  @media (max-width:820px){ .stepitem:not(.cur) .steplbl{display:none} }
   .stepitem{display:flex;align-items:center;gap:7px;flex:none;cursor:pointer;font:inherit;background:none;border:none;color:var(--muted);padding:6px 9px;border-radius:9px;transition:color .12s}
   .stepitem:hover{color:var(--ink)}
   .stepitem .stepnum{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:var(--card2);border:1px solid var(--line);color:var(--muted);flex:none;transition:.12s}
@@ -336,7 +339,7 @@ const TENANT = {
   ],
   defaults:{ base:5, perExtra:3, engravingFee:5, engravingMax:16 },
   tva:0.20,                     // TVA incluse dans les prix affichés (TTC)
-  prod:{ baseDays:5, daysPerCm:0.6 }   // délai de fabrication à la demande
+  prod:{ shipMin:2, shipMax:10 }   // délai d'expédition annoncé (jours)
 };
 const uid=()=>Math.random().toString(36).slice(2,8);
 
@@ -540,8 +543,7 @@ function productionSpec(){
     gravure:(eng.offered&&eng.added&&(eng.text||"").trim())?{texte:eng.text.trim(),rot_deg:Math.round((eng.rot||0)*180/Math.PI)}:null,
     zones };
 }
-function prodDelay(){ const sz=state.config.size, cm=sz?Math.max(sz.min,sz.value):10;
-  const d=Math.round(TENANT.prod.baseDays + TENANT.prod.daysPerCm*cm); return {min:d, max:d+3}; }
+function prodDelay(){ return {min:TENANT.prod.shipMin, max:TENANT.prod.shipMax}; }
 /* ===================== PANIER (simulé, local) ===================== */
 let cart=[]; try{cart=JSON.parse(localStorage.getItem("onlyfab.cart")||"[]");}catch(e){}
 const saveCart=()=>{try{localStorage.setItem("onlyfab.cart",JSON.stringify(cart));}catch(e){}};
@@ -1471,6 +1473,8 @@ function renderClient(P){
     it.innerHTML=`<span class="stepnum">${i<idx?"✓":(i+1)}</span><span class="steplbl">${s.short}</span>`;
     it.onclick=()=>{state.step=i;renderPanel();};bar.appendChild(it);});
   P.appendChild(bar);
+  requestAnimationFrame(()=>{ const c=bar.querySelector(".stepitem.cur");
+    if(c) bar.scrollLeft=Math.max(0, c.offsetLeft-(bar.clientWidth-c.offsetWidth)/2); });
   // titre + corps
   P.appendChild(el("div","steptitle",steps[idx].title));
   const body=el("div","stepbody");steps[idx].render(body);P.appendChild(body);
@@ -1478,7 +1482,10 @@ function renderClient(P){
   const nav=el("div","stepnav");
   const prev=el("button","btn-sec","‹ Précédent");prev.type="button";prev.disabled=idx===0;prev.onclick=()=>{state.step=idx-1;renderPanel();};
   nav.appendChild(prev);
-  if(idx<steps.length-1){const next=el("button","btn-pri","Suivant ›");next.type="button";next.onclick=()=>{state.step=idx+1;renderPanel();};nav.appendChild(next);}
+  if(idx<steps.length-1){
+    const skipGravure = steps[idx].key==="gravure" && !(state.config.engraving && state.config.engraving.added);
+    const next=el("button","btn-pri", skipGravure ? "Passer" : "Suivant ›");next.id="navNext";next.type="button";
+    next.onclick=()=>{state.step=idx+1;renderPanel();};nav.appendChild(next);}
   else{const cta=el("button","cta","Ajouter au panier");cta.id="addCta";
     cta.onclick=()=>{ if(engraveError()){updEngErr();toast("Taille trop petite pour la gravure — augmentez la taille ou retirez la gravure.");return;}
       if(EMBED){ const p=cartPayload(); const qty=Math.max(1,state.qty||1);
@@ -1537,17 +1544,12 @@ function stepGravure(P){
   f.innerHTML='<label>Votre texte</label>';
   const inp=el("input");inp.type="text";inp.maxLength=eng.maxLen;inp.value=eng.text;inp.placeholder="ex. prénom, date…";
   inp.oninput=()=>{eng.text=inp.value;saveConfig();drawEngrave();updateEngraveVisibility();priceHead();updEngErr();};
-  f.appendChild(inp);f.appendChild(el("p","hintline",`${eng.maxLen} caractères max`));
-  // rotation de la gravure (client)
-  const rf=el("div","field");rf.style.marginTop="10px";rf.innerHTML='<label>Orientation du texte</label>';
-  const ri=el("input");ri.type="range";ri.min=(-Math.PI).toFixed(3);ri.max=(Math.PI).toFixed(3);ri.step="0.05";ri.value=eng.rot||0;
-  ri.style.border="none";ri.style.padding="0";ri.style.background="transparent";ri.style.width="100%";
-  ri.oninput=()=>{eng.rot=parseFloat(ri.value)||0;saveConfig();drawEngrave();};
-  rf.appendChild(ri);rf.appendChild(el("p","hintline","Tourne l'aperçu sous la tête du dragon pour voir la gravure."));
-  f.appendChild(rf);
+  f.appendChild(inp);f.appendChild(el("p","hintline",`${eng.maxLen} caractères max · orientation gérée par l'atelier`));
+  // L'orientation du texte n'est PAS proposée au client : elle est fixée par l'atelier.
   P.appendChild(f);
   ob.onchange=()=>{eng.added=ob.checked;f.hidden=!ob.checked;
     if(ob.checked){ const m=engEffMin(); if(state.config.size && state.config.size.value<m){ state.config.size.value=m; applySizeScale(); } }  // taille min par défaut
+    const nb=document.getElementById("navNext"); if(nb) nb.textContent=ob.checked?"Suivant ›":"Passer";   // Suivant/Passer
     saveConfig();drawEngrave();updateEngraveVisibility();priceHead();updEngErr();};
   if(eng.minPct>0) P.appendChild(el("p","hintline",`La gravure nécessite une taille d'au moins ${engMinCmDisp()} cm (appliquée automatiquement).`));
 }
@@ -1584,7 +1586,7 @@ function stepRecap(P){
   const ul=el("ul","bill");ul.id="billList";P.appendChild(ul);
   const ee=el("div","errline");ee.id="engErr";ee.hidden=true;P.appendChild(ee);
   const d=prodDelay();
-  P.appendChild(el("p","hintline",`🖨️ Fabrication à la demande · expédié sous <b>${d.min}–${d.max} jours</b>.`));
+  P.appendChild(el("p","hintline",`🖨️ Fabrication à la demande · expédié sous <b>${d.min} à ${d.max} jours</b>.`));
   // partager / sauvegarder (masqué en mode embarqué : le panier Shopify gère la reprise)
   if(!EMBED){
     const sh=el("div");sh.style.cssText="display:flex;gap:8px;margin-top:8px";
