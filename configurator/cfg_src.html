@@ -226,7 +226,11 @@
   @media (max-width:520px){.nightnote{font-size:10.5px;bottom:30px}}
 
   /* ===== Assistant client (wizard) ===== */
-  .stepper{display:flex;gap:2px;overflow-x:auto;padding:2px 0 14px;margin-bottom:8px;border-bottom:1px solid var(--line);scrollbar-width:thin}
+  .stepper{display:flex;gap:2px;overflow-x:auto;padding:2px 0 12px;margin-bottom:8px;border-bottom:1px solid var(--line);
+    scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch}
+  .stepper::-webkit-scrollbar{display:none;width:0;height:0}
+  /* panneau étroit (embed) : seules l'étape courante garde son libellé -> tout tient sans défiler */
+  @media (max-width:820px){ .stepitem:not(.cur) .steplbl{display:none} }
   .stepitem{display:flex;align-items:center;gap:7px;flex:none;cursor:pointer;font:inherit;background:none;border:none;color:var(--muted);padding:6px 9px;border-radius:9px;transition:color .12s}
   .stepitem:hover{color:var(--ink)}
   .stepitem .stepnum{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;background:var(--card2);border:1px solid var(--line);color:var(--muted);flex:none;transition:.12s}
@@ -1427,6 +1431,9 @@ function renderClient(P){
     it.innerHTML=`<span class="stepnum">${i<idx?"✓":(i+1)}</span><span class="steplbl">${s.short}</span>`;
     it.onclick=()=>{state.step=i;renderPanel();};bar.appendChild(it);});
   P.appendChild(bar);
+  // recentre l'étape courante dans la barre (sans faire défiler la page)
+  requestAnimationFrame(()=>{ const c=bar.querySelector(".stepitem.cur");
+    if(c) bar.scrollLeft=Math.max(0, c.offsetLeft-(bar.clientWidth-c.offsetWidth)/2); });
   // titre + corps
   P.appendChild(el("div","steptitle",steps[idx].title));
   const body=el("div","stepbody");steps[idx].render(body);P.appendChild(body);
