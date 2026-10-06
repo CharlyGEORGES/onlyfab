@@ -4299,44 +4299,71 @@ function cineUpdate(){
   const now=performance.now(); const dt=Math.min(0.05,Math.max(0.001,(now-(cine._lt||now))/1000)); cine._lt=now;
   const dur=(isFinite(a.duration)&&a.duration>1)?a.duration:60;
   const t=Math.min(1,(a.currentTime||0)/dur);
-  const {energy,beat}=cineAnalyse();
+  const {beat}=cineAnalyse();
   const an=cineAnchors(); if(!an){ updateFire(dt); return; }
   const hasFin=cineHasFinishes(), hasEng=cineHasEngrave();
-  const R0=cine.R0, u=an.diag*0.28; cine.scaleU=u;
-  cine.theta+=0.004+energy*0.012;
+  const u=an.diag, el=(now-cine.t0)/1000; cine.scaleU=u*0.28;
+  const V=THREE.Vector3;
+  const up=new V(0,1,0);
+  const fwd=new V(an.headW.x-an.tailW.x,0,an.headW.z-an.tailW.z); if(fwd.lengthSq()<1e-6)fwd.set(0,0,1); fwd.normalize();
+  const side=new V().crossVectors(up,fwd).normalize();
+  const base=s=>an.tailW.clone().lerp(an.headW,s);
 
-  // cible du regard (lx,ly,lz), hauteur de vue phi, distance radMul, mode, feu, cabrage
-  let lx=an.C.x, ly=an.C.y, lz=an.C.z, phi=cam.phi, radMul=1.3, fire=false, rear=0, lookLerp=0.10;
-  if(t<0.12){ const k=_easeIO(t/0.12); phi=_lerp(1.5,1.2,k); radMul=_lerp(2.0,1.5,k); cineSetMode(cine.userMode==="nuit"?"ombre":cine.userMode); }
-  else if(t<0.34){ // longe le corps : queue -> tête
-    const k=_easeIO((t-0.12)/0.22); lx=_lerp(an.tailW.x,an.headW.x,k); ly=_lerp(an.tailW.y,an.headW.y,k); lz=_lerp(an.tailW.z,an.headW.z,k);
-    phi=1.26; radMul=0.62; lookLerp=0.18; cineSetMode("ombre"); }
-  else if(t<0.50){ // tête + souffle de feu
-    lx=an.headW.x; ly=an.headW.y; lz=an.headW.z; phi=1.1; radMul=0.72; lookLerp=0.14; rear=_easeIO((t-0.34)/0.16); fire=true; cineSetMode(hasFin?"soleil":cine.userMode==="nuit"?"ombre":cine.userMode); }
-  else if(t<0.64 && hasFin){ // révélation finitions en nuit
-    const k=_easeIO((t-0.50)/0.14); phi=_lerp(1.1,1.0,k); radMul=_lerp(0.72,1.05,k); cineSetMode("nuit"); }
-  else if(t<0.66){ phi=1.05; radMul=1.0; cineSetMode(hasFin?"nuit":"ombre"); }
-  else if(t<0.82 && hasEng){ // plonge sous la tête -> gravure
-    const k=_easeIO((t-0.66)/0.16); lx=an.plateW.x; ly=_lerp(an.headW.y,an.plateW.y,k); lz=an.plateW.z;
-    phi=_lerp(1.1,2.15,k); radMul=_lerp(1.0,0.6,k); lookLerp=0.14; if(engravePlateGroup)engravePlateGroup.visible=true; cineSetMode("ombre"); }
-  else if(t<0.82){ const k=_easeIO((t-0.66)/0.16); phi=_lerp(1.05,0.82,k); radMul=_lerp(1.0,0.95,k); cineSetMode(hasFin?"soleil":"ombre"); }
-  else { const k=_easeIO((t-0.82)/0.18); lx=an.C.x; ly=an.C.y; lz=an.C.z; phi=_lerp(2.15,1.05,k); radMul=_lerp(0.6,1.5,k); cineSetMode(cine.userMode); }
+  let tPos=new V(), tLook=new V(), fire=false, rear=0, mo=0.04, mode=cine.userMode;
+  if(t<0.08){                                   // 1) plan serré sur la queue
+    const k=_easeIO(t/0.08);
+    tLook.copy(an.tailW);
+    tPos.copy(an.tailW).addScaledVector(fwd,-0.55*u).addScaledVector(up,0.28*u*k).addScaledVector(side,0.22*u);
+    mode=cine.userMode==="nuit"?"ombre":cine.userMode;
+  } else if(t<0.46){                            // 2) flythrough queue->tête : serpente dessous/dessus entre les pointes
+    const s=_easeIO((t-0.08)/0.38);
+    const b=base(s);
+    const vy=Math.sin(s*Math.PI*3.0)*0.24*u;    // passe dessous puis dessus
+    const sx=Math.cos(s*Math.PI*2.2)*0.14*u;
+    tPos.copy(b).addScaledVector(up,vy).addScaledVector(side,sx).addScaledVector(fwd,-0.14*u);
+    tLook.copy(base(Math.min(1,s+0.14))).addScaledVector(up,vy*0.25);
+    mo=0.015; mode=(hasFin&&s>0.55)?"nuit":"ombre";
+  } else if(t<0.58){                            // 3) remonte vers le visage
+    const k=_easeIO((t-0.46)/0.12);
+    tLook.copy(an.headW);
+    tPos.copy(an.headW).addScaledVector(fwd,_lerp(0.7,0.42,k)*u).addScaledVector(up,_lerp(-0.1,0.1,k)*u).addScaledVector(side,0.12*u*(1-k));
+    mode="ombre"; mo=0.04;
+  } else if(t<0.66){                            // 4) les yeux : gros plan face
+    const k=_easeIO((t-0.58)/0.08);
+    tLook.copy(an.headW).addScaledVector(up,0.04*u);
+    tPos.copy(an.headW).addScaledVector(fwd,_lerp(0.42,0.3,k)*u).addScaledVector(up,0.13*u);
+    mode="ombre"; mo=0.03;
+  } else if(t<0.82 && hasEng){                  // 5) la gravure : passe dessous, regarde vers le haut
+    const k=_easeIO((t-0.66)/0.16);
+    if(engravePlateGroup) engravePlateGroup.visible=true;
+    tLook.copy(an.plateW);
+    tPos.copy(an.plateW).addScaledVector(up,-0.42*u).addScaledVector(fwd,(0.5*(1-k)+0.14)*u);
+    mode="ombre"; mo=0.02;
+  } else if(t<0.82){                            // 5bis) pas de gravure : plan tête 3/4
+    const k=_easeIO((t-0.66)/0.16);
+    tLook.copy(an.headW);
+    tPos.copy(an.headW).addScaledVector(fwd,0.55*u).addScaledVector(side,0.3*u).addScaledVector(up,0.12*u);
+    mode=hasFin?"soleil":"ombre"; mo=0.04;
+  } else {                                      // 6) les flammes puis recul héroïque
+    const k=_easeIO((t-0.82)/0.18);
+    fire=true; rear=Math.min(1,(t-0.82)/0.07);
+    tLook.copy(an.headW);
+    tPos.copy(an.headW).addScaledVector(fwd,_lerp(0.65,1.7,k)*u).addScaledVector(up,_lerp(0.12,0.5,k)*u).addScaledVector(side,0.22*u*k);
+    mode=cine.userMode; mo=0.06;
+  }
+  cineSetMode(mode);
 
-  const punch=cine.pulse*0.14;
-  cam.phi=_lerp(cam.phi,phi,0.08);
-  cam.radius=_lerp(cam.radius,R0*radMul*(1-punch),0.09);
-  cam.theta=cine.theta+cine.pulse*0.035;
-  cam.tx=_lerp(cam.tx,lx,lookLerp); cam.target=_lerp(cam.target,ly,lookLerp); cam.tz=_lerp(cam.tz,lz,lookLerp);
+  if(!cine.camPos){ cine.camPos=tPos.clone(); cine.camLook=tLook.clone(); }
+  const lf=(t<0.08?0.2:0.1);                    // lissage de la caméra libre
+  cine.camPos.lerp(tPos,lf); cine.camLook.lerp(tLook,lf); cine.free=true;
 
-  // feu : rafales sur les temps forts pendant la phase de souffle
-  if(fire && (beat || cine.pulse>0.6)) emitFire(an.headW, an.dir, u);
+  if(fire && (beat || cine.pulse>0.6)) emitFire(an.headW, an.dir, cine.scaleU);
   updateFire(dt);
 
-  // dragon vivant : ondulation (lacet), flottement, cabrage pendant le feu, sursaut sur le beat
-  const el=(now-cine.t0)/1000;
-  root.rotation.y=cine.baseRotY+Math.sin(el*0.9)*0.16+Math.sin(el*0.37)*0.06;
+  // dragon vivant : amplitude mo selon la phase (quasi immobile pendant le flythrough)
+  root.rotation.y=cine.baseRotY+Math.sin(el*0.8)*mo*2.2;
   root.rotation.x=(cine.baseRotX||0) - rear*0.22 + cine.pulse*0.02;
-  root.position.y=cine.basePosY + Math.sin(el*1.3)*0.08*u + cine.pulse*0.06*u;
+  root.position.y=cine.basePosY + Math.sin(el*1.2)*mo*u + cine.pulse*0.05*u;
 }
 function cineStart(auto){
   if(cine.active||!root) return;
@@ -4355,6 +4382,10 @@ function cineStart(auto){
   cine.bassAvg=0; cine.lastBeat=0; cine.pulse=0; cine.beat=0; cine._lt=performance.now();
   try{ createFire(); clearFire(); }catch(e){}
   cam.auto=false; try{frameScene();}catch(e){} cine.R0=Math.max(6,cam.radius); cine.theta=cam.theta;
+  // caméra libre : on part de la position actuelle (ease-in vers la queue)
+  cine.camPos=camera?camera.position.clone():new THREE.Vector3(0,cam.target,cam.radius);
+  cine.camLook=new THREE.Vector3(cam.tx,cam.target,cam.tz); cine.free=false;
+  gaugeLabels.forEach(s=>{ s.userData._v=s.visible; s.visible=false; });   // cote masquée pendant la cinématique
   document.body.classList.add("cine");
   const sk=document.getElementById("cineSkip"); if(sk){ sk.hidden=false; sk.onclick=()=>cineStop(true); }
   a.onended=()=>cineStop(true);
@@ -4366,6 +4397,8 @@ function cineStop(restore){
   cine.active=false; document.body.classList.remove("cine");
   const sk=document.getElementById("cineSkip"); if(sk) sk.hidden=true;
   try{ clearFire(); }catch(e){}
+  cine.free=false;
+  gaugeLabels.forEach(s=>{ if(s.userData._v!==undefined) s.visible=s.userData._v; });   // restaure la cote
   if(root){ root.rotation.y=cine.baseRotY||0; root.rotation.x=cine.baseRotX||0; root.position.y=cine.basePosY||0; }
   try{ updateEngraveVisibility(); }catch(e){}
   if(restore!==false){ state.view.mode=cine.userMode; try{setViewMode();}catch(e){} }
@@ -4884,7 +4917,12 @@ function bindControls(c){
   addEventListener("touchend",up);
   c.addEventListener("wheel",e=>{zoomAt(e,c);e.preventDefault();},{passive:false});
 }
-function loop(){requestAnimationFrame(loop);if(cine.active)cineUpdate();if(cam.auto&&!reduce)cam.theta+=.0013;const r=cam.radius;
+function loop(){requestAnimationFrame(loop);if(cine.active)cineUpdate();
+  if(cine.active&&cine.free&&camera&&cine.camPos){   // cinématique : caméra libre (trajectoire)
+    camera.position.copy(cine.camPos); camera.up.set(0,1,0); camera.lookAt(cine.camLook);
+    renderer.render(scene,camera); return;
+  }
+  if(cam.auto&&!reduce)cam.theta+=.0013;const r=cam.radius;
   const ox=r*Math.sin(cam.phi)*Math.sin(cam.theta), oy=r*Math.cos(cam.phi), oz=r*Math.sin(cam.phi)*Math.cos(cam.theta);
   camera.position.set(cam.tx+ox, cam.target+oy, cam.tz+oz);
   camera.lookAt(cam.tx,cam.target,cam.tz);
