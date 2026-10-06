@@ -4064,7 +4064,7 @@ function seedConfig(cfg,key){
 }
 
 /* ===================== ETAT ===================== */
-const state={ mode:"client", modelKey:"baby", glb:null, config:null, view:{mode:"ombre"} };  // view.mode: nuit | ombre | soleil
+const state={ mode:"client", modelKey:"baby", glb:null, config:null, view:{mode:"ombre"}, rig:null };  // view.mode: nuit | ombre | soleil
 let partMaterials={};   // partName -> [THREE.Material]
 let partMeshes={};      // partName -> [THREE.Mesh]
 let partList=[];        // noms des parties du modele courant
@@ -4105,6 +4105,7 @@ function defaultConfigForParts(parts){
            engrave:{dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""},
            orient:{ry:0,rx:0},
            cine:{tail:null,head:null,eyes:null,mouth:null,waypoints:[]},
+           pose:{flat:true},
            size:{min:6,max:18,value:10,refCm:10,exp:2,gauge:true} };
 }
 function loadConfig(parts){
@@ -4118,6 +4119,7 @@ function loadConfig(parts){
     if(!c.engrave) c.engrave={dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""}; else if(c.engrave.anchor===undefined) c.engrave.anchor="";
     if(!c.orient) c.orient={ry:0,rx:0}; else{ if(c.orient.ry==null)c.orient.ry=0; if(c.orient.rx==null)c.orient.rx=0; }
     if(!c.cine||typeof c.cine!=="object") c.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]}; else if(!Array.isArray(c.cine.waypoints)) c.cine.waypoints=[];
+    if(!c.pose||typeof c.pose!=="object") c.pose={flat:true};
     if(!c.size) c.size={min:6,max:18,value:10,refCm:10,exp:2,gauge:true};
     else if(c.size.max>40){ const f=x=>Math.round((x/10)*2)/2; const vv=f(c.size.value); c.size={min:f(c.size.min),max:f(c.size.max),value:vv,refCm:vv,exp:2,gauge:true}; }
     if(c.size.gauge===undefined) c.size.gauge=true;
@@ -4346,72 +4348,164 @@ function cineBuildPath(THREE,meshes,allMeshes,markers,hint){
   if(mk.eyes) eyes=toW(mk.eyes); else { eyes=headP.clone().lerp(mouth,0.4); eyes.y=Math.max(eyes.y,headP.y)+hr*0.45; }
   return {P,T,topS,width,len,diag,res,headP,tailP:P[0],hr,fwd,mouth,eyes,center:b.getCenter(new V()),box:b,dbg};
 }
-/* Pose caméra à l'instant tSec (secondes de musique). Retourne {pos,look,roll,mode,fire,rear,fov}. */
-function cinePose(THREE,K,tSec,hasEng,hasFin,userMode,pulse,plateW){
-  const V=THREE.Vector3, up=new V(0,1,0), M=K.P.length, u=K.diag;
-  const at=s=>{ const f=Math.max(0,Math.min(M-1,s*(M-1))), i=Math.floor(f), j=Math.min(M-1,i+1), t=f-i; return K.P[i].clone().lerp(K.P[j],t); };
-  const tanAt=s=>K.T[Math.round(Math.max(0,Math.min(M-1,s*(M-1))))];
-  const topAt=s=>{ const f=Math.max(0,Math.min(M-1,s*(M-1))), i=Math.floor(f), j=Math.min(M-1,i+1), t=f-i; return K.topS[i]*(1-t)+K.topS[j]*t; };
-  const side=t=>new V().crossVectors(up,t).normalize();
-  const hfwd=K.fwd, hside=side(hfwd);
-  const pos=new V(), look=new V(); let roll=0, mode=userMode, fire=false, rear=0, fov=50, smooth=0.12;
-  const t=tSec;
-  if(t<7.5){                                           // 1) rase-motte : de la queue au cou, au ras des articulations
-    const sEnd=0.9;
-    const s=sEnd*(t<0.7 ? 0.0 : _sm(0.7,7.5,t)*0.85+ (t-0.7)/6.8*0.15);
-    const p=at(s), tg=tanAt(s), sd=side(tg);
-    const h=u*(0.095+0.03*pulse);
-    const weave=Math.sin(s*Math.PI*9)*K.width[Math.round(s*(M-1))]*0.9;
-    pos.copy(p).addScaledVector(sd,weave); pos.y=topAt(s)+h;
-    const la=Math.min(1,s+0.07), lp=at(la); look.copy(lp).addScaledVector(side(tanAt(la)),weave*0.3); look.y=topAt(la)+h*0.35;
-    // roulis dans les virages
-    const t2=tanAt(Math.min(1,s+0.05)); roll=-sd.dot(t2)*0.9;
-    fov=62; smooth=t<0.7?1:0.22;
-  } else if(t<11.57){                                  // 2) le visage : passe par-dessus la tête puis plonge sur les yeux
-    const k=_sm(7.5,9.3,t), hold=_sm(9.3,11.57,t);
-    const hr=K.hr;
-    const back=K.headP.clone().addScaledVector(hfwd,-hr*2.2).addScaledVector(up,hr*2.4).addScaledVector(hside,hr*0.8);
-    const front=K.eyes.clone().addScaledVector(hfwd,hr*2.6).addScaledVector(up,hr*0.55).addScaledVector(hside,hr*0.9);
-    const arc=back.clone().lerp(front,k); arc.y+=Math.sin(k*Math.PI)*hr*1.2;   // survol en cloche
-    const closer=front.clone().lerp(K.eyes.clone().addScaledVector(hfwd,hr*1.5).addScaledVector(up,hr*0.25),hold*0.8);
-    pos.copy(arc).lerp(closer,k);
-    look.copy(K.headP.clone().lerp(K.eyes,k));
-    fov=50-10*hold; smooth=0.1; mode=(hasFin&&hold>0.3)?"nuit":"ombre";
-  } else if(t<14.07){                                  // 3) sous la tête : la gravure (ou plan bas 3/4)
-    const k=_sm(11.57,12.69,t), k2=_sm(12.69,14.07,t);
-    const hr=K.hr;
-    if(hasEng){
-      const target=plateW||K.headP.clone().addScaledVector(up,-hr*0.9);
-      const start=K.eyes.clone().addScaledVector(hfwd,hr*1.6).addScaledVector(up,hr*0.25);
-      const under=target.clone().addScaledVector(up,-hr*2.3).addScaledVector(hfwd,hr*(1.6-1.1*k2));
-      pos.copy(start).lerp(under,k); look.copy(K.eyes.clone().lerp(target,k));
-      fov=48; smooth=0.1; mode="ombre";
+/* ===================== DRAGON : redressement à plat + squelette articulé ===================== */
+/* dragonRig(THREE, gltfScene, isBody, markers, opts) :
+   1. remet le dragon « debout » (axe le plus fin du corps = verticale, face plate = dessous) ;
+   2. extrait la colonne vertébrale (cineBuildPath) ;
+   3. déroule le dragon sur une ligne droite (X), tête vers +X — par pièces rigides quand le
+      maillage est articulé (composantes connexes), sinon par déformation continue ;
+   4. construit une chaîne d'os (deux chaînes depuis le bassin) et lie les maillages (skinning).
+   Les géométries sont remises depuis leur copie d'origine à chaque appel (idempotent). */
+function dragonRig(THREE,gltfScene,isBody,markers,opts){
+  opts=opts||{}; const V=THREE.Vector3;
+  const meshes=[]; gltfScene.traverse(o=>{ if(o.isMesh&&!o.userData.helper) meshes.push(o); });
+  if(!meshes.length) return null;
+  // --- 0) ancienne armature ? on l'enlève ; géométries remises d'origine
+  (gltfScene.userData.rigBones||[]).forEach(b=>{ if(b.parent) b.parent.remove(b); });
+  gltfScene.userData.rigBones=null;
+  gltfScene.updateMatrixWorld(true);
+  meshes.forEach(m=>{
+    const g=m.geometry;
+    if(!m.userData.orig){                               // 1re fois : on cuit la transformation du noeud dans la géométrie
+      const rel=new THREE.Matrix4().copy(gltfScene.matrixWorld).invert().multiply(m.matrixWorld);
+      g.applyMatrix4(rel); m.position.set(0,0,0); m.quaternion.identity(); m.scale.set(1,1,1); m.updateMatrix();
+      if(!g.attributes.normal) g.computeVertexNormals();
+      m.userData.orig={pos:g.attributes.position.array.slice(),nor:g.attributes.normal.array.slice()};
     } else {
-      const start=K.eyes.clone().addScaledVector(hfwd,hr*1.6).addScaledVector(up,hr*0.25);
-      const low=K.headP.clone().addScaledVector(hfwd,hr*2.6).addScaledVector(hside,-hr*2.4).addScaledVector(up,-hr*0.6);
-      pos.copy(start).lerp(low,k).addScaledVector(hside,-hr*0.8*k2); look.copy(K.headP.clone().lerp(K.mouth,0.3));
-      fov=50; smooth=0.1; mode=hasFin?"nuit":"ombre";
+      g.attributes.position.array.set(m.userData.orig.pos); g.attributes.position.needsUpdate=true;
+      g.attributes.normal.array.set(m.userData.orig.nor); g.attributes.normal.needsUpdate=true;
     }
-  } else if(t<18.39){                                  // 4) le feu : face à la gueule, le dragon se cabre, recul héroïque
-    const k=_sm(14.07,14.74,t), r=_sm(14.74,18.39,t);
-    const hr=K.hr; rear=_sm(14.07,14.9,t);
-    const near=K.mouth.clone().addScaledVector(hfwd,hr*3.2).addScaledVector(up,hr*0.8).addScaledVector(hside,hr*0.6);
-    const far=K.center.clone().addScaledVector(hfwd,u*0.95).addScaledVector(up,u*0.55).addScaledVector(hside,u*0.35);
-    pos.copy(near).lerp(far,r*r); look.copy(K.mouth.clone().lerp(K.center,r*0.6)).addScaledVector(up,hr*0.4*(1-r));
-    fire=t>=14.6; fov=50+8*r; smooth=k<1?0.16:0.08; mode=userMode;
-  } else {                                             // 5) plan final héroïque
-    const k=_sm(18.39,20,t);
-    const far=K.center.clone().addScaledVector(hfwd,u*0.95).addScaledVector(up,u*0.55).addScaledVector(hside,u*0.35);
-    const end=K.center.clone().addScaledVector(hfwd,u*0.6).addScaledVector(up,u*0.5).addScaledVector(hside,u*0.62);
-    pos.copy(far).lerp(end,k); look.copy(K.center); fov=50; smooth=0.06; mode=userMode;
+  });
+  const body=meshes.filter(m=>isBody(m.name)); const bodyM=body.length?body:meshes;
+  const bboxOf=arr=>{ const b=new THREE.Box3(); arr.forEach(m=>{ m.geometry.computeBoundingBox(); b.union(m.geometry.boundingBox); }); return b; };
+  // --- 1) verticale : axe le plus fin du corps ; dessous = face où les sommets s'accumulent (plateau d'impression)
+  let b0=bboxOf(bodyM), S0=b0.getSize(new V());
+  const axes=["x","y","z"], upAx=opts.upAxis||axes.reduce((a,c)=>S0[c]<S0[a]?c:a);
+  let sign=1;
+  { let lo=0,hi=0; const mn=b0.min[upAx], mx=b0.max[upAx], th=S0[upAx]*0.04;
+    bodyM.forEach(m=>{ const pa=m.geometry.attributes.position; const k={x:0,y:1,z:2}[upAx];
+      for(let i=0;i<pa.count;i++){ const v=pa.array[i*3+k]; if(v<mn+th)lo++; else if(v>mx-th)hi++; } });
+    sign=(lo>=hi)?1:-1; if(opts.upSign) sign=opts.upSign; }
+  const upVec=new V(); upVec[upAx]=sign;
+  const q0=new THREE.Quaternion().setFromUnitVectors(upVec,new V(0,1,0));
+  const R0=new THREE.Matrix4().makeRotationFromQuaternion(q0);
+  meshes.forEach(m=>{ m.geometry.applyMatrix4(R0); m.geometry.computeBoundingBox(); });
+  // --- 2) colonne vertébrale (espace « original debout »)
+  meshes.forEach(m=>m.updateWorldMatrix(true,false));
+  const K=cineBuildPath(THREE,bodyM,meshes,markers||null,opts.hint||null);
+  if(!K) { return {bones:[],mode:"none",R0}; }
+  const M=K.P.length, len=K.len;
+  const frameAt=i=>{ const T=K.T[i].clone(); T.y=0; if(T.lengthSq()<1e-8)T.set(1,0,0); T.normalize(); const side=new V(0,1,0).cross(T).normalize(); return {P:K.P[i],T,side,a:len*i/(M-1)-len/2}; };
+  const nearestIdx=p=>{ let bi=0,bd=Infinity; for(let i=0;i<M;i++){ const d=K.P[i].distanceToSquared(p); if(d<bd){bd=d;bi=i;} } return bi; };
+  // --- 3) composantes connexes (soudure par position) par maillage
+  const comps=[];                                      // {mesh, idx:[...vertex indices], n, c:centroid, body}
+  meshes.forEach(m=>{
+    const g=m.geometry, pa=g.attributes.position, n=pa.count; const key=new Map(); const wid=new Int32Array(n);
+    const b=g.boundingBox, q=Math.max(1e-6,Math.max(b.max.x-b.min.x,b.max.y-b.min.y,b.max.z-b.min.z)*2e-4);
+    for(let i=0;i<n;i++){ const k=Math.round(pa.array[i*3]/q)+","+Math.round(pa.array[i*3+1]/q)+","+Math.round(pa.array[i*3+2]/q); let w=key.get(k); if(w===undefined){w=key.size;key.set(k,w);} wid[i]=w; }
+    const par=new Int32Array(key.size); for(let i=0;i<par.length;i++)par[i]=i;
+    const find=x=>{ while(par[x]!==x){ par[x]=par[par[x]]; x=par[x]; } return x; };
+    const uni=(a,b)=>{ a=find(a); b=find(b); if(a!==b) par[a]=b; };
+    const ix=g.index?g.index.array:null, tri=ix?ix.length/3:n/3;
+    for(let t=0;t<tri;t++){ const a=ix?ix[t*3]:t*3, b2=ix?ix[t*3+1]:t*3+1, c=ix?ix[t*3+2]:t*3+2; uni(wid[a],wid[b2]); uni(wid[b2],wid[c]); }
+    const byRoot=new Map();
+    for(let i=0;i<n;i++){ const r=find(wid[i]); let arr=byRoot.get(r); if(!arr){arr=[];byRoot.set(r,arr);} arr.push(i); }
+    byRoot.forEach(idx=>{ const c=new V(); idx.forEach(i=>{ c.x+=pa.array[i*3]; c.y+=pa.array[i*3+1]; c.z+=pa.array[i*3+2]; }); c.multiplyScalar(1/idx.length);
+      comps.push({mesh:m,idx,n:idx.length,c,body:bodyM.includes(m)}); });
+  });
+  const totalBody=bodyM.reduce((s,m)=>s+m.geometry.attributes.position.count,0);
+  const big=comps.filter(c=>c.body&&c.n>=totalBody*0.012);
+  const rigid=opts.mode?opts.mode==="rigid":(big.length>=4);
+  // --- 4) déroulement : chaque sommet suit le repère de « son » point de colonne
+  const applyFrame=(pa,na,i,F)=>{ const px=pa[i*3]-F.P.x, py=pa[i*3+1], pz=pa[i*3+2]-F.P.z;
+    const x=px*F.T.x+pz*F.T.z, z=px*F.side.x+pz*F.side.z;            // (p-P)·T , (p-P)·side  (composantes horizontales)
+    pa[i*3]=F.a+x; pa[i*3+1]=py; pa[i*3+2]=z;
+    const nx=na[i*3], nz=na[i*3+2]; na[i*3]=nx*F.T.x+nz*F.T.z; na[i*3+2]=nx*F.side.x+nz*F.side.z; };
+  const sOfComp=new Map();
+  if(rigid){
+    comps.forEach(c=>{ const i=nearestIdx(c.c); sOfComp.set(c,i/(M-1)); const F=frameAt(i); const pa=c.mesh.geometry.attributes.position.array, na=c.mesh.geometry.attributes.normal.array; c.idx.forEach(v=>applyFrame(pa,na,v,F)); });
+  } else {
+    meshes.forEach(m=>{ const pa=m.geometry.attributes.position.array, na=m.geometry.attributes.normal.array, n=m.geometry.attributes.position.count; const p=new V();
+      for(let v=0;v<n;v++){ p.set(pa[v*3],pa[v*3+1],pa[v*3+2]); applyFrame(pa,na,v,frameAt(nearestIdx(p))); } });
+    comps.forEach(c=>{ sOfComp.set(c,nearestIdx(c.c)/(M-1)); });
   }
-  return {pos,look,roll,mode,fire,rear,fov,smooth};
+  meshes.forEach(m=>{ const g=m.geometry; g.attributes.position.needsUpdate=true; g.attributes.normal.needsUpdate=true; g.computeBoundingBox(); g.computeBoundingSphere(); });
+  // points clés (tête) dans l'espace déroulé
+  const toFlat=p=>{ const i=nearestIdx(p), F=frameAt(i); const px=p.x-F.P.x, pz=p.z-F.P.z; return new V(F.a+px*F.T.x+pz*F.T.z, p.y, px*F.side.x+pz*F.side.z); };
+  const headP=toFlat(K.headP), mouth=toFlat(K.mouth), eyes=toFlat(K.eyes), tailP=toFlat(K.tailP);
+  const spineY=K.P.reduce((s,p)=>s+p.y,0)/M;
+  // --- 5) os : un par grosse pièce (rigide) ou répartis (continu) ; deux chaînes depuis le bassin
+  let boneX;
+  if(rigid){ boneX=big.map(c=>sOfComp.get(c)*len-len/2).sort((a,b)=>a-b);
+    // fusionne les os trop proches (pièces doubles d'une même articulation)
+    const out=[]; boneX.forEach(x=>{ if(!out.length||x-out[out.length-1]>len*0.02) out.push(x); else out[out.length-1]=(out[out.length-1]+x)/2; }); boneX=out; }
+  else { const nB=14; boneX=[]; for(let i=0;i<nB;i++) boneX.push(-len/2+len*(i+0.5)/nB); }
+  if(boneX.length<3){ boneX=[-len/3,0,len/3]; }
+  const nB=boneX.length, bones=boneX.map((x,i)=>{ const b=new THREE.Bone(); b.name="seg"+i; b.userData.restX=x; return b; });
+  const hip=boneX.reduce((bi,x,i)=>Math.abs(x+len*0.1)<Math.abs(boneX[bi]+len*0.1)?i:bi,0);   // bassin : un peu derrière le milieu
+  const place=(b,x,parentX)=>{ b.position.set(x-parentX,0,0); };
+  bones[hip].position.set(boneX[hip],spineY,0); gltfScene.add(bones[hip]);
+  for(let i=hip+1;i<nB;i++){ bones[i-1].add(bones[i]); place(bones[i],boneX[i],boneX[i-1]); }
+  for(let i=hip-1;i>=0;i--){ bones[i+1].add(bones[i]); place(bones[i],boneX[i],boneX[i+1]); }
+  gltfScene.updateMatrixWorld(true);
+  const skeleton=new THREE.Skeleton(bones);
+  // --- 6) skinning : pièce rigide -> os le plus proche ; continu -> mélange des 2 os voisins
+  const boneOfX=x=>{ let bi=0,bd=Infinity; for(let i=0;i<nB;i++){ const d=Math.abs(boneX[i]-x); if(d<bd){bd=d;bi=i;} } return bi; };
+  const newMeshes=[];
+  meshes.forEach(m=>{
+    const g=m.geometry, n=g.attributes.position.count, pa=g.attributes.position.array;
+    const si=new Uint16Array(n*4), sw=new Float32Array(n*4);
+    if(rigid){ comps.filter(c=>c.mesh===m).forEach(c=>{ const bi=boneOfX(sOfComp.get(c)*len-len/2); c.idx.forEach(v=>{ si[v*4]=bi; sw[v*4]=1; }); }); }
+    else { for(let v=0;v<n;v++){ const x=pa[v*3]; let i=0; while(i<nB-1&&boneX[i+1]<x)i++; const j=Math.min(nB-1,i+1); const t=(j===i)?0:Math.max(0,Math.min(1,(x-boneX[i])/(boneX[j]-boneX[i])));
+        const w=0.5-0.5*Math.cos(Math.PI*t); si[v*4]=i; sw[v*4]=1-w; si[v*4+1]=j; sw[v*4+1]=w; } }
+    g.setAttribute("skinIndex",new THREE.BufferAttribute(si,4)); g.setAttribute("skinWeight",new THREE.BufferAttribute(sw,4));
+    let sm=m;
+    if(!m.isSkinnedMesh){ sm=new THREE.SkinnedMesh(g,m.material); sm.name=m.name; sm.userData=m.userData; sm.frustumCulled=false;
+      const parent=m.parent; parent.remove(m); parent.add(sm); }
+    sm.material.skinning=true; sm.material.needsUpdate=true;
+    sm.updateMatrixWorld(true); sm.bind(skeleton,sm.matrixWorld.clone()); newMeshes.push(sm);
+  });
+  gltfScene.userData.rigBones=[bones[hip]];
+  const headBone=bones[nB-1];
+  // ancres (locales à l'os de tête, repos = translation pure)
+  const headRest=new V(boneX[nB-1],spineY,0);
+  const mk=(p,name)=>{ const o=new THREE.Object3D(); o.name=name; o.position.copy(p).sub(headRest); headBone.add(o); return o; };
+  const anchors={mouth:mk(mouth,"mouth"),eyes:mk(eyes,"eyes"),head:mk(headP,"head")};
+  // --- 7) inverse (clics atelier) : position d'origine d'un sommet
+  const origOf=(mesh,vi)=>{ const o=mesh.userData.orig; if(!o) return null; const v=new V(o.pos[vi*3],o.pos[vi*3+1],o.pos[vi*3+2]); return v.applyMatrix4(R0); };   // espace « original debout »
+  const flatOf=p=>{ // original debout -> déroulé : par le sommet d'origine le plus proche
+    let best=null,bd=Infinity; meshes.forEach(m=>{ const o=m.userData.orig; if(!o)return; const pa=m.geometry.attributes.position.array; const t=new V();
+      for(let i=0;i<o.pos.length;i+=3){ t.set(o.pos[i],o.pos[i+1],o.pos[i+2]).applyMatrix4(R0); const d=t.distanceToSquared(p); if(d<bd){bd=d;best=new V(pa[i],pa[i+1],pa[i+2]);} } }); return best; };
+  return {bones,hip,nB,boneX,len,spineY,headBone,anchors,skeleton,meshes:newMeshes,mode:rigid?"rigid":"fused",R0,K,origOf,flatOf,headRadius:K.hr,headP,mouth,eyes,tailP,comps:comps.length,big:big.length};
+}
+/* Pose du dragon à l'instant t (secondes de musique). Angles en radians sur chaque os.
+   p = {wave, waveFreq, rear, lookYaw, nod, tailWag, pulse} dans [0..1] ou radians. */
+function dragonPose(rig,t,p){
+  const nB=rig.nB, hip=rig.hip; const bones=rig.bones;
+  for(let i=0;i<nB;i++) bones[i].rotation.set(0,0,0);
+  const nHead=nB-1-hip, nTail=hip;
+  // ondulation serpentine (lacet) : onde qui remonte de la queue vers la tête
+  for(let i=0;i<nB;i++){ if(i===hip)continue;
+    const u=(i-hip)/(i>hip?Math.max(1,nHead):Math.max(1,nTail));          // 0 au bassin -> 1 à l'extrémité
+    const env=i>hip?(0.25+0.35*u):(0.5+0.9*u);                               // la queue bouge plus que le cou
+    const ph=rig.boneX[i]/rig.len*2*Math.PI*1.2;
+    const yaw=(p.wave||0)*0.16*env*Math.sin((p.waveFreq||1.1)*2*Math.PI*t-ph);
+    bones[i].rotation.y+=yaw;
+    if(i<hip){ bones[i].rotation.y+=(p.tailWag||0)*0.12*u*Math.sin(2.2*2*Math.PI*t); bones[i].rotation.z+=(p.wave||0)*0.03*u*Math.sin(1.7*2*Math.PI*t+1); }
+  }
+  // cabré : le cou se relève progressivement (os de la chaîne tête), la tête rebaisse le museau
+  if(p.rear){ for(let i=hip+1;i<nB;i++){ const u=(i-hip)/Math.max(1,nHead); const w=Math.max(0,u-0.35)/0.65; bones[i].rotation.z+=p.rear*0.42*w*w; }
+    bones[nB-1].rotation.z-=p.rear*0.35*(p.nod!=null?p.nod:1); }
+  // regard : la tête (et un peu le cou) tourne vers la caméra
+  if(p.lookYaw){ for(let i=hip+1;i<nB;i++){ const u=(i-hip)/Math.max(1,nHead); bones[i].rotation.y+=p.lookYaw*(u>0.55?0.35:0)*(u-0.55)/0.45; } bones[nB-1].rotation.y+=p.lookYaw*0.55; }
+  // sursaut sur les coups
+  if(p.pulse){ bones[hip].position.y=rig.spineY+p.pulse*0.02*rig.len; bones[nB-1].rotation.z-=p.pulse*0.08; } else bones[hip].position.y=rig.spineY;
 }
 
 /* ---- état + glue configurateur ---- */
 const cine={active:false,t0:0,audio:null,actx:null,srcNode:null,analyser:null,freq:null,
-  bassAvg:0,lastBeat:0,pulse:0,beat:0,curMode:null,userMode:"ombre",K:null,phase:-1,
-  baseQ:null,basePosY:0,bgmWasOn:false,camPos:null,camLook:null,roll:0,fov:42,free:false,autoDone:false,placing:null,hitIdx:0,fireIdx:0};
+  bassAvg:0,lastBeat:0,pulse:0,beat:0,curMode:null,userMode:"ombre",phase:-1,
+  baseQ:null,basePosY:0,bgmWasOn:false,camPos:null,camLook:null,fov:42,free:false,autoDone:false,placing:null,hitIdx:0,fireIdx:0,shake:0};
 const CINE_URL="/configurateur/media/d-minor-resolve.mp3";
 const _lerp=(a,b,t)=>a+(b-a)*t;
 function cineHasFinishes(){ try{const v=activeVariant();return !!(v&&v.slots&&v.slots.some(s=>s.finishId));}catch(e){return false;} }
@@ -4460,67 +4554,100 @@ function updateFire(dt){ if(!fireSys)return; const F=fireSys,pos=F.geo.attribute
   F.geo.attributes.position.needsUpdate=true; F.geo.attributes.color.needsUpdate=true; F.pts.visible=any; }
 function clearFire(){ if(!fireSys)return; fireSys.parts.forEach(p=>{p.life=p.max+1;}); updateFire(0); fireSys.pts.visible=false; }
 
-/* repères atelier (coordonnées locales au dragon : indépendantes de la taille et de l'orientation) */
+/* ---- repères atelier : coordonnées « modèle d'origine, remis debout » (indépendantes du déroulé, de la taille, de l'orientation) ---- */
 function cineMarkers(){ const c=state.config&&state.config.cine; return c||{tail:null,head:null,eyes:null,mouth:null,waypoints:[]}; }
-function cineMarkersWorld(){
-  if(!root) return null; root.updateWorldMatrix(true,true);
-  const m=cineMarkers(), W=p=>p?root.localToWorld(new THREE.Vector3(p.x,p.y,p.z)):null;
-  return {tail:W(m.tail),head:W(m.head),eyes:W(m.eyes),mouth:W(m.mouth),waypoints:(m.waypoints||[]).map(W)};
+const poseFlat=()=>!(state.config&&state.config.pose&&state.config.pose.flat===false);
+/* position monde d'un point du squelette (ancre de l'os de tête) */
+function rigWorld(name){ const r=state.rig; if(!r||!root) return null; const o=r.anchors[name]; if(!o) return null; return o.getWorldPosition(new THREE.Vector3()); }
+/* axe « avant » de la tête en monde (+X de l'os de tête) */
+function rigHeadDir(){ const r=state.rig; if(!r) return new THREE.Vector3(1,0,0); const q=r.headBone.getWorldQuaternion(new THREE.Quaternion()); return new THREE.Vector3(1,0,0).applyQuaternion(q).normalize(); }
+/* la plaque de gravure suit l'os de tête pendant l'animation (delta par rapport au repos, exprimé dans l'espace du wrap) */
+function engraveFollowHead(){
+  const r=state.rig; if(!r||!engravePlateGroup||!root||!state.glb) return;
+  const g=state.glb.scene; g.updateMatrixWorld(true);
+  if(!engravePlateGroup.userData.rest){ engravePlateGroup.updateMatrix(); engravePlateGroup.userData.rest=engravePlateGroup.matrix.clone(); engravePlateGroup.matrixAutoUpdate=false; }
+  const rest=new THREE.Matrix4().makeTranslation(r.boneX[r.nB-1],r.spineY,0);
+  const rel=new THREE.Matrix4().copy(g.matrixWorld).invert().multiply(r.headBone.matrixWorld);   // os de tête dans l'espace gltfScene
+  const dG=rel.multiply(new THREE.Matrix4().copy(rest).invert());
+  const G=g.matrix, dW=new THREE.Matrix4().copy(G).multiply(dG).multiply(new THREE.Matrix4().copy(G).invert());
+  engravePlateGroup.matrix.copy(dW).multiply(engravePlateGroup.userData.rest); engravePlateGroup.matrixWorldNeedsUpdate=true;
 }
-/* construit (ou reconstruit) le squelette dans la pose de base */
-function cineBuild(){
-  if(!root||typeof THREE==="undefined") return null;
-  const {corps}=partGroups(partList);
-  const all=[]; Object.values(partMeshes).forEach(a=>a.forEach(m=>all.push(m)));
-  const body=[]; corps.forEach(p=>(partMeshes[p]||[]).forEach(m=>body.push(m)));
-  let hint=null;
-  try{ const ec=state.config.engrave||{}; if(engravePlateGroup&&state.config.engraving&&state.config.engraving.offered&&(ec.anchor||ec.dx||ec.dy||ec.dz)) hint={plate:engravePlateGroup.getWorldPosition(new THREE.Vector3())}; }catch(e){}
-  try{ return cineBuildPath(THREE,body.length?body:all,all,cineMarkersWorld(),hint); }catch(e){ console.warn("cine path",e); return null; }
-}
+function engraveUnfollow(){ if(!engravePlateGroup||!engravePlateGroup.userData.rest) return; engravePlateGroup.matrix.copy(engravePlateGroup.userData.rest); engravePlateGroup.matrix.decompose(engravePlateGroup.position,engravePlateGroup.quaternion,engravePlateGroup.scale); engravePlateGroup.matrixAutoUpdate=true; engravePlateGroup.userData.rest=null; }
+/* pose de repos du dragon */
+function rigRest(){ const r=state.rig; if(!r) return; dragonPose(r,0,{}); r.bones[r.hip].position.y=r.spineY; }
+
+/* ---- la cinématique : le dragon joue, la caméra accompagne ---- */
 function cineUpdate(){
-  const a=cine.audio, K=cine.K; if(!a||!root||!K) return;
+  const a=cine.audio; if(!a||!root) return;
   const now=performance.now(); const dt=Math.min(0.05,Math.max(0.001,(now-(cine._lt||now))/1000)); cine._lt=now;
   const dur=(isFinite(a.duration)&&a.duration>1)?a.duration:CINE_DUR;
-  const t=(a.currentTime||0)*(CINE_DUR/dur);              // temps « musique » (la mise en scène est écrite pour 20 s)
+  const t=(a.currentTime||0)*(CINE_DUR/dur);
   const {beat}=cineAnalyse();
-  // temps forts programmés (connus de la piste) -> impulsion
-  while(cine.hitIdx<CINE_HITS.length && t>=CINE_HITS[cine.hitIdx]){ cine.pulse=1; cine.hitIdx++; }
-  cine.pulse*=Math.pow(0.08,dt);
-  const hasFin=cineHasFinishes(), hasEng=cineHasEngrave();
-  const u=K.diag; cine.scaleU=u*0.3;
-  // le dragon se cabre (phase feu) : rotation autour de l'axe latéral de la tête, par le centre
-  const up=new THREE.Vector3(0,1,0), hside=new THREE.Vector3().crossVectors(up,K.fwd).normalize();
-  const plateW=engravePlateGroup?engravePlateGroup.getWorldPosition(new THREE.Vector3()):null;
-  const pz=cinePose(THREE,K,t,hasEng,hasFin,cine.userMode,cine.pulse,plateW);
-  const rearA=-pz.rear*0.16;
-  root.quaternion.copy(cine.baseQ); if(rearA) root.rotateOnWorldAxis(hside,rearA);
-  root.position.y=cine.basePosY + pz.rear*0.03*u + cine.pulse*0.012*u*(t>14?1:0);
+  while(cine.hitIdx<CINE_HITS.length && t>=CINE_HITS[cine.hitIdx]){ cine.pulse=1; cine.shake=1; cine.hitIdx++; }
+  cine.pulse*=Math.pow(0.08,dt); cine.shake*=Math.pow(0.02,dt);
+  const hasFin=cineHasFinishes(), hasEng=cineHasEngrave(), r=state.rig;
+  // taille monde du dragon
   root.updateWorldMatrix(true,true);
-  if(hasEng&&engravePlateGroup&&t>=11.57&&t<14.07) engravePlateGroup.visible=true;
-  cineSetMode(pz.mode);
-  // caméra : coupe franche au changement de phase (sur un temps fort), lissage sinon
+  const bb=new THREE.Box3(); Object.values(partMeshes).forEach(arr=>arr.forEach(m=>bb.expandByObject(m)));
+  const C=bb.getCenter(new THREE.Vector3()), S=bb.getSize(new THREE.Vector3()), u=Math.max(S.x,S.y,S.z)||3.6; cine.scaleU=u*0.3;
+  const V=THREE.Vector3, up=new V(0,1,0);
+  // --- le dragon : paramètres de pose selon la phase
+  let P={wave:0,waveFreq:1.1,tailWag:0,rear:0,nod:1,lookYaw:0,pulse:cine.pulse};
+  let camTheta=0, camR=1.0, camH=0.45, look=C.clone(), fov=46, smooth=0.1, fire=false, mode=cine.userMode, lookOnHead=0;
   const phase=t<0.7?0:t<7.5?1:t<11.57?2:t<14.07?3:t<18.39?4:5;
-  if(!cine.camPos||phase!==cine.phase){ cine.camPos=pz.pos.clone(); cine.camLook=pz.look.clone(); cine.phase=phase; cine.fov=pz.fov; }
-  else { const lf=Math.min(1,pz.smooth*dt*60); cine.camPos.lerp(pz.pos,lf); cine.camLook.lerp(pz.look,lf); cine.fov=_lerp(cine.fov,pz.fov,lf); }
-  cine.roll=_lerp(cine.roll||0,pz.roll,Math.min(1,0.08*dt*60)); cine.free=true;
-  // feu : grosses bouffées sur les coups, filet continu entre deux
-  if(pz.fire){
-    const mouthW=root.localToWorld(K.mouthL.clone()), dir=K.fwd.clone().applyAxisAngle(hside,rearA); dir.y+=0.12; dir.normalize();
+  const headW=rigWorld("head")||C, eyesW=rigWorld("eyes")||headW, mouthW=rigWorld("mouth")||headW;
+  const hdir=rigHeadDir(); const hside=new V().crossVectors(up,hdir).normalize();
+  if(phase<=1){                                   // réveil : l'ondulation monte, la caméra glisse de l'arrière-queue au flanc
+    const k=_sm(0.7,7.5,t); P.wave=0.15+0.85*_sm(0.7,4.0,t); P.tailWag=_sm(2.5,6,t); P.waveFreq=0.9+0.4*k;
+    camTheta=_lerp(-2.5,-1.1,k); camR=_lerp(1.25,0.95,k); camH=_lerp(0.55,0.3,k); fov=50; smooth=t<0.7?1:0.06;
+    look.copy(C).lerp(headW,0.35*k);
+  } else if(phase===2){                           // le visage : il se redresse et regarde la caméra
+    const k=_sm(7.5,9.3,t), h=_sm(9.3,11.57,t);
+    P.wave=0.35; P.waveFreq=0.8; P.rear=0.55*k; P.nod=0.9; P.lookYaw=0.75*k;
+    camTheta=_lerp(-0.55,-0.25,h); camR=_lerp(0.62,0.5,h); camH=_lerp(0.28,0.2,h); fov=_lerp(44,38,h); smooth=0.08;
+    look.copy(headW).lerp(eyesW,k); lookOnHead=1; mode=(hasFin&&h>0.25)?"nuit":"ombre";
+  } else if(phase===3){                           // sous la tête : il se cabre, la caméra descend devant lui (gravure)
+    const k=_sm(11.57,12.69,t), k2=_sm(12.69,14.07,t);
+    P.wave=0.2; P.waveFreq=0.7; P.rear=_lerp(0.55,1.2,k); P.nod=_lerp(0.9,-0.35,k); P.lookYaw=_lerp(0.75,0.15,k);
+    camTheta=_lerp(-0.25,0.1,k2); camR=_lerp(0.5,hasEng?0.6:0.55,k); camH=_lerp(0.2,hasEng?-0.2:-0.05,k); fov=42; smooth=0.08;
+    const plateW=(hasEng&&engravePlateGroup)?engravePlateGroup.getWorldPosition(new V()):headW.clone().addScaledVector(up,-u*0.06);
+    look.copy(eyesW).lerp(plateW,k); lookOnHead=1; mode="ombre";
+  } else if(phase===4){                           // le feu : cabré, la tête part en avant sur chaque coup
+    const k=_sm(14.07,14.74,t), rr=_sm(14.74,18.39,t);
+    let strike=0; for(const h of CINE_FIRE_HITS){ const d=t-h; if(d>=0&&d<0.45) strike=Math.max(strike,1-d/0.45); }
+    P.wave=0.3+0.3*cine.pulse; P.waveFreq=1.3; P.rear=_lerp(1.2,0.95,k)+0.15*strike; P.nod=_lerp(-0.35,0.3,k)-0.9*strike; P.lookYaw=_lerp(0.15,0.35,k);
+    camTheta=_lerp(0.1,-1.25,rr); camR=_lerp(0.62,1.0,rr*rr); camH=_lerp(0.1,0.35,rr); fov=_lerp(44,50,rr); smooth=k<1?0.12:0.06;
+    look.copy(mouthW).lerp(C,rr*0.6).addScaledVector(up,u*0.04*(1-rr)); fire=t>=14.6; mode=cine.userMode;
+  } else {                                        // plan final : il se repose
+    const k=_sm(18.39,20,t);
+    P.wave=_lerp(0.4,0.1,k); P.waveFreq=0.8; P.rear=_lerp(0.95,0.25,k); P.nod=0.6; P.lookYaw=_lerp(0.35,0.5,k);
+    camTheta=_lerp(-1.25,-1.65,k); camR=_lerp(1.0,0.95,k); camH=_lerp(0.35,0.32,k); fov=48; smooth=0.05; look.copy(C).lerp(headW,0.3);
+  }
+  // --- applique la pose du dragon
+  if(r){ dragonPose(r,t,P); root.updateWorldMatrix(true,true); engraveFollowHead(); }
+  if(hasEng&&engravePlateGroup&&phase===3) engravePlateGroup.visible=true;
+  cineSetMode(mode);
+  // --- caméra : orbite autour du centre (ou de la tête), angle mesuré depuis l'axe de la tête
+  const pivot=lookOnHead?headW:C;
+  const dirC=hdir.clone().applyAxisAngle(up,camTheta).normalize();
+  const pos=pivot.clone().addScaledVector(dirC,camR*u).addScaledVector(up,camH*u);
+  if(cine.shake>0.01){ const s=cine.shake*u*0.012; pos.x+=(Math.random()-0.5)*s; pos.y+=(Math.random()-0.5)*s; }
+  if(!cine.camPos||phase!==cine.phase){ cine.camPos=pos.clone(); cine.camLook=look.clone(); cine.phase=phase; cine.fov=fov; }
+  else { const lf=Math.min(1,smooth*dt*60); cine.camPos.lerp(pos,lf); cine.camLook.lerp(look,lf); cine.fov=_lerp(cine.fov,fov,lf); }
+  cine.free=true;
+  // --- feu : bouffées sur les coups, filet entre deux
+  if(fire){
+    const dir=hdir.clone(); dir.y+=0.1; dir.normalize();
     while(cine.fireIdx<CINE_FIRE_HITS.length && t>=CINE_FIRE_HITS[cine.fireIdx]){ emitFire(mouthW,dir,cine.scaleU,55); cine.fireIdx++; }
     if(beat||Math.random()<dt*14) emitFire(mouthW,dir,cine.scaleU*0.8,10);
   }
   updateFire(dt);
-  // fondu noir à l'ouverture et à la fermeture
   const fade=document.getElementById("cinefade"); if(fade) fade.style.opacity=String(Math.max(1-_sm(0.0,0.7,t), _sm(19.3,19.95,t)));
 }
 function cineStart(auto){
   if(cine.active||!root) return;
   const a=document.getElementById("cineaudio"); if(!a) return;
   cam.auto=false; try{frameScene();}catch(e){}
-  try{ root.updateWorldMatrix(true,true); }catch(e){}
-  cine.K=cineBuild();
-  if(!cine.K){ if(!auto) toast("Cinématique indisponible pour ce modèle."); return; }
-  cine.K.mouthL=root.worldToLocal(cine.K.mouth.clone());
   cine.audio=a; a.src=CINE_URL; try{a.currentTime=0;}catch(e){} a.volume=0.9;
   const bgm=document.getElementById("bgm"); cine.bgmWasOn=bgm&&!bgm.paused; if(cine.bgmWasOn) bgm.pause();
   try{ const AC=window.AudioContext||window.webkitAudioContext;
@@ -4531,11 +4658,11 @@ function cineStart(auto){
         cine.srcNode.connect(cine.analyser); cine.analyser.connect(cine.actx.destination); } }
   }catch(e){ cine.analyser=null; }
   cine.userMode=state.view.mode||"ombre"; cine.curMode=null;
-  cine.baseQ=root.quaternion.clone(); cine.basePosY=root.position.y;
-  cine.bassAvg=0; cine.lastBeat=0; cine.pulse=0; cine.beat=0; cine._lt=performance.now(); cine.hitIdx=0; cine.fireIdx=0; cine.phase=-1; cine.roll=0; cine.fov=42;
+  cine.bassAvg=0; cine.lastBeat=0; cine.pulse=0; cine.shake=0; cine.beat=0; cine._lt=performance.now(); cine.hitIdx=0; cine.fireIdx=0; cine.phase=-1; cine.fov=42;
   cine.camPos=null; cine.camLook=null; cine.free=false;
   try{ createFire(); clearFire(); }catch(e){}
-  gaugeLabels.forEach(s=>{ s.userData._v=s.visible; s.visible=false; });   // cote masquée pendant la cinématique
+  gaugeLabels.forEach(s=>{ s.userData._v=s.visible; s.visible=false; });
+  if(refGroup) refGroup.visible=false;
   if(cineMarkerGroup) cineMarkerGroup.visible=false;
   document.body.classList.add("cine");
   const fade=document.getElementById("cinefade"); if(fade) fade.style.opacity="1";
@@ -4550,9 +4677,10 @@ function cineStop(restore){
   const sk=document.getElementById("cineSkip"); if(sk) sk.hidden=true;
   const fade=document.getElementById("cinefade"); if(fade) fade.style.opacity="0";
   try{ clearFire(); }catch(e){}
-  cine.free=false; cine.K=null;
-  gaugeLabels.forEach(s=>{ if(s.userData._v!==undefined) s.visible=s.userData._v; });   // restaure la cote
-  if(root){ if(cine.baseQ) root.quaternion.copy(cine.baseQ); root.position.y=cine.basePosY||0; }
+  cine.free=false;
+  gaugeLabels.forEach(s=>{ if(s.userData._v!==undefined) s.visible=s.userData._v; });
+  if(refGroup) refGroup.visible=true;
+  try{ rigRest(); engraveUnfollow(); }catch(e){}
   if(camera){ camera.fov=42; camera.updateProjectionMatrix(); }
   if(cineMarkerGroup) cineMarkerGroup.visible=(state.mode==="atelier");
   try{ updateEngraveVisibility(); }catch(e){}
@@ -4560,53 +4688,55 @@ function cineStop(restore){
   cine.curMode=null; cam.auto=true; cam.tx=0; cam.tz=0; try{frameScene();}catch(e){}
   if(cine.bgmWasOn){ const bgm=document.getElementById("bgm"); if(bgm) bgm.play().catch(()=>{}); }
 }
-/* ---- repères de cinématique (atelier) : placement au clic sur le dragon ---- */
+/* ---- repères (atelier) : placement au clic sur le dragon ---- */
 let cineMarkerGroup=null;
 const CINE_MARKER_DEFS=[["tail","Bout de queue",0x4caf50],["head","Centre de la tête",0xffffff],["eyes","Yeux",0x2fd2ff],["mouth","Gueule (départ du feu)",0xff3fb0]];
 function cineMarkersRefresh(){
-  if(!root||typeof THREE==="undefined") return;
-  if(cineMarkerGroup){ root.remove(cineMarkerGroup); cineMarkerGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();}); cineMarkerGroup=null; }
-  if(state.mode!=="atelier") return;
-  const m=cineMarkers(); const g=new THREE.Group(); const s=1/((root.scale.x)||1);
-  const add=(p,col,r)=>{ if(!p)return; const mesh=new THREE.Mesh(new THREE.SphereGeometry(r*s,12,10),new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.9})); mesh.position.set(p.x,p.y,p.z); mesh.renderOrder=20; g.add(mesh); };
+  if(cineMarkerGroup){ if(cineMarkerGroup.parent) cineMarkerGroup.parent.remove(cineMarkerGroup); cineMarkerGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();}); cineMarkerGroup=null; }
+  const r=state.rig; if(!r||!root||!state.glb||state.mode!=="atelier") return;
+  const gs=state.glb.scene, m=cineMarkers(); const g=new THREE.Group(); const s=1/(((root.scale.x)||1)*((gs.scale.x)||1));
+  const add=(p,col,rad)=>{ if(!p)return; const q=r.flatOf(new THREE.Vector3(p.x,p.y,p.z)); if(!q)return;
+    const mesh=new THREE.Mesh(new THREE.SphereGeometry(rad*s,12,10),new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.9})); mesh.position.copy(q); mesh.renderOrder=20; mesh.userData.helper=true; g.add(mesh); };
   CINE_MARKER_DEFS.forEach(([k,,col])=>add(m[k],col,0.09));
   (m.waypoints||[]).forEach(p=>add(p,0xffc400,0.06));
-  cineMarkerGroup=g; root.add(g);
+  cineMarkerGroup=g; gs.add(g);
 }
 function cineMarkerClick(e){
   if(!cine.placing||!root||!camera) return false;
+  if(!state.rig){ toast("Active d'abord « Dragon redressé à plat »."); return true; }
   const c=document.getElementById("view"), rect=c.getBoundingClientRect();
   const nx=((e.clientX-rect.left)/rect.width)*2-1, ny=-((e.clientY-rect.top)/rect.height)*2+1;
   const rc=new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2(nx,ny),camera);
   const meshes=[]; Object.values(partMeshes).forEach(a=>a.forEach(mm=>meshes.push(mm)));
   const hits=rc.intersectObjects(meshes,false); if(!hits.length){ toast("Clique sur le dragon."); return true; }
-  const local=root.worldToLocal(hits[0].point.clone()); const p={x:+local.x.toFixed(4),y:+local.y.toFixed(4),z:+local.z.toFixed(4)};
+  const h=hits[0]; const o=state.rig.origOf(h.object,h.face?h.face.a:0); if(!o){ toast("Point introuvable."); return true; }
+  const p={x:+o.x.toFixed(4),y:+o.y.toFixed(4),z:+o.z.toFixed(4)};
   snapshot(); const m=state.config.cine||(state.config.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]});
   if(cine.placing==="waypoint"){ (m.waypoints=m.waypoints||[]).push(p); } else m[cine.placing]=p;
-  const def=CINE_MARKER_DEFS.find(d=>d[0]===cine.placing); toast((def?def[1]:"Point de passage")+" placé");
-  cine.placing=null; document.body.classList.remove("placing"); saveConfig(); cineMarkersRefresh(); renderPanel(); return true;
+  const def=CINE_MARKER_DEFS.find(d=>d[0]===cine.placing); toast((def?def[1]:"Point de passage")+" placé — dragon recalculé");
+  cine.placing=null; document.body.classList.remove("placing"); saveConfig(); rebuildModel(); renderPanel(); return true;
 }
 function cineControls(){
   const wrap=el("div"); const m=cineMarkers();
-  wrap.appendChild(el("p","hintline","La cinématique du récap se construit <b>automatiquement</b> : squelette extrait du modèle (vol en rase-motte de la queue à la tête), puis yeux, gravure sous la tête et souffle de feu. Si la tête ou la queue sont mal détectées, place des repères en cliquant sur le dragon."));
+  wrap.appendChild(el("p","hintline","La cinématique du récap anime le <b>dragon lui-même</b> (ondulation, il se redresse, regarde, se cabre et crache le feu) sur les temps forts de la musique. Tout est automatique à partir du dragon redressé ; si la tête ou la queue sont mal détectées, place des repères en cliquant sur le dragon (le modèle est recalculé)."));
   const row=el("div"); row.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0";
   const mkBtn=(label,key)=>{ const b=el("button","addbtn",(cine.placing===key?"Clique sur le dragon… ":"")+label); b.type="button";
     if(cine.placing===key) b.style.background="var(--accent)";
     b.onclick=()=>{ cine.placing=(cine.placing===key)?null:key; document.body.classList.toggle("placing",!!cine.placing); cam.auto=false; renderPanel(); }; return b; };
   CINE_MARKER_DEFS.forEach(([k,label])=>row.appendChild(mkBtn((m[k]?"✓ ":"")+label,k)));
   row.appendChild(mkBtn("+ Point de passage","waypoint")); wrap.appendChild(row);
-  const set=CINE_MARKER_DEFS.filter(([k])=>m[k]).map(([k,label])=>label).concat((m.waypoints||[]).map((p,i)=>"Passage "+(i+1)));
-  if(set.length){
+  const hasAny=CINE_MARKER_DEFS.some(([k])=>m[k])||(m.waypoints||[]).length;
+  if(hasAny){
     const ul=el("div"); ul.style.cssText="display:flex;flex-direction:column;gap:4px;margin:4px 0";
-    CINE_MARKER_DEFS.filter(([k])=>m[k]).forEach(([k,label])=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;align-items:center;font-size:12.5px";
-      r.appendChild(el("span",null,label)); const x=el("button","addbtn","✕"); x.type="button"; x.onclick=()=>{snapshot();state.config.cine[k]=null;saveConfig();cineMarkersRefresh();renderPanel();}; r.appendChild(x); ul.appendChild(r); });
-    (m.waypoints||[]).forEach((p,i)=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;align-items:center;font-size:12.5px";
-      r.appendChild(el("span",null,"Point de passage "+(i+1))); const x=el("button","addbtn","✕"); x.type="button"; x.onclick=()=>{snapshot();state.config.cine.waypoints.splice(i,1);saveConfig();cineMarkersRefresh();renderPanel();}; r.appendChild(x); ul.appendChild(r); });
+    const line=(label,fn)=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;align-items:center;font-size:12.5px"; r.appendChild(el("span",null,label)); const x=el("button","addbtn","✕"); x.type="button"; x.onclick=fn; r.appendChild(x); ul.appendChild(r); };
+    CINE_MARKER_DEFS.filter(([k])=>m[k]).forEach(([k,label])=>line(label,()=>{snapshot();state.config.cine[k]=null;saveConfig();rebuildModel();renderPanel();}));
+    (m.waypoints||[]).forEach((p,i)=>line("Point de passage "+(i+1),()=>{snapshot();state.config.cine.waypoints.splice(i,1);saveConfig();rebuildModel();renderPanel();}));
     wrap.appendChild(ul);
     const reset=el("button","addbtn","Tout remettre en automatique"); reset.type="button";
-    reset.onclick=()=>{snapshot();state.config.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]};saveConfig();cineMarkersRefresh();renderPanel();toast("Détection automatique");};
+    reset.onclick=()=>{snapshot();state.config.cine={tail:null,head:null,eyes:null,mouth:null,waypoints:[]};saveConfig();rebuildModel();renderPanel();toast("Détection automatique");};
     wrap.appendChild(reset);
-  } else wrap.appendChild(el("p","hintline","Aucun repère : tout est automatique. Les points de passage (dans l'ordre queue → tête) forcent le trajet du vol."));
+  } else wrap.appendChild(el("p","hintline","Aucun repère : tout est automatique. Les points de passage (dans l'ordre queue → tête) forcent le trajet de la colonne."));
+  if(state.rig) wrap.appendChild(el("p","hintline",`Squelette : ${state.rig.nB} segments (${state.rig.mode==="rigid"?"pièces rigides":"déformation continue"}).`));
   const prev=el("button","cinebtn","▶ Aperçu de la cinématique"); prev.type="button"; prev.style.marginTop="10px";
   prev.onclick=()=>{ if(!cine.active) cineStart(false); };
   wrap.appendChild(prev);
@@ -4718,6 +4848,7 @@ function positionEngravePlate(){
   if(!engravePlateGroup||!lastBox)return;
   const ec=(state.config&&state.config.engrave)||{dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""};
   let ax=0, ay=lastBox.min.y-0.02, az=lastBox.max.z*0.3;
+  if(state.rig&&state.glb){ const gs=state.glb.scene; const h=gs.localToWorld(new THREE.Vector3(state.rig.headP.x,state.rig.headP.y,state.rig.headP.z)); root.worldToLocal(h); ax=h.x; az=h.z; }   // sous la tête détectée
   const meshes=ec.anchor&&partMeshes[ec.anchor];
   if(meshes&&meshes.length){                                   // ancrer sous la partie choisie (ex. la tete)
     const b=new THREE.Box3(); meshes.forEach(m=>b.expandByObject(m));
@@ -4854,16 +4985,38 @@ function buildPlaceholder(){
 }
 function mountGLB(gltfScene){
   partMaterials={}; partList=[]; partMeshes={};
-  gltfScene.traverse(o=>{ if(o.isMesh){
+  // repart d'une scène « nue » : détachée de l'ancien wrap, transformation identité (le squelette
+  // et le redressement travaillent dans l'espace local du modèle), sans les aides de l'atelier.
+  if(cineMarkerGroup&&cineMarkerGroup.parent){ cineMarkerGroup.parent.remove(cineMarkerGroup); }
+  if(gltfScene.parent) gltfScene.parent.remove(gltfScene);
+  gltfScene.position.set(0,0,0); gltfScene.quaternion.identity(); gltfScene.scale.setScalar(1); gltfScene.updateMatrixWorld(true);
+  const names=[];
+  gltfScene.traverse(o=>{ if(o.isMesh&&!o.userData.helper){
     if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
-    o.material=(o.material&&o.material.clone)?o.material.clone():stdMat("#888");
+    if(!o.userData.matDone){ o.material=(o.material&&o.material.clone)?o.material.clone():stdMat("#888"); o.userData.matDone=true; }
     o.material.side=THREE.DoubleSide;
     if("metalness"in o.material){o.material.metalness=.15;o.material.roughness=.62;}
-    const nm=o.name||o.material.name||("part_"+partList.length);
-    (partMaterials[nm]=partMaterials[nm]||[]).push(o.material);
-    (partMeshes[nm]=partMeshes[nm]||[]).push(o); if(!partList.includes(nm))partList.push(nm);
+    const nm=o.name||o.material.name||("part_"+names.length); o.userData.partName=nm; if(!names.includes(nm))names.push(nm);
   }});
+  // Redressement à plat + squelette (pièces rigides) : le dragon est déroulé sur une ligne,
+  // tête vers +X, AVANT la normalisation, pour que « Taille » mesure sa vraie longueur.
+  state.rig=null;
+  if(poseFlat()){
+    const corps=partGroups(names).corps;
+    try{ state.rig=dragonRig(THREE,gltfScene,n=>corps.includes(n),cineMarkers(),{}); if(state.rig&&!state.rig.nB) state.rig=null; }
+    catch(e){ console.warn("redressement impossible",e); state.rig=null; }
+  } else {
+    // pose d'origine : géométries d'origine (si elles ont déjà été déroulées), maillages simples
+    gltfScene.traverse(o=>{ if(o.isMesh&&o.userData.orig){ const g=o.geometry; g.attributes.position.array.set(o.userData.orig.pos); g.attributes.position.needsUpdate=true; g.attributes.normal.array.set(o.userData.orig.nor); g.attributes.normal.needsUpdate=true; g.computeBoundingBox(); g.computeBoundingSphere(); } });
+    (gltfScene.userData.rigBones||[]).forEach(b=>{ if(b.parent) b.parent.remove(b); }); gltfScene.userData.rigBones=null;
+    const sk=[]; gltfScene.traverse(o=>{ if(o.isSkinnedMesh) sk.push(o); });
+    sk.forEach(o=>{ const m=new THREE.Mesh(o.geometry,o.material); m.name=o.name; m.userData=o.userData; o.material.skinning=false; o.material.needsUpdate=true; o.parent.add(m); o.parent.remove(o); });
+  }
+  gltfScene.traverse(o=>{ if(o.isMesh&&!o.userData.helper){ const nm=o.userData.partName||o.name;
+    (partMaterials[nm]=partMaterials[nm]||[]).push(o.material);
+    (partMeshes[nm]=partMeshes[nm]||[]).push(o); if(!partList.includes(nm))partList.push(nm); }});
   const wrap=new THREE.Group();
+  gltfScene.position.set(0,0,0); gltfScene.scale.setScalar(1); gltfScene.updateMatrixWorld(true);
   const box=new THREE.Box3().setFromObject(gltfScene);
   const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
   const maxDim=Math.max(size.x,size.y,size.z)||1, sc=3.6/maxDim;
@@ -4883,7 +5036,7 @@ function rebuildModel(){
 function applyOrient(){
   if(!root||!state.config||!state.config.orient) return;
   root.rotation.y=state.config.orient.ry||0;
-  root.rotation.x=state.config.orient.rx||0;
+  root.rotation.x=(state.rig?0:(state.config.orient.rx||0));   // redressé à plat : l'inclinaison manuelle est ignorée
 }
 function applyVertexColors(geo,stops,banded){
   const pos=geo.attributes.position,n=pos.count; let mn=Infinity,mx=-Infinity;
@@ -4957,7 +5110,7 @@ async function glbBuffer(m){
 async function selectModel(m){
   if(!m)return;
   if(m.src==="placeholder"||!m.glbUrl){
-    state.glb=null; state.modelKey=m.key; state.config=loadConfig(["body","wings","spine"]);
+    state.glb=null; state.rig=null; state.modelKey=m.key; state.config=loadConfig(["body","wings","spine"]);
     rebuildModel(); render(); applyPendingShare(); return;
   }
   if(!GLTF_OK){ toast("Chargeur 3D indisponible."); return; }
@@ -5295,14 +5448,22 @@ function makeCollapsible(P){
 function orientControls(){
   const o=state.config.orient||(state.config.orient={ry:0,rx:0});
   const wrap=el("div");
+  const pf=el("div","field");pf.style.marginBottom="10px";pf.innerHTML='<label>Redresser le dragon à plat (automatique)</label>';
+  const cbf=el("input");cbf.type="checkbox";cbf.checked=poseFlat();cbf.style.width="auto";
+  cbf.onchange=()=>{ snapshot(); state.config.pose=state.config.pose||{}; state.config.pose.flat=cbf.checked; saveConfig(); rebuildModel(); renderPanel(); toast(cbf.checked?"Dragon déroulé à plat":"Pose d'origine du fichier"); };
+  pf.appendChild(cbf); wrap.appendChild(pf);
+  wrap.appendChild(el("p","hintline",state.rig
+    ? `Le dragon est déroulé sur une ligne droite, à plat (${state.rig.nB} segments). La cote « Taille » mesure sa vraie longueur et la cinématique l'anime segment par segment.`
+    : "Pose du fichier conservée (pas de squelette : la cinématique n'animera pas le dragon)."));
   const row=el("div");row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;align-items:center";
   const mk=(txt,title,fn)=>{const b=el("button","addbtn",txt);b.title=title;b.style.padding="7px 11px";
     b.onclick=()=>{fn();saveConfig();applyOrient();frameScene();renderPanel();};return b;};
   const d=Math.PI/12;   // 15°
   row.appendChild(mk("↺ 15°","Tourner à gauche",()=>o.ry-=d));
   row.appendChild(mk("↻ 15°","Tourner à droite",()=>o.ry+=d));
-  row.appendChild(mk("⤯ Incliner −","Pencher vers l'arrière",()=>o.rx-=Math.PI/36));
-  row.appendChild(mk("⤰ Incliner +","Pencher vers l'avant",()=>o.rx+=Math.PI/36));
+  if(!state.rig){
+    row.appendChild(mk("⤯ Incliner −","Pencher vers l'arrière",()=>o.rx-=Math.PI/36));
+    row.appendChild(mk("⤰ Incliner +","Pencher vers l'avant",()=>o.rx+=Math.PI/36)); }
   row.appendChild(mk("Réinit.","Remettre à zéro",()=>{o.ry=0;o.rx=0;}));
   wrap.appendChild(row);
   const f=el("div","field");f.style.marginTop="10px";f.innerHTML='<label>Rotation (°)</label>';
