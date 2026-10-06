@@ -66,6 +66,10 @@
   .swatch[aria-pressed="true"]{border-color:var(--card);box-shadow:0 0 0 2px var(--accent)}
   .swatch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
+  /* Baseline thème pour tous les champs texte (sinon fond blanc hors thème) */
+  input[type=text],input[type=number],input[type=search],input[type=email],input[type=tel],input[type=url],input:not([type]){
+    font:inherit;color:var(--ink);background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+  input::placeholder{color:var(--muted);opacity:.8}
   .zoneAdmin{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:9px}
   .zoneAdmin .top{display:flex;gap:8px;align-items:center;margin-bottom:9px}
   .zoneAdmin input[type=text]{flex:1;font:inherit;font-size:13.5px;font-weight:600;padding:6px 9px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
