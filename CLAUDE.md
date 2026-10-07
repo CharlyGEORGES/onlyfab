@@ -14,6 +14,13 @@
   **généré** par `configurator/build.py` (three.js et GLTFLoader inlinés) : modifier la
   source, puis reconstruire, et committer les deux.
 
+## Tailles : cinq paliers S / M / L / XL / Monster
+- `config.size.tiers = [{key,label,pct}]` : chaque palier est un % de la plage min–max réglée en
+  atelier (« Taille & prix »), converti en cm côté client (`tierCm`). `size.tier` = palier choisi,
+  `size.value` = ses cm (toujours tenus à jour par `setTier`). Libellé client : `sizeLabel()` → « M (9 cm) ».
+- Gravure : `engraving.minTier` (« disponible à partir de M »), `minPct` gardé en miroir.
+- Shopify : l'option Taille porte « M (9 cm) » (le pont lit le nombre) ; le générateur prend les paliers de l'atelier.
+
 ## Référence de configuration (panier / partage)
 - Chaque ajout au panier et chaque « Copier le lien de ce dragon » (récap) enregistrent la
   configuration dans `configurator_shares` (serveur) sous une référence de 8 caractères.

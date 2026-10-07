@@ -10,7 +10,7 @@
  * SHOPIFY_ADMIN_TOKEN (jeton Admin API, scopes write_products + write_publications).
  *
  * Conventions (lues par le pont onlyfab-configurator.js) :
- *   - options  : Taille (« 6 cm »…) × Finition (« <déclinaison> » / « <déclinaison> premium »)
+ *   - options  : Taille (paliers de l'atelier, « M (9 cm) »…) × Finition (« <déclinaison> » / « <déclinaison> premium »)
  *                [× Gravure (Sans / Avec) seulement si la gravure est payante dans l'atelier]
  *   - prix     : base_déclinaison × (cm / refCm) ^ exposant  (+ supplément premium) (+ frais de gravure s'il y a l'axe)
  *   - produit  : statut UNLISTED (lien direct seulement), métachamp onlyfab.model_key = clé du modèle,
@@ -34,6 +34,12 @@ const cfg = (configs.configs || {})[key];
 if (!model || !cfg) { console.error(`modèle « ${key} » introuvable sur ${SERVER}`); process.exit(1); }
 
 const sz = cfg.size || {}, ref = sz.refCm || 10, exp = sz.exp || 2;
+// Paliers de taille de l'atelier (S / M / L / XL / Monster, % de la plage) -> valeurs d'option
+// « M (9 cm) » : le pont lit le nombre. --sizes 6,9,12 force des cm nus.
+const tierCm = t => Math.round((sz.min + ((sz.max - sz.min) || 0) * ((t.pct || 0) / 100)) * 2) / 2;
+const TIERS = (!args.includes('--sizes') && Array.isArray(sz.tiers) && sz.tiers.length)
+  ? sz.tiers.map(t => ({ label: `${t.label || t.key} (${tierCm(t)} cm)`, cm: tierCm(t) }))
+  : SIZES.map(cm => ({ label: `${cm} cm`, cm }));
 const prem = (cfg.premium && cfg.premium.surcharge) || 0;
 // Axe « Gravure » seulement si la gravure est proposée ET payante dans l'atelier (frais > 0).
 // Décision Onlyfab : la gravure est incluse dans le prix (frais 0) -> pas d'axe, le texte gravé
@@ -45,9 +51,10 @@ const finitions = [];
 for (const v of cfg.variants || []) { finitions.push({ name: v.name, base: v.price, premium: false }); finitions.push({ name: `${v.name} premium`, base: v.price, premium: true }); }
 const gravures = grav == null ? [] : ['Sans', 'Avec'];
 const variants = [];
-for (const cm of SIZES) for (const f of finitions) for (const g of (gravures.length ? gravures : [null])) {
+for (const tier of TIERS) for (const f of finitions) for (const g of (gravures.length ? gravures : [null])) {
+  const cm = tier.cm;
   const price = f.base * Math.pow(cm / ref, exp) + (f.premium ? prem : 0) + (g === 'Avec' ? grav : 0);
-  const optionValues = [{ optionName: 'Taille', name: `${cm} cm` }, { optionName: 'Finition', name: f.name }];
+  const optionValues = [{ optionName: 'Taille', name: tier.label }, { optionName: 'Finition', name: f.name }];
   if (g) optionValues.push({ optionName: 'Gravure', name: g });
   variants.push({ price: price.toFixed(2), inventoryPolicy: 'CONTINUE', inventoryItem: { tracked: false }, optionValues });
 }
@@ -60,7 +67,7 @@ const product = {
   descriptionHtml: `<p>Dragon articulé imprimé en 3D dans notre atelier de Fontainebleau. Choisis sa taille, ses couleurs, sa finition et une gravure personnalisée directement dans le configurateur 3D.</p>`,
   metafields: [{ namespace: 'onlyfab', key: 'model_key', type: 'single_line_text_field', value: key }],
   productOptions: [
-    { name: 'Taille', position: 1, values: SIZES.map(cm => ({ name: `${cm} cm` })) },
+    { name: 'Taille', position: 1, values: TIERS.map(t => ({ name: t.label })) },
     { name: 'Finition', position: 2, values: finitions.map(f => ({ name: f.name })) },
     ...(gravures.length ? [{ name: 'Gravure', position: 3, values: gravures.map(g => ({ name: g })) }] : []),
   ],

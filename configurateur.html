@@ -3942,6 +3942,16 @@
   .cbill li.tot{border-top:1px solid var(--line);margin-top:6px;padding-top:8px;font-weight:600;font-size:16px;color:var(--ink);font-family:'Fraunces',Georgia,serif}
   .spec{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:11.5px;color:var(--muted);margin-top:6px}
   .spec b{color:var(--ink)}
+  .tiers{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:6px 0 10px}
+  .tierbtn{appearance:none;cursor:pointer;font:inherit;color:var(--ink);background:var(--card2);border:2px solid var(--line);border-radius:12px;
+    padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:border-color .12s,transform .1s}
+  .tierbtn:hover:not(:disabled){transform:translateY(-1px);border-color:var(--muted)}
+  .tierbtn[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--card2))}
+  .tierbtn:disabled{opacity:.42;cursor:not-allowed}
+  .tierbtn .tl{font-family:'Fraunces',serif;font-weight:600;font-size:17px;line-height:1}
+  .tierbtn .tc{font-size:11.5px;color:var(--muted)}
+  .tierbtn .tp{font-size:12px;font-weight:600;margin-top:2px}
+  @media (max-width:480px){.tiers{grid-template-columns:repeat(5,1fr);gap:5px}.tierbtn .tl{font-size:15px}.tierbtn .tp{font-size:11px}}
   /* curseur taille : plage sous le seuil de gravure grisée */
   input[type=range].rg-min::-webkit-slider-runnable-track{background:linear-gradient(to right,
     color-mix(in srgb,var(--muted) 55%,var(--line)) 0, color-mix(in srgb,var(--muted) 55%,var(--line)) var(--lo,0%),
@@ -4101,13 +4111,13 @@ function defaultConfigForParts(parts){
   return { variants, activeVariantId:vUnie.id, fixedColor:"#26262e",
            premium:{ colors:TENANT.palette.filter(p=>p.premium).map(p=>p.hex), surcharge:2 },
            finishes:defaultFinishes(),
-           engraving:{offered:true,added:false,fee:TENANT.defaults.engravingFee,maxLen:TENANT.defaults.engravingMax,minPct:40,rot:0,text:""},
+           engraving:{offered:true,added:false,fee:TENANT.defaults.engravingFee,maxLen:TENANT.defaults.engravingMax,minPct:25,minTier:"M",rot:0,text:""},
            placard:{dx:0,dy:0,dz:0,scale:1,visible:true},
            engrave:{dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""},
            orient:{ry:0,rx:0},
            cine:{tail:null,head:null,eyes:null,mouth:null,waypoints:[]},
            pose:{unroll:false},
-           size:{min:6,max:18,value:10,refCm:10,exp:2,gauge:true} };
+           size:{min:6,max:18,value:9,refCm:10,exp:2,gauge:true,tiers:SIZE_TIERS_DEFAULT(),tier:"M"} };
 }
 function loadConfig(parts){
   try{ const sc=SERVER_CONFIGS[state.modelKey]; if(sc){ const c=JSON.parse(JSON.stringify(sc));
@@ -4134,12 +4144,20 @@ function loadConfig(parts){
       if(c.size.valuePct===undefined) c.size.valuePct=pct(c.size.value);
       if(c.size.refPct===undefined)   c.size.refPct=pct(c.size.refCm); }
     if(c.size.pricePerCm!==undefined) delete c.size.pricePerCm;
+    // paliers S/M/L/XL/Monster (% de la plage) ; migration : palier le plus proche de la valeur
+    if(!Array.isArray(c.size.tiers)||!c.size.tiers.length) c.size.tiers=SIZE_TIERS_DEFAULT();
+    c.size.tiers.forEach((t,i)=>{ if(!t.key) t.key="T"+i; if(!t.label) t.label=t.key; t.pct=Math.max(0,Math.min(100,+t.pct||0)); });
+    if(!c.size.tier||!c.size.tiers.find(t=>t.key===c.size.tier)){ const rng=(c.size.max-c.size.min)||0; const cmOf=t=>c.size.min+rng*(t.pct/100);
+      let b=c.size.tiers[0],bd=Infinity; c.size.tiers.forEach(t=>{ const d=Math.abs(cmOf(t)-c.size.value); if(d<bd){bd=d;b=t;} }); c.size.tier=b.key; }
     const e=c.engraving||{};
     let minPct=(e.minPct!=null?e.minPct:null);
     if(minPct==null){ const rng=(c.size.max-c.size.min)||1; minPct=(e.minCm!=null)?Math.max(0,Math.min(100,Math.round((e.minCm-c.size.min)/rng*100))):40; }
+    // minimum de gravure par palier (« à partir de M ») ; migration depuis l'ancien % : 1er palier >= seuil
+    let minTier=(e.minTier!==undefined)?e.minTier:undefined;
+    if(minTier===undefined){ minTier=null; if(minPct>0){ const t=c.size.tiers.find(t=>t.pct>=minPct-1e-9); minTier=t?t.key:null; } }
     c.engraving={ offered:(e.offered!==undefined?e.offered:true), added:!!e.added,
       fee:(e.fee!=null?e.fee:TENANT.defaults.engravingFee), maxLen:(e.maxLen||TENANT.defaults.engravingMax),
-      minPct:minPct, rot:(e.rot||0), text:(e.text||"") };
+      minPct:minPct, minTier:minTier, rot:(e.rot||0), text:(e.text||"") };
     return c; } }catch(e){}
   return seedConfig(defaultConfigForParts(parts), state.modelKey);   // 1re ouverture d'un modèle : défauts spécifiques
 }
@@ -4169,18 +4187,31 @@ function slotSurcharge(s){ if(s.finishId){const f=finishById(s.finishId);return 
 function engraveMinCm(){
   const eng=state.config&&state.config.engraving, sz=state.config&&state.config.size;
   if(!eng||!sz) return 0;
+  const t=eng.minTier?tierByKey(eng.minTier):null;
+  if(t) return tierCm(t);                                   // « gravure disponible à partir de M »
   return sz.min + ((eng.minPct||0)/100)*((sz.max-sz.min)||0);
 }
 const engMinCmDisp=()=>Math.round(engraveMinCm()*2)/2;
 /* gravure choisie ? -> taille minimale effective (bornée à la plage) */
-function engraveChosen(){ const e=state.config&&state.config.engraving; return !!(e&&e.offered&&e.added&&e.minPct>0); }
+function engraveHasMin(){ const e=state.config&&state.config.engraving, sz=state.config&&state.config.size; if(!e||!sz)return false; const t=e.minTier?tierByKey(e.minTier):null; return t?(tierCm(t)>sz.min):(e.minPct>0); }
+function engraveChosen(){ const e=state.config&&state.config.engraving; return !!(e&&e.offered&&e.added&&engraveHasMin()); }
 function engEffMin(){ const sz=state.config&&state.config.size; if(!sz)return 0; return engraveChosen()?Math.max(sz.min,Math.min(sz.max,engMinCmDisp())):sz.min; }
 function engraveError(){
   const eng=state.config&&state.config.engraving, sz=state.config&&state.config.size;
-  return !!(eng&&eng.offered&&eng.added&&(eng.text||"").trim()&&(eng.minPct>0)&&sz&&sz.value<engMinCmDisp()-1e-9);
+  return !!(eng&&eng.offered&&eng.added&&(eng.text||"").trim()&&engraveHasMin()&&sz&&sz.value<engMinCmDisp()-1e-9);
 }
 
 /* facteur volumétrique : prix = base × (taille / taille_réf)^effet  (effet 1=linéaire … 3=volume) */
+/* ---- Paliers de taille : S / M / L / XL / Monster. Chaque palier est un % de la plage
+   [min, max] (réglé en atelier) ; le client voit le nom et les cm correspondants. ---- */
+const SIZE_TIERS_DEFAULT=()=>[{key:"S",label:"S",pct:0},{key:"M",label:"M",pct:25},{key:"L",label:"L",pct:50},{key:"XL",label:"XL",pct:75},{key:"MONSTER",label:"Monster",pct:100}];
+function sizeTiers(){ const sz=state.config&&state.config.size; return (sz&&Array.isArray(sz.tiers)&&sz.tiers.length)?sz.tiers:SIZE_TIERS_DEFAULT(); }
+function tierCm(t){ const sz=state.config.size; const rng=(sz.max-sz.min)||0; return Math.round((sz.min+rng*((t.pct||0)/100))*2)/2; }
+function tierByKey(k){ return sizeTiers().find(t=>t.key===k)||null; }
+function nearestTier(cm){ let b=null,bd=Infinity; sizeTiers().forEach(t=>{ const d=Math.abs(tierCm(t)-cm); if(d<bd){bd=d;b=t;} }); return b; }
+function currentTier(){ const sz=state.config&&state.config.size; if(!sz)return null; return tierByKey(sz.tier)||nearestTier(sz.value); }
+function setTier(t){ const sz=state.config.size; sz.tier=t.key; sz.value=tierCm(t); sz.valuePct=t.pct; }
+function sizeLabel(){ const sz=state.config&&state.config.size; if(!sz)return ""; const t=currentTier(); return t?`${t.label} (${sz.value} cm)`:`${sz.value} cm`; }
 function sizeFactor(){
   const sz=state.config&&state.config.size; if(!sz)return 1;
   const r=sz.refCm||sz.value||10, e=(sz.exp!=null?sz.exp:2);
@@ -4191,7 +4222,7 @@ const round1=x=>Math.round(x*10)/10;
 function priceBreakdown(){
   const lines=[]; const v=activeVariant(); const sz=state.config.size;
   const base=v?v.price:0; const modelP=round1(base*sizeFactor());
-  lines.push({label:(v?v.name:"—")+(sz?` · ${sz.value} cm`:""), amount:modelP});
+  lines.push({label:(v?v.name:"—")+(sz?` · ${sizeLabel()}`:""), amount:modelP});
   if(v){ let sup=0; v.slots.forEach(s=>sup+=slotSurcharge(s)); if(sup>0) lines.push({label:"Suppléments couleurs",amount:+sup.toFixed(2)}); }
   const eng=state.config.engraving;
   if(eng.offered && eng.added && (eng.text||"").trim()) lines.push({label:"Gravure",amount:eng.fee});
@@ -4202,7 +4233,7 @@ function cartPayload(){
   props["Variante"]=v?v.name:"—";
   if(v) v.slots.forEach(s=>{const f=s.finishId?finishById(s.finishId):null;props[s.name]=f?(f.name+" (finition)"):(colorName(s.color)+(colorIsPremium(s.color)?" (premium)":""));});
   const eng=state.config.engraving; props["Gravure"]=(eng.offered&&eng.added&&eng.text.trim())?eng.text.trim():"—";
-  if(state.config.size) props["Taille"]=state.config.size.value+" cm";
+  if(state.config.size) props["Taille"]=sizeLabel();   // ex. « M (9 cm) » : le pont lit le nombre
   props["Modèle 3D"]=state.glb?state.glb.name:"placeholder";
   return { productHandle:"dragon-"+state.modelKey.replace(/\W+/g,"-").toLowerCase(), quantity:1, price:priceBreakdown().total, properties:props, spec:productionSpec(), delay:prodDelay() };
 }
@@ -4215,7 +4246,7 @@ function productionSpec(){
       finition:f?f.name:null, filaments:f?(f.colors||[]):[s.color], premium:!f&&colorIsPremium(s.color) };
   });
   return { modele:(modelByKey(state.modelKey).name)||state.modelKey, variante:v?v.name:"—",
-    taille_cm:sz?sz.value:null, taille_mm:sz?Math.round(sz.value*10):null,
+    taille:(currentTier()||{}).label||null, taille_cm:sz?sz.value:null, taille_mm:sz?Math.round(sz.value*10):null,
     gravure:(eng.offered&&eng.added&&(eng.text||"").trim())?{texte:eng.text.trim(),rot_deg:Math.round((eng.rot||0)*180/Math.PI)}:null,
     zones };
 }
@@ -5692,16 +5723,30 @@ function renderAtelier(P){
     f.appendChild(i); f.appendChild(eq); refresh();
     return { field:f, refresh };
   };
-  const fDef=mkPct("Défaut (% de la plage)","valuePct");
   const fRef=mkPct("Réf. prix (% de la plage)","refPct");
+  // Paliers S / M / L / XL / Monster : % de la plage, cm recalculés, palier par défaut
+  const tiersBox=el("div"); const fDef={field:tiersBox,refresh:()=>{}};
+  const renderTiers=()=>{ tiersBox.innerHTML=""; const tiers=sizeTiers(); if(!Array.isArray(sz.tiers)) sz.tiers=tiers;
+    const head=el("div"); head.style.cssText="display:grid;grid-template-columns:28px 1fr 84px 70px;gap:6px;align-items:center;font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin:8px 0 2px";
+    head.innerHTML="<span>Déf.</span><span>Palier</span><span>% plage</span><span>= cm</span>"; tiersBox.appendChild(head);
+    tiers.forEach((t,i)=>{ const r=el("div"); r.style.cssText="display:grid;grid-template-columns:28px 1fr 84px 70px;gap:6px;align-items:center;margin:3px 0";
+      const rd=el("input"); rd.type="radio"; rd.name="tierDef"; rd.checked=(sz.tier===t.key); rd.style.width="auto"; rd.title="Taille proposée par défaut";
+      rd.onchange=()=>{ setTier(t); saveConfig(); applySizeScale(); priceHead(); };
+      const nm=el("input"); nm.type="text"; nm.value=t.label; nm.maxLength=12; nm.oninput=()=>{ t.label=nm.value||t.key; saveConfig(); };
+      const pc=el("input"); pc.type="number"; pc.min="0"; pc.max="100"; pc.step="1"; pc.value=t.pct;
+      const cm=el("span"); cm.style.fontSize="12.5px"; cm.textContent=tierCm(t)+" cm";
+      pc.oninput=()=>{ t.pct=Math.max(0,Math.min(100,parseFloat(pc.value)||0)); cm.textContent=tierCm(t)+" cm"; if(sz.tier===t.key) setTier(t); saveConfig(); applySizeScale(); priceHead(); };
+      r.appendChild(rd); r.appendChild(nm); r.appendChild(pc); r.appendChild(cm); tiersBox.appendChild(r); });
+    tiersBox.appendChild(el("p","hintline","Cinq tailles proposées au client, chacune à un % de la plage min–max : les cm suivent automatiquement si la plage change. Le palier coché est la taille par défaut.")); };
+  fDef.refresh=renderTiers; renderTiers();
   const mkCm=(lab,key)=>{ const f=el("div","field"); f.innerHTML=`<label>${lab}</label>`;
     const i=el("input"); i.type="number"; i.min="0"; i.step="0.5"; i.value=sz[key];
     i.oninput=()=>{ sz[key]=parseFloat(i.value)||0; clampVal();
       fDef.refresh(); fRef.refresh(); updEx(); saveConfig(); priceHead(); applySizeScale(); };
     f.appendChild(i); return f; };
   const sr1=el("div","fieldrow");sr1.appendChild(mkCm("Min (cm)","min"));sr1.appendChild(mkCm("Max (cm)","max"));
-  const sr2=el("div","fieldrow");sr2.appendChild(fDef.field);sr2.appendChild(fRef.field);
-  gt.appendChild(sr1);gt.appendChild(sr2);
+  const sr2=el("div","fieldrow");sr2.appendChild(fRef.field);
+  gt.appendChild(sr1);gt.appendChild(fDef.field);gt.appendChild(sr2);
   // effet de la taille sur le prix (exposant 1..3)
   const ef=el("div","field");ef.style.marginTop="10px";ef.innerHTML='<label>Effet de la taille sur le prix — <b id="expLbl"></b></label>';
   const expName=e=> e<1.35?"quasi linéaire":(e<1.85?"surfacique":(e<2.55?"volumique (recommandé)":"volume fort"));
@@ -5745,13 +5790,14 @@ function renderAtelier(P){
   const e2=el("div","field");e2.innerHTML='<label>Longueur max</label>';const me=el("input");me.type="number";me.min="1";me.value=state.config.engraving.maxLen;me.oninput=()=>{state.config.engraving.maxLen=parseInt(me.value)||16;saveConfig();};e2.appendChild(me);
   er.appendChild(e0);er.appendChild(e1);er.appendChild(e2);ge.appendChild(er);
   const er2=el("div","fieldrow");er2.style.marginTop="10px";
-  const e3=el("div","field");e3.innerHTML='<label>Taille minimum pour la gravure (% de la plage)</label>';
-  const mn=el("input");mn.type="number";mn.min="0";mn.max="100";mn.step="5";mn.value=state.config.engraving.minPct;
-  const cmH=el("p","hintline");const updCmH=()=>{cmH.innerHTML=(state.config.engraving.minPct>0)?`= <b>${engMinCmDisp()} cm</b> (sur la plage ${state.config.size.min}–${state.config.size.max} cm)`:"Aucun minimum.";};
-  mn.oninput=()=>{state.config.engraving.minPct=Math.max(0,Math.min(100,parseFloat(mn.value)||0));saveConfig();updCmH();};
+  const e3=el("div","field");e3.innerHTML='<label>Gravure disponible à partir de</label>';
+  const mn=el("select"); const o0=el("option",null,"Toutes les tailles"); o0.value=""; mn.appendChild(o0);
+  sizeTiers().forEach(t=>{ const o=el("option",null,`${t.label} (${tierCm(t)} cm)`); o.value=t.key; mn.appendChild(o); });
+  mn.value=state.config.engraving.minTier||"";
+  const cmH=el("p","hintline");const updCmH=()=>{cmH.innerHTML=engraveHasMin()?`Sous ce palier, la gravure est refusée (surface insuffisante) : seuil <b>${engMinCmDisp()} cm</b>.`:"Aucun minimum.";};
+  mn.onchange=()=>{ const k=mn.value||null; state.config.engraving.minTier=k; const t=k?tierByKey(k):null; state.config.engraving.minPct=t?t.pct:0; saveConfig(); updCmH(); };
   e3.appendChild(mn);er2.appendChild(e3);ge.appendChild(er2);
   ge.appendChild(cmH);updCmH();
-  ge.appendChild(el("p","hintline","0 % = aucun minimum. Sinon, le client verra une erreur s'il descend la taille sous ce seuil avec la gravure activée (la gravure a besoin d'une surface suffisante). En % : le seuil suit automatiquement si tu changes la plage de taille."));
   P.appendChild(ge);
 
   // emplacement de la plaque de gravure (sous la tete) - positionnable par modele
@@ -5905,28 +5951,31 @@ function stepGravure(P){
   // L'orientation du texte n'est PAS proposée au client : elle est fixée par l'atelier.
   P.appendChild(f);
   ob.onchange=()=>{eng.added=ob.checked;f.hidden=!ob.checked;
-    if(ob.checked){ const m=engEffMin(); if(state.config.size && state.config.size.value<m){ state.config.size.value=m; applySizeScale(); } }  // taille min par défaut
+    if(ob.checked){ const m=engEffMin(); if(state.config.size && state.config.size.value<m){ const t=sizeTiers().find(t=>tierCm(t)>=m); if(t) setTier(t); else state.config.size.value=m; applySizeScale(); } }  // taille min par défaut
     updNav();   // Suivant/Passer + blocage si gravure choisie sans texte
     saveConfig();drawEngrave();updateEngraveVisibility();priceHead();updEngErr();};
-  if(eng.minPct>0) P.appendChild(el("p","hintline",`La gravure nécessite une taille d'au moins ${engMinCmDisp()} cm (appliquée automatiquement).`));
+  if(engraveHasMin()){ const mt=eng.minTier?tierByKey(eng.minTier):nearestTier(engMinCmDisp()); P.appendChild(el("p","hintline",`La gravure est disponible à partir de la taille <b>${mt?mt.label:engMinCmDisp()+" cm"}</b> (${engMinCmDisp()} cm), appliquée automatiquement.`)); }
 }
 function stepTaille(P){
   const sz=state.config.size; if(!sz){P.appendChild(el("p","hintline","—"));return;}
   const effMin=engEffMin(), gravure=engraveChosen()&&effMin>sz.min;
-  if(gravure && sz.value<effMin){ sz.value=effMin; applySizeScale(); saveConfig(); priceHead(); }   // snap au minimum gravure
-  P.appendChild(el("p","stepsub","Règle la taille du dragon — le prix s'ajuste automatiquement."));
-  const f=el("div","field");f.innerHTML=`<label>Taille : <b id="szVal">${sz.value} cm</b></label>`;
-  const tiered = EMBED && embedSizeTiers && embedSizeTiers.length>1;
-  const i=el("input");i.type="range";i.min=sz.min;i.max=sz.max;i.step= tiered?0.1:0.5;i.value=Math.min(sz.max,Math.max(effMin,sz.value));
-  i.style.border="none";i.style.padding="0";i.style.background="transparent";i.style.width="100%";
-  if(gravure){ i.classList.add("rg-min"); const lo=(sz.max>sz.min)?((effMin-sz.min)/(sz.max-sz.min)*100):0; i.style.setProperty("--lo",Math.max(0,Math.min(100,lo))+"%"); }
-  i.oninput=()=>{ let v=parseFloat(i.value); if(tiered){ v=snapTier(v); if(gravure&&v<effMin){ v=embedSizeTiers.filter(t=>t>=effMin).sort((a,b)=>a-b)[0]||effMin; } i.value=v; }
-    else if(gravure&&v<effMin){v=effMin;i.value=v;} sz.value=v; const e=document.getElementById("szVal");if(e)e.textContent=sz.value+" cm"; applySizeScale();saveConfig();priceHead(); };
-  f.appendChild(i);P.appendChild(f);
-  P.appendChild(el("p","hintline", tiered
-    ? `tailles disponibles : ${embedSizeTiers.map(t=>t+" cm").join(" · ")}`
-    : `de ${sz.min} à ${sz.max} cm · cote affichée sur l'aperçu 3D`));
-  if(gravure) P.appendChild(el("p","hintline",`Gravure choisie : tailles sous <b>${effMin} cm</b> indisponibles (surface insuffisante).`));
+  const tiers=sizeTiers(); let cur=currentTier()||tiers[0];
+  if(gravure && tierCm(cur)<effMin){ cur=tiers.find(t=>tierCm(t)>=effMin)||cur; }
+  if(cur&&(sz.tier!==cur.key||sz.value!==tierCm(cur))){ setTier(cur); applySizeScale(); saveConfig(); priceHead(); }
+  P.appendChild(el("p","stepsub","Choisis la taille du dragon — le prix s'ajuste automatiquement."));
+  const row=el("div","tiers");
+  const priceFor=cm=>{ const v=activeVariant(); const base=v?v.price:0; const r=sz.refCm||10, e=(sz.exp!=null?sz.exp:2);
+    let sup=0; if(v) v.slots.forEach(sl=>sup+=slotSurcharge(sl)); const eng=state.config.engraving; const fee=(eng.offered&&eng.added&&(eng.text||"").trim())?eng.fee:0;
+    return +(round1(base*Math.pow(cm/r,e))+sup+fee).toFixed(2); };
+  tiers.forEach(t=>{ const cm=tierCm(t), off=gravure&&cm<effMin;
+    const b=el("button","tierbtn"); b.type="button"; b.disabled=off; b.setAttribute("aria-pressed", t.key===cur.key);
+    b.innerHTML=`<span class="tl">${t.label}</span><span class="tc">${cm} cm</span><span class="tp">${off?"—":money(priceFor(cm))}</span>`;
+    b.title=off?`Indisponible avec gravure (surface insuffisante)`:`${t.label} · ${cm} cm`;
+    b.onclick=()=>{ if(off)return; setTier(t); applySizeScale(); saveConfig(); priceHead(); renderPanel(); };
+    row.appendChild(b); });
+  P.appendChild(row);
+  P.appendChild(el("p","hintline",`Taille : <b>${sizeLabel()}</b> · cote affichée sur l'aperçu 3D`));
+  if(gravure){ const mt=state.config.engraving.minTier?tierByKey(state.config.engraving.minTier):nearestTier(effMin); P.appendChild(el("p","hintline",`Gravure choisie : disponible à partir de <b>${mt?mt.label:effMin+" cm"}</b>.`)); }
 }
 function setHostError(msg){ const e=document.getElementById("hostErr"); if(!e)return; e.textContent=msg||""; e.hidden=!msg; }
 function stepRecap(P){
@@ -6087,7 +6136,7 @@ function applyPendingShare(){
   if(!pendingShare||pendingShare.m!==state.modelKey)return;
   const sel=pendingShare; const v=state.config.variants[sel.vi]||activeVariant();
   if(v){ state.config.activeVariantId=v.id; (sel.sl||[]).forEach((sd,i)=>{ if(v.slots[i]){v.slots[i].color=sd.c;v.slots[i].finishId=sd.f||null;} }); }
-  if(sel.sz!=null&&state.config.size) state.config.size.value=sel.sz;
+  if(sel.sz!=null&&state.config.size){ const t=nearestTier(sel.sz); if(t) setTier(t); else state.config.size.value=sel.sz; }
   if(sel.e){ state.config.engraving.added=true; state.config.engraving.text=sel.e.t||""; state.config.engraving.rot=sel.e.r||0; }
   else { state.config.engraving.added=false; state.config.engraving.text=""; }
   state.shareRef=sel.ref||null;
@@ -6144,9 +6193,7 @@ if(EMBED){
       const m=MODELS.find(x=>x.key===d.model); state.modelKey=d.model; if(typeof selectModel==="function") selectModel(m); }
     else if(d.type==="configure"){
       embedConfigured=true;
-      if(Array.isArray(d.sizeTiers)&&d.sizeTiers.length){ embedSizeTiers=d.sizeTiers.map(Number).filter(x=>isFinite(x)).sort((a,b)=>a-b);
-        if(state.config&&state.config.size){ state.config.size.min=embedSizeTiers[0]; state.config.size.max=embedSizeTiers[embedSizeTiers.length-1];
-          state.config.size.value=snapTier(state.config.size.value); applySizeScale&&applySizeScale(); } }
+      if(Array.isArray(d.sizeTiers)&&d.sizeTiers.length){ embedSizeTiers=d.sizeTiers.map(Number).filter(x=>isFinite(x)).sort((a,b)=>a-b); }   // informatif : les paliers viennent de l'atelier
       if(d.currency||d.locale) embedPrice=Object.assign({},embedPrice,{currency:d.currency,locale:d.locale,amount:(embedPrice&&embedPrice.amount)});
       if(typeof d.pageUrl==="string"&&/^https?:/.test(d.pageUrl)) embedPageUrl=d.pageUrl;
       renderPanel();
