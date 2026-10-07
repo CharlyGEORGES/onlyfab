@@ -37,8 +37,10 @@ const sz = cfg.size || {}, ref = sz.refCm || 10, exp = sz.exp || 2;
 // Paliers de taille de l'atelier (S / M / L / XL / Monster, % de la plage) -> valeurs d'option
 // « M (9 cm) » : le pont lit le nombre. --sizes 6,9,12 force des cm nus.
 const tierCm = t => Math.round((sz.min + ((sz.max - sz.min) || 0) * ((t.pct || 0) / 100)) * 2) / 2;
-const TIERS = (!args.includes('--sizes') && Array.isArray(sz.tiers) && sz.tiers.length)
-  ? sz.tiers.map(t => ({ label: `${t.label || t.key} (${tierCm(t)} cm)`, cm: tierCm(t) }))
+const DEFAULT_TIERS = [{ key: 'S', label: 'S', pct: 0 }, { key: 'M', label: 'M', pct: 25 }, { key: 'L', label: 'L', pct: 50 }, { key: 'XL', label: 'XL', pct: 75 }, { key: 'MONSTER', label: 'Monster', pct: 100 }];
+const tiers = (Array.isArray(sz.tiers) && sz.tiers.length) ? sz.tiers : DEFAULT_TIERS;   // mêmes défauts que le configurateur
+const TIERS = !args.includes('--sizes')
+  ? tiers.map(t => ({ label: `${t.label || t.key} (${tierCm(t)} cm)`, cm: tierCm(t) }))
   : SIZES.map(cm => ({ label: `${cm} cm`, cm }));
 const prem = (cfg.premium && cfg.premium.surcharge) || 0;
 // Axe « Gravure » seulement si la gravure est proposée ET payante dans l'atelier (frais > 0).
