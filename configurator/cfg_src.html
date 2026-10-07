@@ -2111,7 +2111,7 @@ function renderAtelier(P){
   // effet de la taille sur le prix (exposant 1..3)
   const ef=el("div","field");ef.style.marginTop="10px";ef.innerHTML='<label>Effet de la taille sur le prix — <b id="expLbl"></b></label>';
   const expName=e=> e<1.35?"quasi linéaire":(e<1.85?"surfacique":(e<2.55?"volumique (recommandé)":"volume fort"));
-  const setExpLbl=()=>{const l=document.getElementById("expLbl");if(l)l.textContent=`×${(sz.exp!=null?sz.exp:2).toFixed(1)} · ${expName(sz.exp!=null?sz.exp:2)}`;};
+  const setExpLbl=()=>{const l=ef.querySelector("#expLbl");if(l)l.textContent=`×${(sz.exp!=null?sz.exp:2).toFixed(1)} · ${expName(sz.exp!=null?sz.exp:2)}`;};   // le groupe n'est pas encore dans le DOM
   const ei=el("input");ei.type="range";ei.min="1";ei.max="3";ei.step="0.1";ei.value=(sz.exp!=null?sz.exp:2);
   ei.style.border="none";ei.style.padding="0";ei.style.background="transparent";
   ei.oninput=()=>{sz.exp=parseFloat(ei.value)||2;setExpLbl();updEx();saveConfig();priceHead();};
