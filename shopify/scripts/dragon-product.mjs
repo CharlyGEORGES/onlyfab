@@ -10,8 +10,9 @@
  * SHOPIFY_ADMIN_TOKEN (jeton Admin API, scopes write_products + write_publications).
  *
  * Conventions (lues par le pont onlyfab-configurator.js) :
- *   - options  : Taille (« 6 cm »…) × Finition (« <déclinaison> » / « <déclinaison> premium ») × Gravure (Sans / Avec)
- *   - prix     : base_déclinaison × (cm / refCm) ^ exposant  (+ premium) (+ frais de gravure)
+ *   - options  : Taille (« 6 cm »…) × Finition (« <déclinaison> » / « <déclinaison> premium »)
+ *                [× Gravure (Sans / Avec) seulement si la gravure est payante dans l'atelier]
+ *   - prix     : base_déclinaison × (cm / refCm) ^ exposant  (+ supplément premium) (+ frais de gravure s'il y a l'axe)
  *   - produit  : statut UNLISTED (lien direct seulement), métachamp onlyfab.model_key = clé du modèle,
  *                template « dragon-configurateur », vente sans stock (fabrication à la demande).
  */
@@ -33,15 +34,22 @@ const cfg = (configs.configs || {})[key];
 if (!model || !cfg) { console.error(`modèle « ${key} » introuvable sur ${SERVER}`); process.exit(1); }
 
 const sz = cfg.size || {}, ref = sz.refCm || 10, exp = sz.exp || 2;
-const prem = (cfg.premium && cfg.premium.surcharge) || 0, grav = (cfg.engraving && cfg.engraving.offered) ? (cfg.engraving.fee || 0) : null;
+const prem = (cfg.premium && cfg.premium.surcharge) || 0;
+// Axe « Gravure » seulement si la gravure est proposée ET payante dans l'atelier (frais > 0).
+// Décision Onlyfab : la gravure est incluse dans le prix (frais 0) -> pas d'axe, le texte gravé
+// voyage en propriété de ligne. --avec-axe-gravure force l'axe, --sans-axe-gravure le retire.
+let grav = (cfg.engraving && cfg.engraving.offered && (cfg.engraving.fee || 0) > 0) ? cfg.engraving.fee : null;
+if (args.includes('--sans-axe-gravure')) grav = null;
+if (args.includes('--avec-axe-gravure') && grav == null) grav = (cfg.engraving && cfg.engraving.fee) || 0;
 const finitions = [];
 for (const v of cfg.variants || []) { finitions.push({ name: v.name, base: v.price, premium: false }); finitions.push({ name: `${v.name} premium`, base: v.price, premium: true }); }
-const gravures = grav == null ? ['Sans'] : ['Sans', 'Avec'];
+const gravures = grav == null ? [] : ['Sans', 'Avec'];
 const variants = [];
-for (const cm of SIZES) for (const f of finitions) for (const g of gravures) {
+for (const cm of SIZES) for (const f of finitions) for (const g of (gravures.length ? gravures : [null])) {
   const price = f.base * Math.pow(cm / ref, exp) + (f.premium ? prem : 0) + (g === 'Avec' ? grav : 0);
-  variants.push({ price: price.toFixed(2), inventoryPolicy: 'CONTINUE', inventoryItem: { tracked: false },
-    optionValues: [{ optionName: 'Taille', name: `${cm} cm` }, { optionName: 'Finition', name: f.name }, { optionName: 'Gravure', name: g }] });
+  const optionValues = [{ optionName: 'Taille', name: `${cm} cm` }, { optionName: 'Finition', name: f.name }];
+  if (g) optionValues.push({ optionName: 'Gravure', name: g });
+  variants.push({ price: price.toFixed(2), inventoryPolicy: 'CONTINUE', inventoryItem: { tracked: false }, optionValues });
 }
 if (variants.length > 100) console.warn(`attention : ${variants.length} variantes (limite Shopify : 100 sur les plans de base)`);
 const handle = `${model.name}`.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -54,7 +62,7 @@ const product = {
   productOptions: [
     { name: 'Taille', position: 1, values: SIZES.map(cm => ({ name: `${cm} cm` })) },
     { name: 'Finition', position: 2, values: finitions.map(f => ({ name: f.name })) },
-    { name: 'Gravure', position: 3, values: gravures.map(g => ({ name: g })) },
+    ...(gravures.length ? [{ name: 'Gravure', position: 3, values: gravures.map(g => ({ name: g })) }] : []),
   ],
 };
 const ops = {

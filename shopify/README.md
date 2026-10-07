@@ -95,6 +95,8 @@ python3 build.py        # réinjecte three.js + GLBs + le source → ../configur
 >
 > Conventions : option **Finition** = « nom de la déclinaison » ou « nom de la déclinaison
 > premium » (ex. « 2 couleurs premium »), ce qui porte le prix de la déclinaison ;
+> la **gravure est incluse** dans le prix (pas d'axe Gravure : le texte gravé est une
+> propriété de ligne ; l'axe n'est généré que si l'atelier fixe des frais de gravure > 0) ;
 > métachamp produit **`onlyfab.model_key`** = clé du modèle (un seul template
 > `product.dragon-configurateur` sert à tous les dragons) ; vente sans stock
 > (fabrication à la demande).

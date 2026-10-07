@@ -28,8 +28,10 @@
   copie dans `shopify/theme-section/`), pont `assets/onlyfab-configurator.js`, template
   `templates/product.dragon-configurateur.json`. Mise à jour par `themeFilesUpsert` (outil Shopify),
   jamais sur le thème publié.
-- Un produit par modèle du serveur de test (onlyfab.fly.dev) : options Taille × Finition × Gravure,
-  Finition = « <déclinaison> » / « <déclinaison> premium », métachamp `onlyfab.model_key`, template
+- Un produit par modèle du serveur de test (onlyfab.fly.dev) : options Taille × Finition
+  (Finition = « <déclinaison> » / « <déclinaison> premium » ; la gravure est **incluse**, pas d'axe
+  Gravure : le texte gravé voyage en propriété de ligne, l'axe n'existe que si l'atelier met des
+  frais de gravure > 0 ; mettre les frais à 0 dans l'atelier), métachamp `onlyfab.model_key`, template
   `dragon-configurateur`, statut UNLISTED, vente sans stock. Générateur :
   `node shopify/scripts/dragon-product.mjs <cle>` (sans jeton : affiche les mutations à envoyer).
 - Pour un **nouveau dragon** : l'ajouter dans l'atelier (serveur de test), puis créer son produit
