@@ -16,6 +16,12 @@ shopify/
    └─ locales/{fr,en.default}.json
 ```
 
+Dans le thème brouillon « Onlyfab — Configurateur Dragon », le bloc est installé sous
+forme de **section de thème** (`sections/onlyfab-configurator.liquid`, copie dans
+`shopify/theme-section/`), avec le pont dans `assets/onlyfab-configurator.js` et le
+template `templates/product.dragon-configurateur.json`. Ces fichiers se mettent à jour
+par l'API Admin (`themeFilesUpsert`, thème non publié) sans Shopify CLI.
+
 Le configurateur lui-même est le fichier autonome `../configurateur.html`
 (source dans `../configurator/`, build via `python3 ../configurator/build.py`).
 
@@ -80,6 +86,19 @@ python3 build.py        # réinjecte three.js + GLBs + le source → ../configur
 ---
 
 ## 3. Créer le produit et ses variantes
+
+> **Raccourci** : `node shopify/scripts/dragon-product.mjs <cle-modele>` génère le produit
+> complet (options, variantes, prix, métachamp, template) à partir de la config de l'atelier
+> publiée par le serveur ; avec `--apply` et un jeton Admin, il le crée directement.
+> Produits existants créés ainsi : `baby-rose-dragon` (rose) et `crystalwing-dragon`
+> (crystalwing), en statut **non répertorié** (lien direct seulement).
+>
+> Conventions : option **Finition** = « nom de la déclinaison » ou « nom de la déclinaison
+> premium » (ex. « 2 couleurs premium »), ce qui porte le prix de la déclinaison ;
+> métachamp produit **`onlyfab.model_key`** = clé du modèle (un seul template
+> `product.dragon-configurateur` sert à tous les dragons) ; vente sans stock
+> (fabrication à la demande).
+
 
 Pour chaque modèle de dragon, créer **un produit** avec les 3 options ci-dessus
 (ou seulement `Taille` si pas de premium/gravure). Nombre de variantes =

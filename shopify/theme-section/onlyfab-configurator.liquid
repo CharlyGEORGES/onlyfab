@@ -11,17 +11,20 @@
   (source de vérité), renvoyé au configurateur par postMessage.
 {%- endcomment -%}
 
+{{ 'onlyfab-configurator.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'onlyfab-configurator.js' | asset_url }}" defer="defer"></script>
+
 {%- assign origin = request.origin -%}
-{%- assign cfg_id = block.id -%}
+{%- assign cfg_id = section.id -%}
 {%- comment -%} Clé du modèle : métachamp produit onlyfab.model_key (un seul template pour tous les dragons), sinon réglage du bloc {%- endcomment -%}
-{%- assign model_key = product.metafields.onlyfab.model_key | default: block.settings.model_key -%}
+{%- assign model_key = product.metafields.onlyfab.model_key | default: section.settings.model_key -%}
 
 <div
   class="onlyfab-configurator"
   id="onlyfab-cfg-{{ cfg_id }}"
   data-onlyfab-configurator
   data-block-id="{{ cfg_id }}"
-  style="--onlyfab-height: {{ block.settings.height | default: 760 }}px;"
+  style="--onlyfab-height: {{ section.settings.height | default: 760 }}px;"
 >
   {%- if product == blank -%}
     <p class="onlyfab-configurator__warn">
@@ -33,7 +36,7 @@
       title="Configurateur 3D"
       loading="lazy"
       allow="autoplay; xr-spatial-tracking"
-      src="{{ block.settings.configurator_url }}?embed=1&model={{ model_key | url_encode }}&origin={{ origin | url_encode }}"
+      src="{{ section.settings.configurator_url }}?embed=1&model={{ model_key | url_encode }}&origin={{ origin | url_encode }}"
     ></iframe>
 
     {%- comment -%} Données produit + réglages, lues par onlyfab-configurator.js {%- endcomment -%}
@@ -43,12 +46,12 @@
         "pageUrl": {{ canonical_url | json }},
         "settings": {
           "modelKey": {{ model_key | json }},
-          "optionSize": {{ block.settings.option_size | json }},
-          "optionFinish": {{ block.settings.option_finish | json }},
-          "optionEngraving": {{ block.settings.option_engraving | json }},
-          "valuePremium": {{ block.settings.value_premium | json }},
-          "valueEngravingYes": {{ block.settings.value_engraving_yes | json }},
-          "afterAdd": {{ block.settings.after_add | json }}
+          "optionSize": {{ section.settings.option_size | json }},
+          "optionFinish": {{ section.settings.option_finish | json }},
+          "optionEngraving": {{ section.settings.option_engraving | json }},
+          "valuePremium": {{ section.settings.value_premium | json }},
+          "valueEngravingYes": {{ section.settings.value_engraving_yes | json }},
+          "afterAdd": {{ section.settings.after_add | json }}
         },
         "shop": {
           "currency": {{ shop.currency | json }},
@@ -83,19 +86,17 @@
 {% schema %}
 {
   "name": "Configurateur Dragon",
-  "target": "section",
-  "stylesheet": "onlyfab-configurator.css",
-  "javascript": "onlyfab-configurator.js",
   "settings": [
     {
       "type": "header",
       "content": "Configurateur"
     },
     {
-      "type": "url",
+      "type": "text",
       "id": "configurator_url",
       "label": "URL du configurateur",
-      "info": "Page HTML autonome du configurateur, servie avec l'en-tête frame-ancestors (ex. https://www.onlyfab.fr/configurateur.html)."
+      "info": "Page HTML autonome du configurateur, servie avec l'en-tête frame-ancestors.",
+      "default": "https://onlyfab.fly.dev/configurateur.html"
     },
     {
       "type": "text",
@@ -143,7 +144,7 @@
       "type": "text",
       "id": "value_premium",
       "label": "Valeur « premium » de l'option Finition",
-      "default": "Premium"
+      "default": "premium"
     },
     {
       "type": "text",
@@ -166,6 +167,8 @@
       ],
       "default": "drawer"
     }
-  ]
+  ],
+  "enabled_on": { "templates": ["product"] },
+  "presets": [ { "name": "Configurateur Dragon" } ]
 }
 {% endschema %}

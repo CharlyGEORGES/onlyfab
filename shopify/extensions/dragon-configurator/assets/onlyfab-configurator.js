@@ -105,7 +105,7 @@
       var eng = props['Gravure'];
       var engraving = !!(eng && norm(eng) !== '—' && norm(eng) !== '');
 
-      return { sizeCm: sizeCm, premium: premium, engraving: engraving };
+      return { sizeCm: sizeCm, premium: premium, engraving: engraving, variant: props['Variante'] || null };
     }
 
     // Trouve la variante qui correspond le mieux aux axes disponibles.
@@ -127,13 +127,21 @@
       }
       var premiumLabel = norm(settings.valuePremium || 'Premium');
       var engYesLabel = norm(settings.valueEngravingYes || 'Avec');
+      // Finition : de préférence « <Variante> » / « <Variante> premium » (ex. « 2 couleurs premium »),
+      // ce qui porte le prix de la déclinaison ; sinon l'ancien schéma Standard / Premium.
+      var finishByVariant = null;
+      if (idxFinish >= 0 && choice.variant) {
+        var wanted = norm(choice.variant + (choice.premium ? ' ' + premiumLabel : ''));
+        var exists = variants.some(function (v) { return norm((v.options || [])[idxFinish]) === wanted; });
+        if (exists) finishByVariant = wanted;
+      }
 
       function matches(v, strict) {
         var o = v.options || [];
         if (targetSize != null && norm(o[idxSize]) !== norm(targetSize)) return false;
         if (idxFinish >= 0) {
-          var isPrem = norm(o[idxFinish]) === premiumLabel;
-          if (choice.premium !== isPrem) return false;
+          if (finishByVariant) { if (norm(o[idxFinish]) !== finishByVariant) return false; }
+          else { var isPrem = norm(o[idxFinish]) === premiumLabel; if (choice.premium !== isPrem) return false; }
         }
         if (idxEng >= 0) {
           var isYes = norm(o[idxEng]) === engYesLabel;
@@ -219,15 +227,23 @@
       });
     }
 
+    function configure() {
+      post('configure', { sizeTiers: sizeTiers(), currency: shop.currency || 'EUR', locale: locale,
+                          pageUrl: pageUrl, share: shareRefFromUrl() });
+      if (settings.modelKey) post('select-model', { model: settings.modelKey });
+    }
+    // L'iframe peut être prête avant ce script (chargé en defer) : on la configure d'emblée,
+    // puis à chaque « ready » qu'elle (ré)émet.
+    configure();
+    iframe.addEventListener('load', configure);
+
     // ---- Écoute des messages du configurateur ----
     window.addEventListener('message', function (ev) {
       if (cfgOrigin !== '*' && ev.origin !== cfgOrigin) return;
       var d = ev.data || {};
       if (d.source !== GUEST) return;
       if (d.type === 'ready') {
-        post('configure', { sizeTiers: sizeTiers(), currency: shop.currency || 'EUR', locale: locale,
-                            pageUrl: pageUrl, share: shareRefFromUrl() });
-        if (settings.modelKey) post('select-model', { model: settings.modelKey });
+        configure();
         if (d.payload) pushPrice(d.payload);
       } else if (d.type === 'price') {
         if (d.payload) pushPrice(d.payload);

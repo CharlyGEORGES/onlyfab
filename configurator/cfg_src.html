@@ -395,6 +395,7 @@ let SERVER_CONFIGS={};            // { modelKey: config }
 let IS_ADMIN=false;               // session admin confirmee par le serveur
 let embedPrice=null;              // { amount, currency, note }
 let embedSizeTiers=null;          // [cm,...] tailles réellement disponibles en variante
+let embedConfigured=false;        // l'hôte a répondu « configure »
 const embMoney=n=>{ try{ return new Intl.NumberFormat((embedPrice&&embedPrice.locale)||TENANT.brand.locale,
   {style:"currency",currency:(embedPrice&&embedPrice.currency)||TENANT.brand.currency}).format(n); }catch(e){ return money(n); } };
 function snapTier(v){ if(!embedSizeTiers||!embedSizeTiers.length) return v;
@@ -2503,6 +2504,7 @@ if(EMBED){
       if(d.model===state.modelKey && (state.glb||state.loading===d.model)) return;
       const m=MODELS.find(x=>x.key===d.model); state.modelKey=d.model; if(typeof selectModel==="function") selectModel(m); }
     else if(d.type==="configure"){
+      embedConfigured=true;
       if(Array.isArray(d.sizeTiers)&&d.sizeTiers.length){ embedSizeTiers=d.sizeTiers.map(Number).filter(x=>isFinite(x)).sort((a,b)=>a-b);
         if(state.config&&state.config.size){ state.config.size.min=embedSizeTiers[0]; state.config.size.max=embedSizeTiers[embedSizeTiers.length-1];
           state.config.size.value=snapTier(state.config.size.value); applySizeScale&&applySizeScale(); } }
@@ -2528,7 +2530,12 @@ if(THREE_OK){
   }
 }
 else document.querySelector(".stage").innerHTML='<div class="hint" style="position:static;padding:40px">Aperçu 3D indisponible.</div>';
-if(EMBED){ postToHost("ready",{models:MODELS.map(m=>({key:m.key,name:m.name})), model:state.modelKey}); }
+if(EMBED){
+  // « ready » est renvoyé tant que l'hôte n'a pas répondu « configure » : le pont du thème
+  // (script defer) peut ne pas être encore chargé quand l'iframe est prête.
+  const hello=()=>postToHost("ready",{models:MODELS.map(m=>({key:m.key,name:m.name})), model:state.modelKey});
+  hello(); let tries=0; const h=setInterval(()=>{ if(embedConfigured||++tries>8){ clearInterval(h); return; } hello(); },1200);
+}
 }
 (async()=>{
   try{

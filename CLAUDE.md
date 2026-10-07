@@ -22,6 +22,19 @@
   `shopify/extensions/.../onlyfab-configurator.js`, à redéployer avec `shopify app deploy`),
   ou atelier → groupe « Configurations clients ».
 
+## Boutique Shopify (www.onlyfab.fr) — dragons configurables
+- Thème brouillon de test : « Onlyfab — Configurateur Dragon » (gid://shopify/OnlineStoreTheme/206770536793).
+  Le configurateur y est une **section de thème** (`sections/onlyfab-configurator.liquid`,
+  copie dans `shopify/theme-section/`), pont `assets/onlyfab-configurator.js`, template
+  `templates/product.dragon-configurateur.json`. Mise à jour par `themeFilesUpsert` (outil Shopify),
+  jamais sur le thème publié.
+- Un produit par modèle du serveur de test (onlyfab.fly.dev) : options Taille × Finition × Gravure,
+  Finition = « <déclinaison> » / « <déclinaison> premium », métachamp `onlyfab.model_key`, template
+  `dragon-configurateur`, statut UNLISTED, vente sans stock. Générateur :
+  `node shopify/scripts/dragon-product.mjs <cle>` (sans jeton : affiche les mutations à envoyer).
+- Pour un **nouveau dragon** : l'ajouter dans l'atelier (serveur de test), puis créer son produit
+  avec le script (ou les mêmes mutations via l'outil Shopify) et publier sur « Boutique en ligne ».
+
 ## Travaux en attente (v2 du configurateur) — à reprendre
 Tout le code est en place dans `configurator/cfg_src.html` mais **désactivé par défaut**
 (`config.pose.unroll === false`). Case « Redresser le dragon à plat (v2, expérimental) »
