@@ -38,6 +38,7 @@
     <script type="application/json" data-onlyfab-data>
       {
         "origin": {{ origin | json }},
+        "pageUrl": {{ canonical_url | json }},
         "settings": {
           "modelKey": {{ block.settings.model_key | json }},
           "optionSize": {{ block.settings.option_size | json }},

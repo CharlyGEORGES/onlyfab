@@ -445,6 +445,19 @@ db.exec(`
     updated_at TEXT NOT NULL,
     updated_by TEXT
   );
+
+  -- Configurations de clients (dragon configuré), référencées par un code court.
+  -- Créées à chaque ajout au panier (la référence est posée sur la ligne de
+  -- commande Shopify) et à chaque lien de partage. Lecture publique par code :
+  -- le lien rouvre exactement le dragon configuré.
+  CREATE TABLE IF NOT EXISTS configurator_shares (
+    id         TEXT PRIMARY KEY,
+    model_key  TEXT,
+    data       TEXT NOT NULL,          -- { sel, spec, properties, qty }
+    source     TEXT,                   -- 'cart' | 'share'
+    created_at TEXT NOT NULL,
+    hits       INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 // Flag onboarding : 0 = jamais terminé le wizard d'accueil (Bambu →
@@ -2049,6 +2062,48 @@ http.createServer(async (req, res) => {
                     updated_by = excluded.updated_by`)
         .run(b.model.trim(), JSON.stringify(b.config), new Date().toISOString(), staff.uid);
       json(res, { ok: true });
+      return;
+    }
+
+    // ── CONFIGURATIONS CLIENTS (référence courte) ───────────────────────
+    // POST : enregistre la configuration d'un client (public : le client n'est
+    // pas connecté) et renvoie une référence courte + l'URL qui la rouvre.
+    if (req.method === 'POST' && url === '/api/configurator/share') {
+      const b = await parseBody(req, 64 * 1024).catch(() => null);
+      if (!b || !b.sel || typeof b.sel !== 'object') { json(res, { error: 'Requête invalide' }, 400); return; }
+      const model = typeof b.model === 'string' ? b.model.slice(0, 64) : (b.sel.m || null);
+      const data = JSON.stringify({ sel: b.sel, spec: b.spec || null, properties: b.properties || null, qty: b.qty || 1 });
+      const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+      let id = '';
+      for (let tries = 0; tries < 5; tries++) {
+        const bytes = crypto.randomBytes(8);
+        id = Array.from(bytes, x => alphabet[x % alphabet.length]).join('');
+        if (!db.prepare('SELECT id FROM configurator_shares WHERE id=?').get(id)) break;
+      }
+      db.prepare('INSERT INTO configurator_shares (id, model_key, data, source, created_at) VALUES (?,?,?,?,?)')
+        .run(id, model, data, (b.source === 'cart' ? 'cart' : 'share'), new Date().toISOString());
+      const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+      const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+      json(res, { id, url: `${proto}://${host}/configurateur.html?c=${id}` });
+      return;
+    }
+    // GET /api/configurator/share/<id> : rouvre une configuration (public).
+    if (req.method === 'GET' && parts[0] === 'api' && parts[1] === 'configurator' && parts[2] === 'share' && parts[3]) {
+      const id = String(parts[3]).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const row = db.prepare('SELECT * FROM configurator_shares WHERE id=?').get(id);
+      if (!row) { json(res, { error: 'Référence inconnue' }, 404); return; }
+      db.prepare('UPDATE configurator_shares SET hits=hits+1 WHERE id=?').run(id);
+      let data = {}; try { data = JSON.parse(row.data); } catch {}
+      json(res, { id: row.id, model: row.model_key, source: row.source, created_at: row.created_at, ...data });
+      return;
+    }
+    // GET /api/configurator/shares : les dernières configurations (atelier).
+    if (req.method === 'GET' && url.split('?')[0] === '/api/configurator/shares') {
+      const staff = getAtelierUser(req);
+      if (!staff) { json(res, { error: 'Connexion Shopify requise' }, 401); return; }
+      const rows = db.prepare('SELECT id, model_key, data, source, created_at, hits FROM configurator_shares ORDER BY created_at DESC LIMIT 60').all();
+      json(res, { shares: rows.map(r => { let d = {}; try { d = JSON.parse(r.data); } catch {}
+        return { id: r.id, model: r.model_key, source: r.source, created_at: r.created_at, hits: r.hits, qty: d.qty || 1, properties: d.properties || null }; }) });
       return;
     }
 

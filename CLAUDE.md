@@ -14,6 +14,14 @@
   **généré** par `configurator/build.py` (three.js et GLTFLoader inlinés) : modifier la
   source, puis reconstruire, et committer les deux.
 
+## Référence de configuration (panier / partage)
+- Chaque ajout au panier et chaque « Copier le lien de ce dragon » (récap) enregistrent la
+  configuration dans `configurator_shares` (serveur) sous une référence de 8 caractères.
+  Elle part en propriété de ligne Shopify `Référence config` (+ `_config_url`, `_spec`).
+- Rouvrir : `configurateur.html?c=REF`, ou page boutique `?oc=REF` (transmis par le pont
+  `shopify/extensions/.../onlyfab-configurator.js`, à redéployer avec `shopify app deploy`),
+  ou atelier → groupe « Configurations clients ».
+
 ## Travaux en attente (v2 du configurateur) — à reprendre
 Tout le code est en place dans `configurator/cfg_src.html` mais **désactivé par défaut**
 (`config.pose.unroll === false`). Case « Redresser le dragon à plat (v2, expérimental) »

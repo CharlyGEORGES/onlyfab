@@ -44,6 +44,15 @@
     var routes = data.routes || {};
     var shop = data.shop || {};
     var locale = (document.documentElement.lang || 'fr-FR').replace('_', '-');
+    // URL de la page (pour le lien de partage « rouvrir dans la boutique ») et référence
+    // de configuration éventuellement présente dans l'URL (?oc=REF ou #oc=REF).
+    var pageUrl = data.pageUrl || (location.origin + location.pathname);
+    function shareRefFromUrl() {
+      try {
+        var m = (location.search + ' ' + location.hash).match(/[?&#]oc=([A-Za-z0-9]{8})/);
+        return m ? m[1].toUpperCase() : null;
+      } catch (e) { return null; }
+    }
 
     // Index des axes de prix dans product.options (par nom, insensible à la casse).
     function optIndex(name) {
@@ -216,7 +225,8 @@
       var d = ev.data || {};
       if (d.source !== GUEST) return;
       if (d.type === 'ready') {
-        post('configure', { sizeTiers: sizeTiers(), currency: shop.currency || 'EUR', locale: locale });
+        post('configure', { sizeTiers: sizeTiers(), currency: shop.currency || 'EUR', locale: locale,
+                            pageUrl: pageUrl, share: shareRefFromUrl() });
         if (settings.modelKey) post('select-model', { model: settings.modelKey });
         if (d.payload) pushPrice(d.payload);
       } else if (d.type === 'price') {

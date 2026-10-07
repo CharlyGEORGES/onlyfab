@@ -4224,7 +4224,7 @@ let cart=[]; try{cart=JSON.parse(localStorage.getItem("onlyfab.cart")||"[]");}ca
 const saveCart=()=>{try{localStorage.setItem("onlyfab.cart",JSON.stringify(cart));}catch(e){}};
 const cartCount=()=>cart.reduce((n,l)=>n+(l.qty||1),0);
 const cartSubtotal=()=>cart.reduce((s,l)=>s+(l.price||0)*(l.qty||1),0);
-function addToCart(qty){ const p=cartPayload(); p.qty=Math.max(1,qty||1); p.id=uid(); p.model=state.modelKey;
+function addToCart(qty,payload){ const p=payload||cartPayload(); p.qty=Math.max(1,qty||1); p.id=uid(); p.model=state.modelKey;
   cart.push(p); saveCart(); updateCartBadge(); }
 function updateCartBadge(){ const b=document.getElementById("cartCount"); if(b){const n=cartCount(); b.textContent=n; b.hidden=n===0;} }
 
@@ -4737,6 +4737,32 @@ function cineMarkerClick(e){
   const def=CINE_MARKER_DEFS.find(d=>d[0]===cine.placing); toast((def?def[1]:"Point de passage")+" placé — dragon recalculé");
   cine.placing=null; document.body.classList.remove("placing"); saveConfig(); rebuildModel(); renderPanel(); return true;
 }
+function sharesAdmin(){
+  const wrap=el("div");
+  wrap.appendChild(el("p","hintline","Chaque ajout au panier et chaque lien de partage enregistrent le dragon configuré sous une <b>référence</b> (8 caractères). Elle figure sur la ligne de commande Shopify (« Référence config »). Saisis-la pour rouvrir exactement ce dragon."));
+  const row=el("div");row.style.cssText="display:flex;gap:8px;align-items:center;margin:6px 0";
+  const inp=el("input");inp.type="text";inp.placeholder="Référence (ex. K7M3QX2A)";inp.maxLength=12;inp.style.flex="1";inp.style.fontFamily="'IBM Plex Mono',monospace";inp.style.textTransform="uppercase";
+  const go=el("button","addbtn","Ouvrir");go.type="button";
+  const open=async()=>{ const id=(inp.value||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,""); if(!SHARE_ID_RE.test(id)){toast("Référence : 8 caractères");return;}
+    go.disabled=true; const sel=await shareFetch(id); go.disabled=false; if(!sel){toast("Référence inconnue");return;} shareOpen(sel); };
+  go.onclick=open; inp.onkeydown=e=>{ if(e.key==="Enter") open(); };
+  row.appendChild(inp);row.appendChild(go);wrap.appendChild(row);
+  const list=el("div");list.style.cssText="display:flex;flex-direction:column;gap:4px;margin-top:6px";
+  list.appendChild(el("p","hintline","Chargement des dernières configurations…"));
+  wrap.appendChild(list);
+  fetch("/api/configurator/shares",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(d=>{
+    list.innerHTML="";
+    const rows=(d&&d.shares)||[]; if(!rows.length){ list.appendChild(el("p","hintline","Aucune configuration enregistrée pour l'instant.")); return; }
+    rows.slice(0,30).forEach(r=>{ const line=el("div");line.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;padding:6px 0;border-top:1px solid var(--line)";
+      const when=(()=>{ try{ return new Date(r.created_at).toLocaleString(TENANT.brand.locale,{dateStyle:"short",timeStyle:"short"}); }catch(e){ return r.created_at; } })();
+      const pr=r.properties||{}; const mName=(modelByKey(r.model||"")||{}).name||r.model||"?";
+      const sum=[pr["Taille"],pr["Variante"],(pr["Gravure"]&&pr["Gravure"]!=="—")?("« "+pr["Gravure"]+" »"):null].filter(Boolean).join(" · ");
+      const info=el("div",null,`<b style="font-family:'IBM Plex Mono',monospace">${r.id}</b> <span style="color:var(--muted)">${r.source==="cart"?"panier":"lien"} · ${when}</span><br><span>${mName}${sum?(" · "+sum):""}${r.qty>1?(" · ×"+r.qty):""}</span>`);
+      const b=el("button","addbtn","Ouvrir");b.type="button";b.onclick=()=>{ inp.value=r.id; open(); };
+      line.appendChild(info);line.appendChild(b);list.appendChild(line); });
+  }).catch(()=>{ list.innerHTML=""; list.appendChild(el("p","hintline","Liste indisponible (connexion atelier requise).")); });
+  return wrap;
+}
 function cineControls(){
   const wrap=el("div"); const m=cineMarkers();
   wrap.appendChild(el("p","hintline","La cinématique du récap anime le <b>dragon lui-même</b> (ondulation, il se redresse, regarde, se cabre et crache le feu) sur les temps forts de la musique. Tout est automatique à partir du dragon redressé ; si la tête ou la queue sont mal détectées, place des repères en cliquant sur le dragon (le modèle est recalculé)."));
@@ -5135,14 +5161,15 @@ async function selectModel(m){
     rebuildModel(); render(); applyPendingShare(); return;
   }
   if(!GLTF_OK){ toast("Chargeur 3D indisponible."); return; }
+  state.loading=m.key;                       // une configuration partagée reçue pendant le chargement attend la fin
   let buf=null;
-  try{ buf=await glbBuffer(m); }catch(e){ console.error(e); toast("Modèle 3D injoignable."); return; }
-  if(!buf){ toast("Modèle 3D indisponible."); return; }
+  try{ buf=await glbBuffer(m); }catch(e){ console.error(e); toast("Modèle 3D injoignable."); state.loading=null; return; }
+  if(!buf){ toast("Modèle 3D indisponible."); state.loading=null; return; }
   new THREE.GLTFLoader().parse(buf,"",gltf=>{
     const parts=[]; gltf.scene.traverse(o=>{if(o.isMesh){const nm=o.name||(o.material&&o.material.name)||("part_"+parts.length);if(!parts.includes(nm))parts.push(nm);}});
     state.glb={name:m.name,scene:gltf.scene}; state.modelKey=m.key; state.config=loadConfig(parts);
-    rebuildModel(); render(); applyPendingShare();
-  },e=>{console.error(e);toast("Impossible de charger le modèle.");});
+    rebuildModel(); render(); state.loading=null; applyPendingShare();
+  },e=>{console.error(e);toast("Impossible de charger le modèle."); state.loading=null;});
 }
 /* ---- gestion des modèles (atelier) : renommer, envoyer un .glb, supprimer ---- */
 async function apiModels(){
@@ -5508,6 +5535,11 @@ function renderAtelier(P){
   go.appendChild(orientControls());
   P.appendChild(go);
 
+  // configurations clients : retrouver un dragon par sa référence (commande / lien)
+  const gsh=el("div","group");gsh.appendChild(el("h2",null,"<span>Configurations clients</span>"));
+  gsh.appendChild(sharesAdmin());
+  P.appendChild(gsh);
+
   // cinématique du récap : automatique, repères optionnels
   const gc=el("div","group");gc.appendChild(el("h2",null,"<span>Cinématique du récap</span>"));
   gc.appendChild(cineControls());
@@ -5805,11 +5837,15 @@ function renderClient(P){
     next.disabled=engEmpty;
     next.onclick=()=>{state.step=idx+1;renderPanel();};nav.appendChild(next);}
   else{const cta=el("button","cta","Ajouter au panier");cta.id="addCta";
-    cta.onclick=()=>{ if(engraveError()){updEngErr();toast("Taille trop petite pour la gravure — augmentez la taille ou retirez la gravure.");return;}
-      if(EMBED){ const p=cartPayload(); const qty=Math.max(1,state.qty||1);
-        postToHost("add",{payload:p, qty, model:state.modelKey});
-        toast("Ajout au panier…"); return; }
-      addToCart(state.qty||1); toast(`Ajouté au panier`); openCart(); };
+    cta.onclick=async()=>{ if(engraveError()){updEngErr();toast("Taille trop petite pour la gravure — augmentez la taille ou retirez la gravure.");return;}
+      cta.disabled=true; cta.textContent="Enregistrement…";
+      // 1) la configuration est enregistrée côté serveur : sa référence suit la commande
+      const saved=await shareSave("cart");
+      const p=cartPayload(); const qty=Math.max(1,state.qty||1);
+      if(saved){ p.properties["Référence config"]=saved.id; p.properties["_config_url"]=saved.url; p.ref=saved.id; state.shareRef=saved.id; }
+      cta.disabled=false; cta.textContent="Ajouter au panier";
+      if(EMBED){ postToHost("add",{payload:p, qty, model:state.modelKey}); toast("Ajout au panier…"); setHostError(""); return; }
+      addToCart(qty,p); toast(`Ajouté au panier`+(saved?" · réf. "+saved.id:"")); openCart(); };
     nav.appendChild(cta);}
   P.appendChild(nav);
   priceHead(); updEngErr();
@@ -5891,9 +5927,20 @@ function stepTaille(P){
     : `de ${sz.min} à ${sz.max} cm · cote affichée sur l'aperçu 3D`));
   if(gravure) P.appendChild(el("p","hintline",`Gravure choisie : tailles sous <b>${effMin} cm</b> indisponibles (surface insuffisante).`));
 }
+function setHostError(msg){ const e=document.getElementById("hostErr"); if(!e)return; e.textContent=msg||""; e.hidden=!msg; }
 function stepRecap(P){
   if(state.qty==null)state.qty=1;
   P.appendChild(el("p","stepsub","Vérifie ta configuration avant d'ajouter au panier."));
+  // partager / retrouver : la configuration reçoit une référence courte, le lien la rouvre telle quelle
+  { const sh=el("div");sh.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px";
+    const bl=el("button","btn-sec","🔗 Copier le lien de ce dragon");bl.type="button";bl.style.fontSize="13px";bl.style.padding="9px 12px";
+    const ref=el("span","hintline",state.shareRef?("Réf. <b>"+state.shareRef+"</b>"):"");ref.style.margin="0";
+    bl.onclick=async()=>{ bl.disabled=true; const {id,url}=await shareLink(); bl.disabled=false;
+      if(id){ state.shareRef=id; ref.innerHTML="Réf. <b>"+id+"</b>"; }
+      const done=()=>toast(id?("Lien copié · réf. "+id):"Lien copié");
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done).catch(()=>prompt("Lien à copier :",url)); else prompt("Lien à copier :",url); };
+    sh.appendChild(bl); sh.appendChild(ref); P.appendChild(sh);
+    const he=el("div","errline");he.id="hostErr";he.hidden=true;P.appendChild(he); }
   if(typeof THREE!=="undefined" && root && state.rig){
     const cb=el("button","cinebtn","▶ Revoir l'aperçu animé");cb.type="button";
     cb.onclick=()=>{ if(!cine.active) cineStart(false); };
@@ -5915,19 +5962,11 @@ function stepRecap(P){
   const ee=el("div","errline");ee.id="engErr";ee.hidden=true;P.appendChild(ee);
   const d=prodDelay();
   P.appendChild(el("p","hintline",`🖨️ Fabrication à la demande · expédié sous <b>${d.min} à ${d.max} jours</b>.`));
-  // partager / sauvegarder (masqué en mode embarqué : le panier Shopify gère la reprise)
-  if(!EMBED){
-    const sh=el("div");sh.style.cssText="display:flex;gap:8px;margin-top:8px";
-    const bl=el("button","btn-sec","🔗 Copier le lien");bl.style.fontSize="13px";bl.style.padding="9px";
-    bl.onclick=()=>{const link=shareLink(); (navigator.clipboard&&navigator.clipboard.writeText(link).then(()=>toast("Lien copié")).catch(()=>toast("Lien : "+link)))||toast("Lien : "+link);};
-    sh.appendChild(bl);P.appendChild(sh);
-    P.appendChild(el("p","hintline","Le lien recrée cette configuration · panier conservé sur cet appareil."));
-  }
-  renderBillOnly();
+  renderBillOnly(ul);
 }
 
-function renderBillOnly(){
-  const ul=document.getElementById("billList"); if(!ul)return; ul.innerHTML="";
+function renderBillOnly(ulEl){
+  const ul=ulEl||document.getElementById("billList"); if(!ul)return; ul.innerHTML="";   // le récap passe son <ul> (pas encore attaché au DOM)
   const {lines,total}=priceBreakdown();
   lines.forEach(l=>ul.appendChild(el("li",null,`<span>${l.label}</span><span>${money(l.amount)}</span>`)));
   const q=state.qty||1;
@@ -5956,8 +5995,9 @@ function renderCartSheet(){
   if(!cart.length){ S.appendChild(el("p","hintline","Ton panier est vide."));
     const c=el("button","btn-sec","Continuer");c.style.marginTop="14px";c.onclick=closeCart;S.appendChild(c);return; }
   cart.forEach(l=>{ const line=el("div","cline"); line.appendChild(lineThumb(l));
+    if(l.ref){ const rf=el("div","hintline","Réf. "+l.ref); rf.style.margin="0"; line.appendChild(rf); }
     const info=el("div","cinfo");
-    const propsTxt=Object.entries(l.properties||{}).filter(([k])=>k!=="Modèle 3D"&&k!=="Variante").map(([k,v])=>`${k}: ${v}`).join(" · ");
+    const propsTxt=Object.entries(l.properties||{}).filter(([k])=>k!=="Modèle 3D"&&k!=="Variante"&&k!=="Référence config"&&!k.startsWith("_")).map(([k,v])=>`${k}: ${v}`).join(" · ");
     info.appendChild(el("div","cn",(l.spec&&l.spec.modele)||l.properties.Variante||"Dragon"));
     info.appendChild(el("div","cprops",(l.properties.Variante||"")+(propsTxt?" · "+propsTxt:"")));
     const qty=el("div","qty");
@@ -5988,14 +6028,59 @@ function checkout(){
   const pre=el("pre","spec");pre.style.whiteSpace="pre-wrap";pre.style.margin="0";pre.textContent=JSON.stringify(spec,null,2);S.appendChild(pre);
   const c=el("button","btn-sec","Fermer");c.style.marginTop="14px";c.onclick=closeCart;S.appendChild(c);
 }
-/* ===================== PARTAGE / LIEN ===================== */
-function shareCode(){ const v=activeVariant();
-  const sel={m:state.modelKey, vi:state.config.variants.indexOf(v),
+/* ===================== PARTAGE / RÉFÉRENCE ===================== */
+/* La configuration du client est enregistrée côté serveur sous une référence courte
+   (8 caractères). Elle sert au lien de partage ET à retrouver le dragon d'une commande
+   (la référence est posée sur la ligne de commande Shopify). */
+function shareSel(){ const v=activeVariant();
+  return {m:state.modelKey, vi:state.config.variants.indexOf(v),
     sl:(v?v.slots:[]).map(s=>({c:s.color,f:s.finishId||null})),
     sz:state.config.size?state.config.size.value:null,
-    e:(state.config.engraving.added?{t:state.config.engraving.text,r:state.config.engraving.rot||0}:null)};
-  return btoa(unescape(encodeURIComponent(JSON.stringify(sel)))); }
-function shareLink(){ return location.origin+location.pathname+"#c="+encodeURIComponent(shareCode()); }
+    e:(state.config.engraving.added?{t:state.config.engraving.text,r:state.config.engraving.rot||0}:null)}; }
+function shareCode(){ return btoa(unescape(encodeURIComponent(JSON.stringify(shareSel())))); }
+const SHARE_ID_RE=/^[A-Z0-9]{8}$/i;
+let embedPageUrl=null;            // URL de la page boutique hôte (pour un lien qui rouvre le dragon dans la boutique)
+/* Enregistre la configuration courante ; renvoie {id,url} ou null si le serveur ne répond pas. */
+async function shareSave(source){
+  try{
+    const r=await fetch("/api/configurator/share",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:state.modelKey, sel:shareSel(), spec:productionSpec(), properties:cartPayload().properties, qty:Math.max(1,state.qty||1), source:source||"share"})});
+    if(!r.ok) return null; const d=await r.json(); return (d&&d.id)?d:null;
+  }catch(e){ return null; }
+}
+/* Lien qui rouvre la configuration : page boutique (?oc=REF) en mode embarqué, sinon le configurateur. */
+function shareUrlFor(id){
+  if(EMBED&&embedPageUrl){ const u=embedPageUrl.split("#")[0]; return u+(u.includes("?")?"&":"?")+"oc="+id; }
+  return location.origin+location.pathname+"?c="+id;
+}
+async function shareLink(){
+  const saved=await shareSave("share");
+  if(saved) return {id:saved.id, url:shareUrlFor(saved.id)};
+  return {id:null, url:location.origin+location.pathname+"#c="+encodeURIComponent(shareCode())};   // repli hors-ligne
+}
+/* Récupère une configuration par référence -> objet sel (ou null). */
+async function shareFetch(id){
+  try{ const r=await fetch("/api/configurator/share/"+encodeURIComponent(id),{credentials:"same-origin"}); if(!r.ok) return null;
+    const d=await r.json(); return (d&&d.sel)?Object.assign({},d.sel,{ref:d.id}):null; }catch(e){ return null; }
+}
+/* Décode ce que contient l'URL : ?c=REF | ?c=<code> | #c=<code> | ?oc=REF ; renvoie sel ou null. */
+async function shareFromUrl(){
+  let raw=null;
+  try{ const q=new URLSearchParams(location.search); raw=q.get("c")||q.get("oc"); }catch(e){}
+  if(!raw){ try{ const mm=(location.hash||"").match(/[#&]c=([^&]+)/); if(mm) raw=decodeURIComponent(mm[1]); }catch(e){} }
+  if(!raw) return null;
+  if(SHARE_ID_RE.test(raw)) return await shareFetch(raw.toUpperCase());
+  try{ return JSON.parse(decodeURIComponent(escape(atob(raw)))); }catch(e){ return null; }
+}
+/* Ouvre une configuration (sel) : charge le modèle si besoin, applique, va au récap. */
+function shareOpen(sel){
+  if(!sel||!sel.m) return false;
+  pendingShare=sel;
+  const m=MODELS.find(x=>x.key===sel.m); if(!m){ pendingShare=null; toast("Modèle introuvable : "+sel.m); return false; }
+  if(state.loading===sel.m) return true;    // chargement en cours : appliqué à la fin
+  if(sel.m!==state.modelKey||!state.config){ state.modelKey=sel.m; selectModel(m); } else applyPendingShare();
+  return true;
+}
 let pendingShare=null;
 function applyPendingShare(){
   if(!pendingShare||pendingShare.m!==state.modelKey)return;
@@ -6003,8 +6088,11 @@ function applyPendingShare(){
   if(v){ state.config.activeVariantId=v.id; (sel.sl||[]).forEach((sd,i)=>{ if(v.slots[i]){v.slots[i].color=sd.c;v.slots[i].finishId=sd.f||null;} }); }
   if(sel.sz!=null&&state.config.size) state.config.size.value=sel.sz;
   if(sel.e){ state.config.engraving.added=true; state.config.engraving.text=sel.e.t||""; state.config.engraving.rot=sel.e.r||0; }
-  pendingShare=null; saveConfig(); applyColors(); applySizeScale(); if(engraveCtx)drawEngrave();
+  else { state.config.engraving.added=false; state.config.engraving.text=""; }
+  state.shareRef=sel.ref||null;
+  pendingShare=null; applyColors(); applySizeScale(); if(engraveCtx)drawEngrave(); try{updateEngraveVisibility();}catch(e){}
   state.mode="client"; state.step=clientSteps().length-1; renderPanel();
+  if(sel.ref) toast("Configuration "+sel.ref+" rouverte");
 }
 
 /* ===================== BOOT ===================== */
@@ -6050,21 +6138,24 @@ if(EMBED){
   window.addEventListener("message",ev=>{
     const d=ev.data||{}; if(d.source!=="onlyfab-host") return;
     if(d.type==="select-model" && d.model && MODELS.find(m=>m.key===d.model)){
+      // déjà chargé (ou en cours) : ne pas recharger, cela écraserait une configuration rouverte par référence
+      if(d.model===state.modelKey && (state.glb||state.loading===d.model)) return;
       const m=MODELS.find(x=>x.key===d.model); state.modelKey=d.model; if(typeof selectModel==="function") selectModel(m); }
     else if(d.type==="configure"){
       if(Array.isArray(d.sizeTiers)&&d.sizeTiers.length){ embedSizeTiers=d.sizeTiers.map(Number).filter(x=>isFinite(x)).sort((a,b)=>a-b);
         if(state.config&&state.config.size){ state.config.size.min=embedSizeTiers[0]; state.config.size.max=embedSizeTiers[embedSizeTiers.length-1];
           state.config.size.value=snapTier(state.config.size.value); applySizeScale&&applySizeScale(); } }
       if(d.currency||d.locale) embedPrice=Object.assign({},embedPrice,{currency:d.currency,locale:d.locale,amount:(embedPrice&&embedPrice.amount)});
-      renderPanel(); }
+      if(typeof d.pageUrl==="string"&&/^https?:/.test(d.pageUrl)) embedPageUrl=d.pageUrl;
+      renderPanel();
+      if(typeof d.share==="string"&&SHARE_ID_RE.test(d.share)) shareFetch(d.share.toUpperCase()).then(sel=>{ if(sel) shareOpen(sel); }); }
     else if(d.type==="setprice"){ embedPrice={amount:+d.amount, currency:d.currency||(embedPrice&&embedPrice.currency), locale:d.locale||(embedPrice&&embedPrice.locale), note:d.note||null};
       updatePriceDisplay(); }
-    else if(d.type==="added"){ toast("Ajouté au panier ✓"); }
-    else if(d.type==="error"){ toast(d.message||"Impossible d'ajouter au panier."); }
+    else if(d.type==="added"){ toast("Ajouté au panier ✓"); setHostError(""); }
+    else if(d.type==="error"){ toast(d.message||"Impossible d'ajouter au panier."); setHostError("⚠ "+(d.message||"Impossible d'ajouter au panier.")); }
   });
 }
-// lien de partage : #c=<code> -> recrée la config
-try{ const h=location.hash||""; const mm=h.match(/[#&]c=([^&]+)/); if(mm){ pendingShare=JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(mm[1]))))); } }catch(e){ pendingShare=null; }
+// lien de partage / référence (résolu avant boot, voir plus bas) -> recrée la config
 if(pendingShare && pendingShare.m){ const mk=pendingShare.m; state.modelKey=mk; }
 state.config=loadConfig(["body","wings","spine"]);
 renderPanel();
@@ -6084,6 +6175,7 @@ if(EMBED){ postToHost("ready",{models:MODELS.map(m=>({key:m.key,name:m.name})), 
     if(r.ok){ const d=await r.json(); SERVER_CONFIGS=d.configs||{}; IS_ADMIN=!!d.admin; }
     await apiModels();
   }catch(e){}
+  try{ pendingShare=await shareFromUrl(); }catch(e){ pendingShare=null; }
   if(!MODELS.length){ MODELS=[{key:"dragon",name:"Dragon",emoji:"🐉",src:"placeholder",glbUrl:null,seed:{}}]; }
   if(!MODELS.find(m=>m.key===state.modelKey)) state.modelKey=MODELS[0].key;
   if(!IS_ADMIN) document.body.classList.add("noadmin");

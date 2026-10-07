@@ -156,10 +156,29 @@ Chaque ligne de commande porte :
 
 - **Propriétés visibles** : `Variante`, chaque zone → couleur/finition,
   `Gravure`, `Taille`, `Modèle 3D`.
+- **`Référence config`** (visible) : référence courte (8 caractères) de la
+  configuration, enregistrée côté serveur au moment de l'ajout au panier. Elle
+  rouvre exactement le dragon configuré :
+  - dans l'atelier : groupe **« Configurations clients »** → saisir la référence
+    (ou choisir dans la liste des dernières configurations) → **Ouvrir** ;
+  - par URL : `https://<serveur>/configurateur.html?c=<REF>` (aussi en
+    `_config_url` sur la ligne), ou dans la boutique
+    `https://<boutique>/products/<produit>?oc=<REF>` (le bloc transmet la
+    référence au configurateur).
 - **Propriétés techniques** (préfixe `_`, cachées du client) :
   - `_spec` : fiche de production JSON (zones → couleur/filament/hex, taille mm,
     gravure + rotation) — directement exploitable en atelier / OrcaSlicer.
+  - `_config_url` : lien qui rouvre la configuration.
   - `_delai_jours` : fourchette de délai estimée.
+
+Le bouton **« Copier le lien de ce dragon »** du récapitulatif crée la même
+référence (source `lien`) : le client peut partager / retrouver son dragon.
+Les configurations sont stockées dans la table `configurator_shares` du serveur
+(`POST /api/configurator/share`, `GET /api/configurator/share/<REF>`,
+liste admin `GET /api/configurator/shares`).
+
+> Après modification du pont (`assets/onlyfab-configurator.js`) ou du bloc
+> Liquid, redéployer l'extension : `cd shopify && shopify app deploy`.
 
 ---
 
