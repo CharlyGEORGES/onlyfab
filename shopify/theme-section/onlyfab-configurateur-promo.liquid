@@ -1,0 +1,158 @@
+{%- comment -%}
+  Section « Configurateur Dragon — démo de la page d'accueil ».
+  Texte + le configurateur en MODE EXPRESS (un seul écran : dragon, look, couleurs,
+  gravure, taille, panier). L'achat se fait ici, directement dans le panier Shopify :
+  le pont assets/onlyfab-configurator.js choisit la variante du produit qui porte le
+  modèle (métachamp onlyfab.model_key) parmi « Produits dragons ».
+  « Personnalisation avancée » envoie vers la page du configurateur complet avec la
+  configuration en cours (référence ?oc=…).
+{%- endcomment -%}
+
+{{ 'onlyfab-configurator.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'onlyfab-configurator.js' | asset_url }}" defer="defer"></script>
+
+{%- assign sid = section.id -%}
+{%- assign origin = request.origin -%}
+{%- assign model_key = section.settings.model_key | default: 'rose' -%}
+
+<style>
+  #ofc-promo-{{ sid }} .ofc-wrap{
+    display:grid; gap:28px;
+    max-width:var(--page-width,120rem); margin:0 auto;
+    padding:{{ section.settings.padding_top }}px 1.5rem {{ section.settings.padding_bottom }}px;
+  }
+  #ofc-promo-{{ sid }} .ofc-copy{ max-width:76rem; }
+  #ofc-promo-{{ sid }} .ofc-kicker{
+    display:inline-block; font-size:1.2rem; letter-spacing:.12em; text-transform:uppercase;
+    opacity:.7; margin-bottom:.8rem;
+  }
+  #ofc-promo-{{ sid }} .ofc-title{ margin:0 0 1.2rem; }
+  #ofc-promo-{{ sid }} .ofc-text{ margin:0 0 1.6rem; opacity:.85; }
+  #ofc-promo-{{ sid }} .ofc-actions{ display:flex; flex-wrap:wrap; gap:1rem; }
+  #ofc-promo-{{ sid }} .onlyfab-configurator__frame{
+    display:block; width:100%; border:0; border-radius:18px;
+    height:{{ section.settings.height }}px; background:#f4f1ea;
+    box-shadow:0 10px 40px rgba(0,0,0,.18);
+  }
+  #ofc-promo-{{ sid }} .ofc-note{ font-size:1.2rem; opacity:.6; margin:.8rem 0 0; }
+  @media screen and (max-width:749px){
+    #ofc-promo-{{ sid }} .onlyfab-configurator__frame{ height:min({{ section.settings.height }}px, 88vh); border-radius:14px; }
+  }
+</style>
+
+<div id="ofc-promo-{{ sid }}" class="color-{{ section.settings.color_scheme }} gradient">
+  <div class="ofc-wrap">
+    <div class="ofc-copy">
+      {%- if section.settings.kicker != blank -%}
+        <span class="ofc-kicker">{{ section.settings.kicker }}</span>
+      {%- endif -%}
+      {%- if section.settings.heading != blank -%}
+        <h2 class="ofc-title {{ section.settings.heading_size }}">{{ section.settings.heading }}</h2>
+      {%- endif -%}
+      {%- if section.settings.text != blank -%}
+        <div class="ofc-text rte">{{ section.settings.text }}</div>
+      {%- endif -%}
+      {%- if section.settings.button_label != blank or section.settings.button_label_2 != blank -%}
+      <div class="ofc-actions">
+        {%- if section.settings.button_label != blank -%}
+          <a class="button" href="{{ section.settings.button_link | default: section.settings.advanced_url | default: '#' }}">{{ section.settings.button_label }}</a>
+        {%- endif -%}
+        {%- if section.settings.button_label_2 != blank -%}
+          <a class="button button--secondary" href="{{ section.settings.button_link_2 | default: '#' }}">{{ section.settings.button_label_2 }}</a>
+        {%- endif -%}
+      </div>
+      {%- endif -%}
+      {%- if section.settings.note != blank -%}
+        <p class="ofc-note">{{ section.settings.note }}</p>
+      {%- endif -%}
+    </div>
+
+    {%- if section.settings.show_preview -%}
+      <div class="ofc-media onlyfab-configurator" data-onlyfab-configurator data-block-id="{{ sid }}">
+        <iframe
+          class="onlyfab-configurator__frame"
+          title="Configurateur 3D"
+          loading="lazy"
+          allow="autoplay; xr-spatial-tracking"
+          src="{{ section.settings.configurator_url }}?embed=1&express=1&model={{ model_key | url_encode }}&origin={{ origin | url_encode }}"
+        ></iframe>
+        {%- comment -%} Produits dragons + réglages, lus par onlyfab-configurator.js {%- endcomment -%}
+        <script type="application/json" data-onlyfab-data>
+          {
+            "origin": {{ origin | json }},
+            "pageUrl": {{ canonical_url | json }},
+            "settings": {
+              "modelKey": {{ model_key | json }},
+              "advancedUrl": {{ section.settings.advanced_url | json }},
+              "optionSize": {{ section.settings.option_size | json }},
+              "optionFinish": {{ section.settings.option_finish | json }},
+              "optionEngraving": {{ section.settings.option_engraving | json }},
+              "valuePremium": {{ section.settings.value_premium | json }},
+              "valueEngravingYes": {{ section.settings.value_engraving_yes | json }},
+              "afterAdd": {{ section.settings.after_add | json }}
+            },
+            "shop": {
+              "currency": {{ shop.currency | json }},
+              "moneyFormat": {{ shop.money_format | json }}
+            },
+            "routes": {
+              "cartAdd": {{ routes.cart_add_url | json }},
+              "cart": {{ routes.cart_url | json }},
+              "cartChange": {{ routes.cart_change_url | json }}
+            },
+            "products": {% render 'onlyfab-products-json', products: section.settings.products %}
+          }
+        </script>
+      </div>
+    {%- endif -%}
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "Configurateur avant",
+  "tag": "section",
+  "class": "section",
+  "settings": [
+    { "type": "text", "id": "kicker", "label": "Sur-titre", "default": "Nouveau" },
+    { "type": "text", "id": "heading", "label": "Titre", "default": "Composez votre dragon, en 3D, en direct" },
+    { "type": "select", "id": "heading_size", "label": "Taille du titre", "default": "h1",
+      "options": [ { "value": "h2", "label": "Moyen" }, { "value": "h1", "label": "Grand" } ] },
+    { "type": "richtext", "id": "text", "label": "Texte",
+      "default": "<p>Choisissez le dragon, ses couleurs, la gravure et la taille : le prix se met à jour pendant que vous composez, et la pièce est imprimée dans notre atelier à Fontainebleau.</p>" },
+    { "type": "text", "id": "button_label", "label": "Bouton principal", "info": "Vide : pas de bouton. Sans lien, ouvre la page du configurateur complet." },
+    { "type": "url", "id": "button_link", "label": "Lien du bouton principal" },
+    { "type": "text", "id": "button_label_2", "label": "Bouton secondaire" },
+    { "type": "url", "id": "button_link_2", "label": "Lien du bouton secondaire" },
+    { "type": "text", "id": "note", "label": "Mention", "default": "Fabriqué en France · Expédié sous 48h" },
+    { "type": "header", "content": "Configurateur express" },
+    { "type": "checkbox", "id": "show_preview", "label": "Afficher le configurateur", "default": true },
+    { "type": "product_list", "id": "products", "label": "Produits dragons", "limit": 12,
+      "info": "Un produit par modèle (métachamp onlyfab.model_key). Seuls ces dragons sont proposés et ajoutés au panier." },
+    { "type": "text", "id": "configurator_url", "label": "URL du configurateur",
+      "default": "https://onlyfab.fly.dev/configurateur.html" },
+    { "type": "text", "id": "model_key", "label": "Modèle affiché au départ", "default": "rose",
+      "info": "Clé du modèle (celle de l'atelier : rose, crystalwing…)." },
+    { "type": "url", "id": "advanced_url", "label": "Page « Personnalisation avancée »",
+      "info": "Page qui contient la section « Configurateur plein » (ex. /pages/configurateur-dragon). La configuration en cours y est rouverte." },
+    { "type": "range", "id": "height", "label": "Hauteur", "min": 480, "max": 1000, "step": 20, "unit": "px", "default": 700 },
+    { "type": "header", "content": "Correspondance des variantes" },
+    { "type": "text", "id": "option_size", "label": "Option Taille", "default": "Taille" },
+    { "type": "text", "id": "option_finish", "label": "Option Finition", "default": "Finition" },
+    { "type": "text", "id": "option_engraving", "label": "Option Gravure", "default": "Gravure" },
+    { "type": "text", "id": "value_premium", "label": "Valeur « premium » de l'option Finition", "default": "premium" },
+    { "type": "text", "id": "value_engraving_yes", "label": "Valeur « avec gravure » de l'option Gravure", "default": "Avec" },
+    { "type": "select", "id": "after_add", "label": "Après l'ajout au panier", "default": "drawer",
+      "options": [
+        { "value": "drawer", "label": "Ouvrir le tiroir panier du thème" },
+        { "value": "cart", "label": "Rediriger vers /cart" },
+        { "value": "stay", "label": "Rester sur la page" }
+      ] },
+    { "type": "header", "content": "Apparence" },
+    { "type": "color_scheme", "id": "color_scheme", "label": "Jeu de couleurs", "default": "scheme-2" },
+    { "type": "range", "id": "padding_top", "label": "Marge haute", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 72 },
+    { "type": "range", "id": "padding_bottom", "label": "Marge basse", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 72 }
+  ],
+  "presets": [ { "name": "Configurateur avant" } ]
+}
+{% endschema %}

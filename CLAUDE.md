@@ -14,6 +14,20 @@
   **généré** par `configurator/build.py` (three.js et GLTFLoader inlinés) : modifier la
   source, puis reconstruire, et committer les deux.
 
+## Deux niveaux de personnalisation
+- **Mode express** (`configurateur.html?express=1`, en iframe sur la **page d'accueil** de la boutique,
+  section `onlyfab-configurateur-promo`) : un seul écran — dragon, déclinaison, « looks » (duos de
+  couleurs `TENANT.looks`), couleur par zone, gravure (champ texte : texte = gravure), taille, panier.
+  Code : `renderExpress()` dans `cfg_src.html`. Le bouton « Personnalisation avancée » enregistre la
+  configuration (référence) et envoie (`navigate`) vers la page du configurateur complet avec `?oc=REF`.
+- **Personnalisation avancée** = le configurateur complet par étapes (page boutique
+  `/pages/configurateur-dragon`, section `onlyfab-configurateur-page`, et pages produit).
+- Le pont `onlyfab-configurator.js` accepte `data.products` (un produit par modèle, métachamp
+  `onlyfab.model_key`, snippet `onlyfab-products-json`) : il annonce au configurateur les modèles
+  vendables (`configure.models`), seuls ceux-là sont proposés, et ajoute au panier la variante du bon produit.
+- Palette (`TENANT.palette`, 18 teintes) : les anciennes teintes sont converties à la lecture
+  (`TENANT.paletteMigrate`, `migrateHex`) pour les configs atelier et les partages enregistrés.
+
 ## Tailles : cinq paliers S / M / L / XL / Monster
 - `config.size.tiers = [{key,label,pct}]` : chaque palier est un % de la plage min–max réglée en
   atelier (« Taille & prix »), converti en cm côté client (`tierCm`). `size.tier` = palier choisi,
@@ -31,10 +45,13 @@
 
 ## Boutique Shopify (www.onlyfab.fr) — dragons configurables
 - Thème brouillon de test : « Onlyfab — Configurateur Dragon » (gid://shopify/OnlineStoreTheme/206770536793).
-  Le configurateur y est une **section de thème** (`sections/onlyfab-configurator.liquid`,
-  copie dans `shopify/theme-section/`), pont `assets/onlyfab-configurator.js`, template
-  `templates/product.dragon-configurateur.json`. Mise à jour par `themeFilesUpsert` (outil Shopify),
-  jamais sur le thème publié.
+  Le configurateur y est une **section de thème** (`sections/onlyfab-configurator.liquid` sur les
+  pages produit, `sections/onlyfab-configurateur-promo.liquid` = express sur l'accueil,
+  `sections/onlyfab-configurateur-page.liquid` = avancé sur `/pages/configurateur-dragon`,
+  snippet `snippets/onlyfab-products-json.liquid` ; copies dans `shopify/theme-section/`), pont
+  `assets/onlyfab-configurator.js`, templates `product.dragon-configurateur.json`, `index.json`,
+  `page.configurateur.json` (réglage « Produits dragons » = liste des produits par modèle).
+  Mise à jour par `themeFilesUpsert` (outil Shopify), jamais sur le thème publié.
 - Un produit par modèle du serveur de test (onlyfab.fly.dev) : options Taille × Finition
   (Finition = « <déclinaison> » / « <déclinaison> premium » ; la gravure est **incluse**, pas d'axe
   Gravure : le texte gravé voyage en propriété de ligne, l'axe n'existe que si l'atelier met des

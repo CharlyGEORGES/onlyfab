@@ -17,10 +17,21 @@ shopify/
 ```
 
 Dans le thème brouillon « Onlyfab — Configurateur Dragon », le bloc est installé sous
-forme de **section de thème** (`sections/onlyfab-configurator.liquid`, copie dans
-`shopify/theme-section/`), avec le pont dans `assets/onlyfab-configurator.js` et le
-template `templates/product.dragon-configurateur.json`. Ces fichiers se mettent à jour
-par l'API Admin (`themeFilesUpsert`, thème non publié) sans Shopify CLI.
+forme de **sections de thème** (copies dans `shopify/theme-section/`), avec le pont dans
+`assets/onlyfab-configurator.js` :
+
+| Section | Où | Mode |
+|---|---|---|
+| `onlyfab-configurator.liquid` | pages produit (`product.dragon-configurateur.json`) | complet, un produit |
+| `onlyfab-configurateur-promo.liquid` | page d'accueil (`index.json`) | **express** (`?express=1`) : un écran, panier direct |
+| `onlyfab-configurateur-page.liquid` | `/pages/configurateur-dragon` (`page.configurateur.json`) | **personnalisation avancée** (complet, tous les dragons) |
+
+Les deux dernières reçoivent la liste « Produits dragons » (`product_list`) : le snippet
+`onlyfab-products-json.liquid` sérialise chaque produit avec son métachamp `onlyfab.model_key`,
+et le pont choisit le produit du modèle en cours pour le prix et l'ajout au panier. Le bouton
+« Personnalisation avancée » du mode express enregistre la configuration et ouvre la page
+avancée avec `?oc=REF`. Ces fichiers se mettent à jour par l'API Admin (`themeFilesUpsert`,
+thème non publié) sans Shopify CLI.
 
 Le configurateur lui-même est le fichier autonome `../configurateur.html`
 (source dans `../configurator/`, build via `python3 ../configurator/build.py`).

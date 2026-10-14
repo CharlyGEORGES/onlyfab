@@ -1,0 +1,30 @@
+{%- comment -%}
+  snippets/onlyfab-products-json.liquid
+  JSON des produits « dragon » (un produit par modèle, repéré par le métachamp
+  onlyfab.model_key), lu par assets/onlyfab-configurator.js pour trouver la variante
+  et ajouter au panier depuis n'importe quelle page (accueil, page configurateur).
+  Usage : {% render 'onlyfab-products-json', products: section.settings.products %}
+{%- endcomment -%}
+[
+{%- for p in products -%}
+  {%- assign mk = p.metafields.onlyfab.model_key -%}
+  {
+    "modelKey": {{ mk | json }},
+    "handle": {{ p.handle | json }},
+    "url": {{ p.url | json }},
+    "title": {{ p.title | json }},
+    "options": {{ p.options | json }},
+    "variants": [
+      {%- for v in p.variants -%}
+        {
+          "id": {{ v.id | json }},
+          "title": {{ v.title | json }},
+          "price": {{ v.price | json }},
+          "available": {{ v.available | json }},
+          "options": {{ v.options | json }}
+        }{%- unless forloop.last -%},{%- endunless -%}
+      {%- endfor -%}
+    ]
+  }{%- unless forloop.last -%},{%- endunless -%}
+{%- endfor -%}
+]

@@ -2,14 +2,18 @@
  *
  * Rôle :
  *  1. Écouter les messages du configurateur (source "onlyfab-configurator").
- *  2. À "ready" : renvoyer les tailles disponibles (tiers) + la devise -> le
- *     configurateur contraint son curseur de taille aux variantes réelles.
+ *  2. À "ready" : renvoyer les tailles disponibles, la devise, la liste des modèles
+ *     que la boutique sait vendre (un produit par modèle) et la page du mode avancé.
  *  3. À "price" : trouver la variante Shopify correspondante et renvoyer son
  *     prix réel ("setprice") -> le configurateur affiche le prix qui sera facturé.
  *  4. À "add" : ajouter la variante au panier via /cart/add.js, avec la config
  *     complète en propriétés de ligne (dont la fiche de production en _spec).
+ *  5. À "navigate" : ouvrir la page du configurateur complet (« personnalisation
+ *     avancée ») avec la référence de la configuration en cours.
  *
- * Aucun backend requis : tout passe par l'AJAX Cart de Shopify.
+ * Produits : soit `data.product` (page produit : un seul dragon), soit `data.products`
+ * (page d'accueil / page configurateur : un produit par modèle, repéré par son
+ * métachamp onlyfab.model_key). Aucun backend requis : tout passe par l'AJAX Cart.
  */
 (function () {
   'use strict';
@@ -38,9 +42,6 @@
 
     var cfgOrigin = originOf(iframe.getAttribute('src'));
     var settings = data.settings || {};
-    var product = data.product || {};
-    var options = product.options || [];        // noms des options, dans l'ordre
-    var variants = product.variants || [];
     var routes = data.routes || {};
     var shop = data.shop || {};
     var locale = (document.documentElement.lang || 'fr-FR').replace('_', '-');
@@ -53,24 +54,49 @@
         return m ? m[1].toUpperCase() : null;
       } catch (e) { return null; }
     }
+    function modelFromUrl() {
+      try { var m = location.search.match(/[?&]model=([A-Za-z0-9_-]{1,40})/); return m ? m[1] : null; } catch (e) { return null; }
+    }
 
-    // Index des axes de prix dans product.options (par nom, insensible à la casse).
-    function optIndex(name) {
+    // ---- Produits : un dragon par produit (métachamp onlyfab.model_key) ----
+    var products = [];
+    (Array.isArray(data.products) ? data.products : []).forEach(function (p) {
+      if (p && Array.isArray(p.variants) && p.variants.length) products.push(p);
+    });
+    if (data.product && Array.isArray(data.product.variants) && data.product.variants.length) {
+      products.push({ modelKey: settings.modelKey || null, url: pageUrl, title: data.product.title,
+                      options: data.product.options || [], variants: data.product.variants });
+    }
+    products.forEach(function (p) {
+      p.options = p.options || [];
+      p.idxSize = optIndex(p, settings.optionSize);
+      p.idxFinish = optIndex(p, settings.optionFinish);
+      p.idxEng = optIndex(p, settings.optionEngraving);
+    });
+    function optIndex(p, name) {
       if (!name) return -1;
       var n = norm(name);
-      for (var i = 0; i < options.length; i++) if (norm(options[i]) === n) return i;
+      for (var i = 0; i < p.options.length; i++) if (norm(p.options[i]) === n) return i;
       return -1;
     }
-    var idxSize = optIndex(settings.optionSize);
-    var idxFinish = optIndex(settings.optionFinish);
-    var idxEng = optIndex(settings.optionEngraving);
+    function productFor(model) {
+      var m = norm(model), p = null;
+      if (m) p = products.filter(function (x) { return norm(x.modelKey) === m; })[0];
+      if (!p && settings.modelKey) p = products.filter(function (x) { return norm(x.modelKey) === norm(settings.modelKey); })[0];
+      return p || products[0] || null;
+    }
+    function modelKeys() {
+      var keys = [];
+      products.forEach(function (p) { if (p.modelKey && keys.indexOf(p.modelKey) < 0) keys.push(p.modelKey); });
+      return keys;
+    }
 
     // Tailles disponibles (tiers) déduites des variantes.
-    function sizeTiers() {
-      if (idxSize < 0) return [];
+    function sizeTiers(p) {
+      if (!p || p.idxSize < 0) return [];
       var set = {};
-      variants.forEach(function (v) {
-        var cm = parseNum((v.options || [])[idxSize]);
+      p.variants.forEach(function (v) {
+        var cm = parseNum((v.options || [])[p.idxSize]);
         if (cm != null) set[cm] = true;
       });
       return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
@@ -108,9 +134,10 @@
       return { sizeCm: sizeCm, premium: premium, engraving: engraving, variant: props['Variante'] || null };
     }
 
-    // Trouve la variante qui correspond le mieux aux axes disponibles.
-    function matchVariant(choice) {
-      if (!variants.length) return null;
+    // Trouve, dans un produit, la variante qui correspond le mieux aux axes disponibles.
+    function matchVariant(p, choice) {
+      if (!p || !p.variants.length) return null;
+      var variants = p.variants, idxSize = p.idxSize, idxFinish = p.idxFinish, idxEng = p.idxEng;
 
       // Valeurs cibles par axe présent dans le produit.
       var targetSize = null;
@@ -161,8 +188,9 @@
       return v || null;
     }
 
-    function pushPrice(payload) {
-      var v = matchVariant(readChoice(payload));
+    function pushPrice(payload, model) {
+      var p = productFor(model);
+      var v = matchVariant(p, readChoice(payload));
       if (!v) return;
       var note = v.available ? null : 'Cette combinaison est momentanément indisponible.';
       post('setprice', {
@@ -196,9 +224,11 @@
       return false;
     }
 
-    function addToCart(payload, qty) {
+    function addToCart(payload, qty, model) {
+      var p = productFor(model);
+      if (!p) { post('error', { message: 'Ce dragon n\'est pas encore en vente.' }); return; }
       var choice = readChoice(payload);
-      var v = matchVariant(choice);
+      var v = matchVariant(p, choice);
       if (!v) { post('error', { message: 'Aucune variante ne correspond à cette configuration.' }); return; }
       if (!v.available) { post('error', { message: 'Cette combinaison est indisponible en stock.' }); return; }
 
@@ -227,10 +257,20 @@
       });
     }
 
+    // Navigation demandée par le configurateur (mode avancé) : chemins du site seulement.
+    function navigate(url) {
+      var u = String(url || '');
+      var ok = /^\/(?!\/)/.test(u) || u.indexOf(location.origin + '/') === 0;
+      if (!ok) return;
+      try { window.top.location.href = u; } catch (e) { location.href = u; }
+    }
+
     function configure() {
-      post('configure', { sizeTiers: sizeTiers(), currency: shop.currency || 'EUR', locale: locale,
-                          pageUrl: pageUrl, share: shareRefFromUrl() });
-      if (settings.modelKey) post('select-model', { model: settings.modelKey });
+      var startModel = modelFromUrl() || settings.modelKey || null;
+      post('configure', { sizeTiers: sizeTiers(productFor(startModel)), currency: shop.currency || 'EUR', locale: locale,
+                          pageUrl: pageUrl, share: shareRefFromUrl(), models: modelKeys(),
+                          advancedUrl: settings.advancedUrl || null });
+      if (startModel) post('select-model', { model: startModel });
     }
     // L'iframe peut être prête avant ce script (chargé en defer) : on la configure d'emblée,
     // puis à chaque « ready » qu'elle (ré)émet.
@@ -244,11 +284,13 @@
       if (d.source !== GUEST) return;
       if (d.type === 'ready') {
         configure();
-        if (d.payload) pushPrice(d.payload);
+        if (d.payload) pushPrice(d.payload, d.model);
       } else if (d.type === 'price') {
-        if (d.payload) pushPrice(d.payload);
+        if (d.payload) pushPrice(d.payload, d.model);
       } else if (d.type === 'add') {
-        if (d.payload) addToCart(d.payload, d.qty);
+        if (d.payload) addToCart(d.payload, d.qty, d.model);
+      } else if (d.type === 'navigate') {
+        navigate(d.url);
       }
     });
   }

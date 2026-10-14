@@ -326,6 +326,42 @@
      n'a pas confirme la session admin. Le serveur refuse de toute facon les ecritures. */
   body.noadmin .modeswitch{display:none}
   body.embed header{padding-top:10px;padding-bottom:10px}
+  /* ===== Mode express (démo de la home) ===== */
+  body.express .musicbtn,body.express .modeswitch{display:none}
+  body.express .panel{padding:10px 16px 22px}
+  body.express .stage{min-height:300px}
+  .xsec{padding:11px 0;border-bottom:1px solid var(--line)}
+  .xsec:first-child{padding-top:4px}
+  .xh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px;font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:15.5px;letter-spacing:0}
+  .xh small{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500;text-align:right}
+  .xchips{display:flex;flex-wrap:wrap;gap:7px}
+  .xchip{display:flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:600;color:var(--ink);border:1px solid var(--line);background:var(--card2);
+    border-radius:999px;padding:7px 13px 7px 9px;cursor:pointer;transition:border-color .12s,box-shadow .12s,background .12s}
+  .xchip.sm{font-size:12px;padding:5px 11px}
+  .xchip .ic{font-size:16px;line-height:1}
+  .xchip:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+  .xchip[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent)}
+  .looks{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+  .look{display:flex;align-items:center;gap:6px;font:inherit;font-size:11.5px;font-weight:600;color:var(--ink);border:1px solid var(--line);background:var(--card2);
+    border-radius:999px;padding:4px 10px 4px 5px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .look .ld{width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.15) inset;flex:none}
+  .look:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+  .look[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}
+  .xzone{margin-top:9px}
+  .xzone .zh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+  .xzone .zn{font-size:13px;font-weight:600}
+  .xzone .zc{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .xinput{width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  .xinput:focus{outline:2px solid var(--accent);border-color:var(--accent)}
+  body.express .panel{padding-bottom:0}
+  .xcta{position:sticky;bottom:0;z-index:2;background:var(--card);margin:0 -16px;padding:8px 16px 12px;border-top:1px solid var(--line);
+    box-shadow:0 -10px 18px -12px rgba(0,0,0,.25)}
+  .xcta .cta{margin-top:4px}
+  .xadv{display:block;width:100%;margin-top:8px;appearance:none;border:none;background:none;cursor:pointer;font:inherit;font-size:13px;font-weight:600;
+    color:var(--accent);padding:6px;text-decoration:underline;text-underline-offset:3px}
+  .xadv:disabled{opacity:.5}
+  body.express .tiers{margin:0}
+  body.express .tierbtn{padding:8px 3px 7px}
 </style>
 
 <header>
@@ -372,10 +408,25 @@ const DEFAULT_GLB_NAME="BabyCrystalDragon.glb";
 /* ===================== CONFIG TENANT (specificite Onlyfab) ===================== */
 const TENANT = {
   brand:{ name:"Onlyfab", tagline:"Impression 3D", currency:"EUR", locale:"fr-FR" },
+  /* Base de référence des couleurs (filaments) : teintes franches et lumineuses. */
   palette:[
-    {name:"Obsidienne",hex:"#26262e"},{name:"Ivoire",hex:"#e9e1cf"},{name:"Rubis",hex:"#a3252f"},
-    {name:"Émeraude",hex:"#1f6b4f"},{name:"Saphir",hex:"#2f5aa6"},{name:"Améthyste",hex:"#6b3fa0",premium:true},
-    {name:"Or",hex:"#c7972c",premium:true},{name:"Cuivre",hex:"#b5622e",premium:true},{name:"Turquoise",hex:"#2aa198"},{name:"Corail",hex:"#e06a4e",premium:true}
+    {name:"Obsidienne",hex:"#22222a"},{name:"Nacre",hex:"#f4efe4"},{name:"Galet",hex:"#9aa0a6"},
+    {name:"Cerise",hex:"#d7263d"},{name:"Corail",hex:"#ff7a59",premium:true},{name:"Mandarine",hex:"#f28c28"},{name:"Soleil",hex:"#f5b62e"},
+    {name:"Menthe",hex:"#4fd1a5"},{name:"Émeraude",hex:"#2a9d6f"},{name:"Turquoise",hex:"#2ec4c6"},
+    {name:"Saphir",hex:"#3b6fe0"},{name:"Nuit",hex:"#233a73"},{name:"Lavande",hex:"#a98be6"},{name:"Améthyste",hex:"#8a47d9",premium:true},
+    {name:"Rose poudré",hex:"#f4a6c1"},{name:"Fuchsia",hex:"#e0479e"},
+    {name:"Or",hex:"#e0b24e",premium:true},{name:"Cuivre",hex:"#c97a3b",premium:true}
+  ],
+  /* Anciennes teintes -> nouvelles (configs et partages enregistrés avant le changement de palette). */
+  paletteMigrate:{"#26262e":"#22222a","#e9e1cf":"#f4efe4","#a3252f":"#d7263d","#1f6b4f":"#2a9d6f","#2f5aa6":"#3b6fe0",
+    "#6b3fa0":"#8a47d9","#c7972c":"#e0b24e","#b5622e":"#c97a3b","#2aa198":"#2ec4c6","#e06a4e":"#ff7a59",
+    "#d98fb0":"#f4a6c1","#ff8000":"#f28c28","#0000ff":"#3b6fe0"},
+  /* « Looks » du mode express : duos corps / accents appliqués en un clic. */
+  looks:[
+    {name:"Lagon",colors:["#2ec4c6","#f4efe4"]},{name:"Braise",colors:["#22222a","#f28c28"]},
+    {name:"Sakura",colors:["#f4a6c1","#8a47d9"]},{name:"Forêt",colors:["#2a9d6f","#e0b24e"]},
+    {name:"Nuit étoilée",colors:["#233a73","#f5b62e"]},{name:"Royal",colors:["#d7263d","#e0b24e"]},
+    {name:"Candy",colors:["#a98be6","#4fd1a5"]},{name:"Minéral",colors:["#9aa0a6","#22222a"]}
   ],
   defaults:{ base:5, perExtra:3, engravingFee:5, engravingMax:16 },
   tva:0.20,                     // TVA incluse dans les prix affichés (TTC)
@@ -393,6 +444,12 @@ const EMBED = (()=>{ try{
   return window.parent && window.parent!==window;   // dans une iframe => embarqué
 }catch(e){ return false; } })();
 const EMBED_ORIGIN = (()=>{ try{ return new URLSearchParams(location.search).get("origin")||"*"; }catch(e){ return "*"; } })();
+/* Mode express (démo de la page d'accueil) : un seul écran — dragon, look, gravure, taille, panier.
+   Le configurateur complet (étapes) devient la « personnalisation avancée ». */
+const EXPRESS = (()=>{ try{ const q=new URLSearchParams(location.search); return q.get("express")==="1"||q.get("ui")==="express"; }catch(e){ return false; } })();
+let embedModels=null;             // clés des modèles que l'hôte sait vendre (produits Shopify) ; null = tous
+let embedAdvancedUrl=null;        // page boutique du configurateur complet (« personnalisation avancée »)
+function availableModels(){ return (EMBED&&Array.isArray(embedModels)&&embedModels.length)?MODELS.filter(m=>embedModels.includes(m.key)):MODELS; }
 function postToHost(type,data){
   if(!EMBED) return;
   try{ window.parent.postMessage(Object.assign({source:"onlyfab-configurator",type},data||{}), EMBED_ORIGIN); }catch(e){}
@@ -427,10 +484,10 @@ function seedConfig(cfg,key){
   const s=(modelByKey(key).seed)||{};
   (cfg.variants||[]).forEach((v,vi)=>{
     (v.slots||[]).forEach(slot=>{ const nm=(slot.name||"").toLowerCase();
-      slot.color = /crist|yeux|pointe|aile|accent|detail|corne/.test(nm) ? (s.crist||slot.color) : (s.body||slot.color); });
+      slot.color = migrateHex(/crist|yeux|pointe|aile|accent|detail|corne/.test(nm) ? (s.crist||slot.color) : (s.body||slot.color)); });
     if(s.base){ v.price = vi===0 ? s.base : +(s.base*1.6).toFixed(1); }
   });
-  if(s.body) cfg.fixedColor="#26262e";
+  if(s.body) cfg.fixedColor="#22222a";
   if(s.refCm){ cfg.size.refCm=s.refCm; cfg.size.value=s.refCm; }
   return cfg;
 }
@@ -444,15 +501,25 @@ let partList=[];        // noms des parties du modele courant
 /* ===================== HELPERS ===================== */
 const money=n=>new Intl.NumberFormat(TENANT.brand.locale,{style:"currency",currency:TENANT.brand.currency}).format(n);
 const colorName=hex=>{const p=TENANT.palette.find(p=>p.hex.toLowerCase()===(hex||"").toLowerCase());return p?p.name:hex;};
+/* teinte d'une ancienne palette -> teinte courante (sinon inchangée) */
+const migrateHex=hex=>{ if(!hex) return hex; const m=(TENANT.paletteMigrate||{})[String(hex).toLowerCase()]; return m||hex; };
+function migrateConfigColors(c){
+  try{
+    (c.variants||[]).forEach(v=>(v.slots||[]).forEach(s=>{ s.color=migrateHex(s.color); if(Array.isArray(s.allowedColors)) s.allowedColors=s.allowedColors.map(migrateHex); }));
+    if(c.premium&&Array.isArray(c.premium.colors)) c.premium.colors=c.premium.colors.map(migrateHex);
+    if(c.fixedColor) c.fixedColor=migrateHex(c.fixedColor);
+  }catch(e){}
+  return c;
+}
 const cfgKey=()=>"onlyfab.cfg."+state.modelKey;
 
 function defaultFinishes(){
   return [
     {id:uid(),name:"Phospho Aqua",type:"phospho",colors:["#3b6b5e"],glow:"#66ffd6",sur:3},
     {id:uid(),name:"UV Améthyste",type:"photo",colors:["#d8d3dd","#7b3fb0"],sur:3},
-    {id:uid(),name:"Dégradé Océan",type:"gradient",colors:["#2f5aa6","#2aa198"],sur:3},
-    {id:uid(),name:"Bicolore Feu",type:"bi",colors:["#a3252f","#c7972c"],sur:3},
-    {id:uid(),name:"Tricolore Aurore",type:"tri",colors:["#6b3fa0","#2f5aa6","#2aa198"],sur:3}
+    {id:uid(),name:"Dégradé Océan",type:"gradient",colors:["#3b6fe0","#2ec4c6"],sur:3},
+    {id:uid(),name:"Bicolore Feu",type:"bi",colors:["#d7263d","#e0b24e"],sur:3},
+    {id:uid(),name:"Tricolore Aurore",type:"tri",colors:["#8a47d9","#3b6fe0","#2ec4c6"],sur:3}
   ];
 }
 function partGroups(parts){
@@ -464,12 +531,12 @@ const titleCase=s=>s?s.charAt(0).toUpperCase()+s.slice(1):s;
 function defaultConfigForParts(parts){
   const {corps,crist}=partGroups(parts);
   const cName=(crist.length===1 && /^\p{L}+$/u.test(crist[0])) ? titleCase(crist[0]) : "Cristaux";
-  const vUnie={id:uid(),name:"Couleur unie",price:5,slots:[{id:uid(),name:"Couleur",parts:parts.slice(),color:"#2f5aa6"}]};
-  const s2=[{id:uid(),name:"Corps",parts:corps,color:"#2f5aa6"}];
-  if(crist.length) s2.push({id:uid(),name:cName,parts:crist,color:"#c7972c"});
+  const vUnie={id:uid(),name:"Couleur unie",price:5,slots:[{id:uid(),name:"Couleur",parts:parts.slice(),color:"#3b6fe0"}]};
+  const s2=[{id:uid(),name:"Corps",parts:corps,color:"#3b6fe0"}];
+  if(crist.length) s2.push({id:uid(),name:cName,parts:crist,color:"#e0b24e"});
   const vBi={id:uid(),name:(crist.length?"2 couleurs":"Bicolore"),price:8,slots:s2};
   const variants=[vUnie,vBi];
-  return { variants, activeVariantId:vUnie.id, fixedColor:"#26262e",
+  return { variants, activeVariantId:vUnie.id, fixedColor:"#22222a",
            premium:{ colors:TENANT.palette.filter(p=>p.premium).map(p=>p.hex), surcharge:2 },
            finishes:defaultFinishes(),
            engraving:{offered:true,added:false,fee:TENANT.defaults.engravingFee,maxLen:TENANT.defaults.engravingMax,minPct:25,minTier:"M",rot:0,text:""},
@@ -483,9 +550,10 @@ function defaultConfigForParts(parts){
 function loadConfig(parts){
   try{ const sc=SERVER_CONFIGS[state.modelKey]; if(sc){ const c=JSON.parse(JSON.stringify(sc));
     if(!c.variants) throw 0;   // ancienne config incompatible -> defauts
+    migrateConfigColors(c);    // teintes de l'ancienne palette -> palette courante
     if(!c.premium) c.premium={colors:TENANT.palette.filter(p=>p.premium).map(p=>p.hex),surcharge:2};
     if(!c.finishes) c.finishes=defaultFinishes();
-    if(c.fixedColor===undefined) c.fixedColor="#26262e";
+    if(c.fixedColor===undefined) c.fixedColor="#22222a";
     if(!c.activeVariantId||!c.variants.find(v=>v.id===c.activeVariantId)) c.activeVariantId=(c.variants[0]||{}).id;
     if(!c.placard) c.placard={dx:0,dy:0,dz:0,scale:1,visible:true};
     if(!c.engrave) c.engrave={dx:0,dy:0,dz:0,scale:1,rot:0,anchor:""}; else if(c.engrave.anchor===undefined) c.engrave.anchor="";
@@ -1644,7 +1712,7 @@ function modelAdmin(){
 /* liste de cartes de modèles (client + atelier) */
 function modelPicker(){
   const wrap=el("div","mcards");
-  MODELS.forEach(m=>{const c=el("button","mcard");c.type="button";c.setAttribute("aria-pressed",state.modelKey===m.key);
+  availableModels().forEach(m=>{const c=el("button","mcard");c.type="button";c.setAttribute("aria-pressed",state.modelKey===m.key);
     const ic=el("div","mi",m.emoji||"🐉");
     const info=el("div");info.style.cssText="min-width:0";
     info.innerHTML=`<div class="mn">${m.name}</div><div class="ms">${m.src==="placeholder"?"procédural":"cristal"}</div>`;
@@ -1858,7 +1926,7 @@ function renderPanel(){
   const P=document.getElementById("panel");P.innerHTML="";
   document.getElementById("modeAtelier").setAttribute("aria-pressed",state.mode==="atelier");
   document.getElementById("modeClient").setAttribute("aria-pressed",state.mode==="client");
-  if(state.mode==="atelier"){ renderAtelier(P); makeCollapsible(P); } else renderClient(P);
+  if(state.mode==="atelier"){ renderAtelier(P); makeCollapsible(P); } else if(EXPRESS) renderExpress(P); else renderClient(P);
   try{ if(root && (state.mode==="atelier")!==!!cineMarkerGroup) cineMarkersRefresh(); }catch(e){}
   priceHead();
   if(nameplateGroup) positionNameplate();   // (ré)applique la visibilité selon le mode
@@ -2245,17 +2313,113 @@ function renderClient(P){
     next.disabled=engEmpty;
     next.onclick=()=>{state.step=idx+1;renderPanel();};nav.appendChild(next);}
   else{const cta=el("button","cta","Ajouter au panier");cta.id="addCta";
-    cta.onclick=async()=>{ if(engraveError()){updEngErr();toast("Taille trop petite pour la gravure — augmentez la taille ou retirez la gravure.");return;}
-      cta.disabled=true; cta.textContent="Enregistrement…";
-      // 1) la configuration est enregistrée côté serveur : sa référence suit la commande
-      const saved=await shareSave("cart");
-      const p=cartPayload(); const qty=Math.max(1,state.qty||1);
-      if(saved){ p.properties["Référence config"]=saved.id; p.properties["_config_url"]=saved.url; p.ref=saved.id; state.shareRef=saved.id; }
-      cta.disabled=false; cta.textContent="Ajouter au panier";
-      if(EMBED){ postToHost("add",{payload:p, qty, model:state.modelKey}); toast("Ajout au panier…"); setHostError(""); return; }
-      addToCart(qty,p); toast(`Ajouté au panier`+(saved?" · réf. "+saved.id:"")); openCart(); };
+    cta.onclick=()=>clientAddToCart(cta);
     nav.appendChild(cta);}
   P.appendChild(nav);
+  priceHead(); updEngErr();
+}
+/* Ajout au panier (wizard et express) : la configuration est d'abord enregistrée côté
+   serveur, sa référence suit la ligne de commande ; en embarqué, c'est le thème qui ajoute. */
+async function clientAddToCart(cta){
+  if(engraveError()){updEngErr();toast("Taille trop petite pour la gravure — augmentez la taille ou retirez la gravure.");return;}
+  cta.disabled=true; cta.textContent="Enregistrement…";
+  const saved=await shareSave("cart");
+  const p=cartPayload(); const qty=Math.max(1,state.qty||1);
+  if(saved){ p.properties["Référence config"]=saved.id; p.properties["_config_url"]=saved.url; p.ref=saved.id; state.shareRef=saved.id; }
+  cta.disabled=false; cta.textContent="Ajouter au panier";
+  if(EMBED){ postToHost("add",{payload:p, qty, model:state.modelKey}); toast("Ajout au panier…"); setHostError(""); return; }
+  addToCart(qty,p); toast(`Ajouté au panier`+(saved?" · réf. "+saved.id:"")); openCart();
+}
+/* « Personnalisation avancée » : la configuration en cours est enregistrée, puis rouverte
+   dans le configurateur complet (page boutique indiquée par l'hôte, sinon cette page). */
+async function openAdvanced(btn){
+  if(btn){ btn.disabled=true; }
+  const saved=await shareSave("advanced"); const ref=saved?saved.id:null;
+  if(btn){ btn.disabled=false; }
+  const tail=ref?("oc="+ref):("model="+encodeURIComponent(state.modelKey));
+  if(EMBED){
+    if(!embedAdvancedUrl){ toast("Personnalisation avancée indisponible ici."); return; }
+    const u=embedAdvancedUrl.split("#")[0]; postToHost("navigate",{url:u+(u.includes("?")?"&":"?")+tail}); return;
+  }
+  location.href=location.origin+location.pathname+"?"+(ref?("c="+ref):("model="+encodeURIComponent(state.modelKey)));
+}
+
+/* ---------- MODE EXPRESS : un seul écran (démo de la page d'accueil) ---------- */
+function lookBg(l){ const cs=(l.colors&&l.colors.length>1)?l.colors:[(l.colors||[])[0]||"#888",(l.colors||[])[0]||"#888"]; return `linear-gradient(135deg,${cs[0]} 0 50%,${cs[1]} 50% 100%)`; }
+function lookColorFor(l,i){ return l.colors[Math.min(i,l.colors.length-1)]; }
+function applyLook(l){
+  const v=activeVariant(); if(!v) return;
+  v.slots.forEach((s,i)=>{ const hex=lookColorFor(l,i); if(zoneAllowOn(s,hex)){ s.color=hex; s.finishId=null; } });
+}
+function lookIsActive(l){
+  const v=activeVariant(); if(!v||!v.slots.length) return false;
+  return v.slots.every((s,i)=>!s.finishId&&(s.color||"").toLowerCase()===lookColorFor(l,i).toLowerCase());
+}
+/* boutons de taille (wizard et express) : palier grisé sous le minimum de gravure */
+function renderTierButtons(row,onPick){
+  const sz=state.config.size; if(!sz) return;
+  const effMin=engEffMin(), gravure=engraveChosen()&&effMin>sz.min;
+  const tiers=sizeTiers(); let cur=currentTier()||tiers[0];
+  if(gravure && tierCm(cur)<effMin){ cur=tiers.find(t=>tierCm(t)>=effMin)||cur; }
+  if(cur&&(sz.tier!==cur.key||sz.value!==tierCm(cur))){ setTier(cur); applySizeScale(); saveConfig(); priceHead(); }
+  const priceFor=cm=>{ const v=activeVariant(); const base=v?v.price:0; const r=sz.refCm||10, e=(sz.exp!=null?sz.exp:2);
+    let sup=0; if(v) v.slots.forEach(sl=>sup+=slotSurcharge(sl)); const eng=state.config.engraving; const fee=(eng.offered&&eng.added&&(eng.text||"").trim())?eng.fee:0;
+    return +(round1(base*Math.pow(cm/r,e))+sup+fee).toFixed(2); };
+  row.innerHTML="";
+  tiers.forEach(t=>{ const cm=tierCm(t), off=gravure&&cm<effMin;
+    const b=el("button","tierbtn"); b.type="button"; b.disabled=off; b.setAttribute("aria-pressed", t.key===cur.key);
+    b.innerHTML=`<span class="tl">${t.label}</span><span class="tc">${cm} cm</span><span class="tp">${off?"—":money(priceFor(cm))}</span>`;
+    b.title=off?`Indisponible avec gravure (surface insuffisante)`:`${t.label} · ${cm} cm`;
+    b.onclick=()=>{ if(off)return; setTier(t); applySizeScale(); saveConfig(); priceHead(); onPick(); };
+    row.appendChild(b); });
+}
+function renderExpressTiers(){ const row=document.getElementById("xTiers"); if(row) renderTierButtons(row,renderExpressTiers); updEngErr(); }
+function renderExpress(P){
+  const refresh=()=>{ saveConfig(); applyColors(); renderPanel(); };
+  const sec=(title,sub)=>{ const g=el("div","xsec"); g.appendChild(el("h3","xh",`<span>${title}</span>`+(sub?`<small>${sub}</small>`:""))); P.appendChild(g); return g; };
+  // 1. dragon
+  { const ms=availableModels(); if(ms.length>1){ const g=sec("Dragon"); const row=el("div","xchips");
+      ms.forEach(m=>{ const b=el("button","xchip"); b.type="button"; b.setAttribute("aria-pressed",state.modelKey===m.key);
+        b.innerHTML=`<span class="ic">${m.emoji||"🐉"}</span><span>${m.name}</span>`; b.onclick=()=>{ if(state.modelKey!==m.key) selectModel(m); }; row.appendChild(b); });
+      g.appendChild(row); } }
+  // 2. déclinaison, looks, couleurs par zone
+  const v=activeVariant();
+  { const g=sec("Couleurs");
+    if(state.config.variants.length>1){ const row=el("div","xchips"); row.style.marginBottom="9px";
+      state.config.variants.forEach(vv=>{ const b=el("button","xchip sm"); b.type="button"; b.setAttribute("aria-pressed",state.config.activeVariantId===vv.id);
+        b.textContent=vv.name; b.onclick=()=>{ state.config.activeVariantId=vv.id; refresh(); }; row.appendChild(b); });
+      g.appendChild(row); }
+    if(v&&v.slots.length){ const lk=el("div","looks");
+      (TENANT.looks||[]).forEach(l=>{ const b=el("button","look"); b.type="button"; b.setAttribute("aria-pressed",lookIsActive(l)); b.title=l.name;
+        b.innerHTML=`<span class="ld" style="background:${lookBg(l)}"></span><span class="ln">${l.name}</span>`; b.onclick=()=>{ applyLook(l); refresh(); }; lk.appendChild(b); });
+      g.appendChild(lk);
+      v.slots.forEach(s=>{ const z=el("div","xzone"); const fin=s.finishId?finishById(s.finishId):null;
+        z.appendChild(el("div","zh",`<span class="zn">${s.name}</span><span class="zc">${fin?(fin.name+" ✨"):(colorName(s.color)+(colorIsPremium(s.color)?" ★":""))}</span>`));
+        z.appendChild(solidPickerRow(s,refresh)); g.appendChild(z); }); }
+    else g.appendChild(el("p","hintline","Aucune couleur à personnaliser pour cette déclinaison.")); }
+  // 3. gravure : un champ texte suffit (texte vide = pas de gravure)
+  const eng=state.config.engraving;
+  if(eng&&eng.offered){
+    const mt=eng.minTier?tierByKey(eng.minTier):null;
+    const g=sec("Gravure", engraveHasMin()?("à partir de la taille "+(mt?mt.label:engMinCmDisp()+" cm")):"optionnel");
+    const inp=el("input","xinput"); inp.type="text"; inp.maxLength=eng.maxLen; inp.value=eng.added?(eng.text||""):""; inp.placeholder="Un prénom, une date… (optionnel)";
+    inp.setAttribute("aria-label","Texte de la gravure");
+    inp.oninput=()=>{ const was=!!eng.added; eng.text=inp.value; eng.added=!!inp.value.trim();
+      if(eng.added&&!was){ const m=engEffMin(); if(state.config.size&&state.config.size.value<m){ const t=sizeTiers().find(t=>tierCm(t)>=m); if(t) setTier(t); else state.config.size.value=m; applySizeScale(); } }
+      saveConfig(); drawEngrave(); updateEngraveVisibility(); priceHead(); renderExpressTiers(); };
+    g.appendChild(inp);
+    if((eng.fee||0)>0) g.appendChild(el("p","hintline",`+ ${money(eng.fee)} · ${eng.maxLen} caractères max`));
+  }
+  // 4. taille
+  { const g=sec("Taille"); const row=el("div","tiers"); row.id="xTiers"; g.appendChild(row); renderTierButtons(row,renderExpressTiers);
+    const d=prodDelay(); g.appendChild(el("p","hintline",`🖨️ Fabriqué à la demande à Fontainebleau · expédié sous ${d.min} à ${d.max} jours`)); }
+  // 5. panier + mode avancé (bloc collant en bas du panneau)
+  { const g=el("div","xcta");
+    const ee=el("div","errline"); ee.id="engErr"; ee.hidden=true; g.appendChild(ee);
+    const he=el("div","errline"); he.id="hostErr"; he.hidden=true; g.appendChild(he);
+    const cta=el("button","cta","Ajouter au panier"); cta.id="addCta"; cta.type="button"; cta.onclick=()=>clientAddToCart(cta); g.appendChild(cta);
+    const adv=el("button","xadv","Personnalisation avancée ›"); adv.type="button"; adv.title="Toutes les options : finitions spéciales, quantité, lien de partage…"; adv.onclick=()=>openAdvanced(adv); g.appendChild(adv);
+    P.appendChild(g); }
   priceHead(); updEngErr();
 }
 function stepModel(P){
@@ -2319,21 +2483,9 @@ function stepGravure(P){
 }
 function stepTaille(P){
   const sz=state.config.size; if(!sz){P.appendChild(el("p","hintline","—"));return;}
-  const effMin=engEffMin(), gravure=engraveChosen()&&effMin>sz.min;
-  const tiers=sizeTiers(); let cur=currentTier()||tiers[0];
-  if(gravure && tierCm(cur)<effMin){ cur=tiers.find(t=>tierCm(t)>=effMin)||cur; }
-  if(cur&&(sz.tier!==cur.key||sz.value!==tierCm(cur))){ setTier(cur); applySizeScale(); saveConfig(); priceHead(); }
   P.appendChild(el("p","stepsub","Choisis la taille du dragon — le prix s'ajuste automatiquement."));
-  const row=el("div","tiers");
-  const priceFor=cm=>{ const v=activeVariant(); const base=v?v.price:0; const r=sz.refCm||10, e=(sz.exp!=null?sz.exp:2);
-    let sup=0; if(v) v.slots.forEach(sl=>sup+=slotSurcharge(sl)); const eng=state.config.engraving; const fee=(eng.offered&&eng.added&&(eng.text||"").trim())?eng.fee:0;
-    return +(round1(base*Math.pow(cm/r,e))+sup+fee).toFixed(2); };
-  tiers.forEach(t=>{ const cm=tierCm(t), off=gravure&&cm<effMin;
-    const b=el("button","tierbtn"); b.type="button"; b.disabled=off; b.setAttribute("aria-pressed", t.key===cur.key);
-    b.innerHTML=`<span class="tl">${t.label}</span><span class="tc">${cm} cm</span><span class="tp">${off?"—":money(priceFor(cm))}</span>`;
-    b.title=off?`Indisponible avec gravure (surface insuffisante)`:`${t.label} · ${cm} cm`;
-    b.onclick=()=>{ if(off)return; setTier(t); applySizeScale(); saveConfig(); priceHead(); renderPanel(); };
-    row.appendChild(b); });
+  const row=el("div","tiers"); renderTierButtons(row,renderPanel);
+  const effMin=engEffMin(), gravure=engraveChosen()&&effMin>sz.min;
   P.appendChild(row);
   P.appendChild(el("p","hintline",`Taille : <b>${sizeLabel()}</b> · cote affichée sur l'aperçu 3D`));
   if(gravure){ const mt=state.config.engraving.minTier?tierByKey(state.config.engraving.minTier):nearestTier(effMin); P.appendChild(el("p","hintline",`Gravure choisie : disponible à partir de <b>${mt?mt.label:effMin+" cm"}</b>.`)); }
@@ -2496,7 +2648,7 @@ let pendingShare=null;
 function applyPendingShare(){
   if(!pendingShare||pendingShare.m!==state.modelKey)return;
   const sel=pendingShare; const v=state.config.variants[sel.vi]||activeVariant();
-  if(v){ state.config.activeVariantId=v.id; (sel.sl||[]).forEach((sd,i)=>{ if(v.slots[i]){v.slots[i].color=sd.c;v.slots[i].finishId=sd.f||null;} }); }
+  if(v){ state.config.activeVariantId=v.id; (sel.sl||[]).forEach((sd,i)=>{ if(v.slots[i]){v.slots[i].color=migrateHex(sd.c);v.slots[i].finishId=sd.f||null;} }); }
   if(sel.sz!=null&&state.config.size){ const t=nearestTier(sel.sz); if(t) setTier(t); else state.config.size.value=sel.sz; }
   if(sel.e){ state.config.engraving.added=true; state.config.engraving.text=sel.e.t||""; state.config.engraving.rot=sel.e.r||0; }
   else { state.config.engraving.added=false; state.config.engraving.text=""; }
@@ -2540,11 +2692,12 @@ const rb=document.getElementById("btnReset"); if(rb) rb.onclick=()=>{ cam.theta=
 
 applyTheme(); updateCartBadge();
 /* --- Mode embarqué Shopify : force le mode client, masque atelier/panier, choisit le modèle --- */
+try{ const mk=new URLSearchParams(location.search).get("model");
+  if(mk && MODELS.find(m=>m.key===mk)) state.modelKey=mk; }catch(e){}
+if(EXPRESS){ document.body.classList.add("express"); state.mode="client"; }
 if(EMBED){
   document.body.classList.add("embed");
   state.mode="client";
-  try{ const mk=new URLSearchParams(location.search).get("model");
-    if(mk && MODELS.find(m=>m.key===mk)) state.modelKey=mk; }catch(e){}
   // messages venant du thème hôte (sélection de modèle, accusés d'ajout)
   window.addEventListener("message",ev=>{
     const d=ev.data||{}; if(d.source!=="onlyfab-host") return;
@@ -2557,6 +2710,10 @@ if(EMBED){
       if(Array.isArray(d.sizeTiers)&&d.sizeTiers.length){ embedSizeTiers=d.sizeTiers.map(Number).filter(x=>isFinite(x)).sort((a,b)=>a-b); }   // informatif : les paliers viennent de l'atelier
       if(d.currency||d.locale) embedPrice=Object.assign({},embedPrice,{currency:d.currency,locale:d.locale,amount:(embedPrice&&embedPrice.amount)});
       if(typeof d.pageUrl==="string"&&/^https?:/.test(d.pageUrl)) embedPageUrl=d.pageUrl;
+      if(Array.isArray(d.models)) embedModels=d.models.map(String).filter(k=>MODELS.find(m=>m.key===k));   // modèles que la boutique sait vendre
+      if(typeof d.advancedUrl==="string"&&d.advancedUrl) embedAdvancedUrl=d.advancedUrl;
+      if(embedModels&&embedModels.length&&!embedModels.includes(state.modelKey)&&!pendingShare&&!(typeof d.share==="string"&&d.share)){
+        const m=MODELS.find(x=>x.key===embedModels[0]); if(m&&state.loading!==m.key){ state.modelKey=m.key; selectModel(m); } }
       renderPanel();
       if(typeof d.share==="string"&&SHARE_ID_RE.test(d.share)) shareFetch(d.share.toUpperCase()).then(sel=>{ if(sel) shareOpen(sel); }); }
     else if(d.type==="setprice"){ embedPrice={amount:+d.amount, currency:d.currency||(embedPrice&&embedPrice.currency), locale:d.locale||(embedPrice&&embedPrice.locale), note:d.note||null};
@@ -2594,7 +2751,7 @@ if(EMBED){
   if(!MODELS.length){ MODELS=[{key:"dragon",name:"Dragon",emoji:"🐉",src:"placeholder",glbUrl:null,seed:{}}]; }
   if(!MODELS.find(m=>m.key===state.modelKey)) state.modelKey=MODELS[0].key;
   if(!IS_ADMIN) document.body.classList.add("noadmin");
-  else if(!EMBED) state.mode="atelier";   // l'admin arrive directement dans l'atelier
+  else if(!EMBED&&!EXPRESS) state.mode="atelier";   // l'admin arrive directement dans l'atelier
   boot();
 })();
 </script>
