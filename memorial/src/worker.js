@@ -1,11 +1,13 @@
-// Site mémorial — worker Cloudflare : API, médias, espace d'administration.
-// Les pages (public/*.html) sont servies comme fichiers statiques par Cloudflare ;
-// seules les routes /api/* et /media/* arrivent ici (voir wrangler.toml).
+// Site mémorial — API, médias, espace d'administration.
+// Tourne tel quel sur Cloudflare Workers (D1 + KV) ou sur Fly.io / Node via server.js,
+// qui fournit les mêmes objets env.DB (base) et env.MEDIA (fichiers).
+// Les pages (public/*.html) sont servies comme fichiers statiques ; seules les routes
+// /api/* et /media/* arrivent ici.
 
 const ADMIN_COOKIE = 'mem_admin';
 const ACCESS_COOKIE = 'mem_access';
 const SESSION_DAYS = 30;
-const MAX_UPLOAD = 20 * 1024 * 1024; // 20 Mo (limite KV : 25 Mo par valeur)
+const DEFAULT_MAX_UPLOAD_MB = 20; // limite KV : 25 Mo par valeur ; réglable via la variable MAX_UPLOAD_MB
 
 const PUBLIC_SETTINGS = [
   'name', 'subtitle', 'birth_date', 'death_date', 'birth_place', 'death_place',
@@ -232,7 +234,8 @@ async function serveMedia(request, env, url) {
 }
 
 async function storeMedia(env, file, thumb) {
-  if (file.size > MAX_UPLOAD) throw new HttpError(413, 'Fichier trop volumineux (20 Mo maximum).');
+  const maxMb = Number(env.MAX_UPLOAD_MB) || DEFAULT_MAX_UPLOAD_MB;
+  if (file.size > maxMb * 1024 * 1024) throw new HttpError(413, `Fichier trop volumineux (${maxMb} Mo maximum).`);
   const mime = (file.type || '').toLowerCase();
   let kind;
   if (/^image\/(jpeg|png|webp|gif|heic|heif)$/.test(mime)) kind = 'image';
@@ -351,7 +354,7 @@ async function adminUpdatePost(request, env, id) {
     if (!(f in body)) continue;
     let v = body[f];
     if (f === 'status' && !['pending', 'approved', 'rejected'].includes(v)) return json({ error: 'Statut invalide' }, 400);
-    if (f === 'kind' && !['photo', 'memory', 'audio', 'candle'].includes(v)) return json({ error: 'Type invalide' }, 400);
+    if (f === 'kind' && !['photo', 'memory', 'audio', 'candle', 'music'].includes(v)) return json({ error: 'Type invalide' }, 400);
     if (f === 'sort') v = Number(v) || 0;
     else if (v != null) v = String(v);
     sets.push(`${f} = ?`); vals.push(v);
@@ -369,8 +372,8 @@ async function adminDeletePost(env, id) {
   await env.DB.prepare(`DELETE FROM posts WHERE id = ?`).bind(id).run();
   if (row.media_id) {
     const still = await env.DB.prepare(
-      `SELECT 1 FROM posts WHERE media_id = ?1 UNION SELECT 1 FROM events WHERE media_id = ?1 UNION SELECT 1 FROM family WHERE media_id = ?1 LIMIT 1`)
-      .bind(row.media_id).first();
+      `SELECT 1 FROM posts WHERE media_id = ? UNION SELECT 1 FROM events WHERE media_id = ? UNION SELECT 1 FROM family WHERE media_id = ? LIMIT 1`)
+      .bind(row.media_id, row.media_id, row.media_id).first();
     if (!still) await deleteMedia(env, row.media_id);
   }
   return json({ ok: true });
@@ -412,8 +415,8 @@ async function deleteRow(env, table, id) {
   await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
   if (row.media_id) {
     const still = await env.DB.prepare(
-      `SELECT 1 FROM posts WHERE media_id = ?1 UNION SELECT 1 FROM events WHERE media_id = ?1 UNION SELECT 1 FROM family WHERE media_id = ?1 LIMIT 1`)
-      .bind(row.media_id).first();
+      `SELECT 1 FROM posts WHERE media_id = ? UNION SELECT 1 FROM events WHERE media_id = ? UNION SELECT 1 FROM family WHERE media_id = ? LIMIT 1`)
+      .bind(row.media_id, row.media_id, row.media_id).first();
     if (!still) await deleteMedia(env, row.media_id);
   }
   return json({ ok: true });
@@ -552,7 +555,8 @@ function clearCookie(name) {
 }
 
 function clientIp(request) {
-  return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '0.0.0.0';
+  return request.headers.get('CF-Connecting-IP') || request.headers.get('Fly-Client-IP')
+    || (request.headers.get('X-Forwarded-For') || '').split(',')[0].trim() || '0.0.0.0';
 }
 
 function uid() {

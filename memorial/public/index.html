@@ -2,7 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2b2620">
 <title>En mémoire d'Alain Georges</title>
 <meta name="description" content="Un lieu pour se souvenir, partager des photos et des souvenirs.">
 <meta name="robots" content="noindex">
@@ -27,7 +28,9 @@
       <p class="subtitle" id="subtitle"></p>
       <nav id="nav"></nav>
     </div>
+    <a href="#after-hero" class="scroll-hint" aria-label="Découvrir">⌄</a>
   </header>
+  <div id="after-hero"></div>
 
   <section id="intro" class="hidden">
     <div class="narrow">
@@ -70,6 +73,13 @@
     <div class="wrap">
       <div class="section-head"><div class="kicker">Souvenirs</div><h2>Ce que vous gardez de lui</h2></div>
       <div class="memories" id="memories"></div>
+    </div>
+  </section>
+
+  <section id="music-section" class="hidden">
+    <div class="narrow">
+      <div class="section-head"><div class="kicker">Ses musiques</div><h2>Ce qu'il aimait écouter</h2></div>
+      <div class="tracks" id="tracks"></div>
     </div>
   </section>
 
@@ -133,6 +143,23 @@
       </form>
     </div>
   </section>
+
+  <div class="player hidden no-print" id="player">
+    <button class="p-btn" id="p-prev" aria-label="Précédente">‹</button>
+    <button class="p-btn p-play" id="p-play" aria-label="Lecture / pause">▶</button>
+    <button class="p-btn" id="p-next" aria-label="Suivante">›</button>
+    <div class="p-info"><div class="p-title" id="p-title"></div><div class="p-artist" id="p-artist"></div></div>
+    <div class="p-time" id="p-time"></div>
+    <button class="p-btn p-close" id="p-close" aria-label="Fermer">×</button>
+    <div class="p-bar"><div class="p-progress" id="p-progress"></div></div>
+  </div>
+
+  <nav class="mobile-bar no-print" id="mobile-bar">
+    <a href="#candles" id="mb-candle">🕯️<span>Bougie</span></a>
+    <a href="#contribute" id="mb-contribute">✎<span>Souvenir</span></a>
+    <a href="#gallery-section" id="mb-photos">◻<span>Photos</span></a>
+    <a href="#music-section" id="mb-music" class="hidden">♪<span>Musiques</span></a>
+  </nav>
 
   <footer>
     <div class="wrap">

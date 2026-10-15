@@ -1,0 +1,31 @@
+# Déploiement Fly.io : https://alain-georges.fly.dev
+# Première fois : fly launch --copy-config --no-deploy ; fly volumes create memorial_data --size 1 --region cdg
+#                 fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=... ; fly deploy
+app = "alain-georges"
+primary_region = "cdg"
+
+[build]
+
+[env]
+  PORT = "3000"
+  DATA_DIR = "/data"
+  MAX_UPLOAD_MB = "40"
+  SITE_NAME = "En mémoire d'Alain Georges"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # La machine s'endort quand personne ne visite le site et se réveille à la première
+  # requête (une seconde environ) : on ne paie que le temps d'utilisation.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[mounts]]
+  source = "memorial_data"
+  destination = "/data"

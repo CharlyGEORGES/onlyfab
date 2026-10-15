@@ -4,14 +4,20 @@
   "private": true,
   "description": "Site d'hommage : photos, souvenirs partagés et modérés, frise de vie, bougies.",
   "scripts": {
-    "dev": "wrangler dev --port 8788",
-    "setup": "node scripts/setup.mjs",
-    "db:init": "wrangler d1 execute alain-georges --local --file=schema.sql",
-    "db:init:remote": "wrangler d1 execute alain-georges --remote --file=schema.sql",
-    "deploy": "wrangler deploy",
-    "logs": "wrangler tail"
+    "start": "node --no-warnings=ExperimentalWarning server.js",
+    "dev": "DATA_DIR=./data ADMIN_PASSWORD=changez-moi SESSION_SECRET=dev-secret node --no-warnings=ExperimentalWarning server.js",
+    "fly:deploy": "fly deploy",
+    "fly:logs": "fly logs",
+    "cf:dev": "wrangler dev --port 8788",
+    "cf:setup": "node scripts/setup.mjs",
+    "cf:db:init": "wrangler d1 execute alain-georges --local --file=schema.sql",
+    "cf:deploy": "wrangler deploy"
   },
   "devDependencies": {
     "wrangler": "^4.151.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
   }
 }

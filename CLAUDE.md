@@ -81,6 +81,6 @@ dans l'atelier, groupe « Orientation du dragon », pour l'activer modèle par m
   Reste à juger par le client : qualité visuelle de l'animation et des plans caméra.
 
 ## Site d'hommage (dossier `memorial/`, indépendant d'Onlyfab)
-Site mémorial pour Alain Georges : Cloudflare Workers + D1 + KV (offre gratuite), aucun lien avec le
+Site mémorial pour Alain Georges : même code sur Fly.io (`server.js`, app `alain-georges`) ou Cloudflare Workers, aucun lien avec le
 serveur Fly ni avec Shopify. Voir `memorial/README.md` (installation : `npm run setup`). Le
 Dockerfile ne copie pas ce dossier : il n'a aucun effet sur le déploiement de test.

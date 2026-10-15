@@ -35,7 +35,7 @@
   function render() {
     const panel = $('#panel');
     panel.innerHTML = '<p class="muted">Chargement…</p>';
-    ({ pending: renderPending, posts: renderPosts, events: renderEvents, family: renderFamily, settings: renderSettings })[tab](panel);
+    ({ pending: renderPending, posts: renderPosts, events: renderEvents, family: renderFamily, music: renderMusic, qr: renderQr, settings: renderSettings })[tab](panel);
   }
 
   // Envoi d'un fichier (photo redimensionnée côté client, ou audio) ; retourne l'enregistrement media.
@@ -47,7 +47,7 @@
     return api('/api/admin/media', { method: 'POST', form: fd });
   }
 
-  const KIND = { photo: 'Photo', memory: 'Souvenir', audio: 'Enregistrement', candle: 'Bougie' };
+  const KIND = { photo: 'Photo', memory: 'Souvenir', audio: 'Enregistrement', candle: 'Bougie', music: 'Musique' };
   const STATUS = { pending: 'En attente', approved: 'Publié', rejected: 'Refusé' };
 
   function postCard(p, { editable = true } = {}) {
@@ -67,12 +67,12 @@
           </div>
           ${editable ? `
           <div class="row" style="margin:.6em 0">
-            <div><label>Auteur</label><input data-f="author" value="${esc(p.author || '')}"></div>
+            <div><label>${p.kind === 'music' ? 'Artiste' : 'Auteur'}</label><input data-f="author" value="${esc(p.author || '')}"></div>
             <div><label>Titre</label><input data-f="title" value="${esc(p.title || '')}"></div>
             <div><label>Date / année</label><input data-f="taken_at" value="${esc(p.taken_at || '')}"></div>
             <div><label>Lieu</label><input data-f="place" value="${esc(p.place || '')}"></div>
           </div>
-          <label>Texte</label><textarea data-f="body">${esc(p.body || '')}</textarea>` : ''}
+          <label>${p.kind === 'music' ? 'Pourquoi cette musique (facultatif)' : 'Texte'}</label><textarea data-f="body">${esc(p.body || '')}</textarea>` : ''}
           <div class="actions">
             ${p.status !== 'approved' ? `<button class="btn-ok btn-sm" data-act="approved">✓ Publier</button>` : ''}
             ${p.status !== 'rejected' ? `<button class="btn-soft btn-sm" data-act="rejected">Refuser</button>` : ''}
@@ -119,7 +119,7 @@
   // ------------------------------------------------------------- photos & souvenirs
   async function renderPosts(panel) {
     const status = panel.dataset.filter || 'approved';
-    const rows = (await api(`/api/admin/posts?status=${status}`)).filter(p => p.kind !== 'candle');
+    const rows = (await api(`/api/admin/posts?status=${status}`)).filter(p => p.kind !== 'candle' && p.kind !== 'music');
     panel.innerHTML = `
       <div class="card" style="margin-bottom:1.4em">
         <h3>Ajouter</h3>
@@ -288,6 +288,93 @@
         await api(`/api/admin/family/${id}`, { method: 'DELETE' }); render();
       });
     });
+  }
+
+  // ------------------------------------------------------------- musiques
+  async function renderMusic(panel) {
+    const rows = (await api('/api/admin/posts?status=all')).filter(p => p.kind === 'music');
+    panel.innerHTML = `
+      <div class="card" style="margin-bottom:1.4em">
+        <h3>Ajouter une musique</h3>
+        <p class="hint">Un fichier MP3, M4A ou OGG par morceau. Les visiteurs l'écoutent avec un lecteur discret, jamais en lecture automatique.</p>
+        <div class="row">
+          <div><label>Titre *</label><input id="m-title" placeholder="La Montagne"></div>
+          <div><label>Artiste</label><input id="m-artist" placeholder="Jean Ferrat"></div>
+        </div>
+        <div class="field"><label>Pourquoi cette musique (facultatif)</label><input id="m-note" placeholder="Il la chantait en voiture…"></div>
+        <div class="field"><label>Fichier audio *</label><input type="file" id="m-file" accept="audio/*,.mp3,.m4a,.ogg"></div>
+        <button class="btn-sm" id="m-add">Ajouter</button> <span class="hint" id="m-progress"></span>
+      </div>
+      <h3>Morceaux (${rows.length})</h3>
+      <div class="list" id="post-list">${rows.map(p => postCard(p)).join('') || '<p class="muted">Aucune musique pour l\'instant.</p>'}</div>`;
+    bindPostActions(panel, render);
+    $$('#post-list .item', panel).forEach(item => {
+      const act = $('.actions', item);
+      act.insertAdjacentHTML('beforeend', `<button class="btn-soft btn-sm" data-move="-1" title="Monter">▲</button><button class="btn-soft btn-sm" data-move="1" title="Descendre">▼</button>`);
+      $$('[data-move]', item).forEach(b => b.addEventListener('click', async () => {
+        const list = $('#post-list', panel), items = $$('.item', list), i = items.indexOf(item), j = i + +b.dataset.move;
+        if (j < 0 || j >= items.length) return;
+        list.insertBefore(item, +b.dataset.move < 0 ? items[j] : items[j].nextSibling);
+        await api('/api/admin/reorder', { method: 'POST', json: { table: 'posts', ids: $$('.item', list).map(x => x.dataset.id) } });
+      }));
+    });
+    $('#m-add', panel).addEventListener('click', async () => {
+      const f = $('#m-file', panel).files[0], title = $('#m-title', panel).value.trim();
+      if (!title) return toast('Indiquez le titre.', true);
+      if (!f) return toast('Choisissez le fichier audio.', true);
+      const fd = new FormData();
+      fd.set('kind', 'music'); fd.set('title', title); fd.set('author', $('#m-artist', panel).value.trim()); fd.set('body', $('#m-note', panel).value.trim());
+      fd.set('file', f.type ? f : new File([f], f.name, { type: 'audio/mpeg' }));
+      $('#m-progress', panel).textContent = 'Envoi…';
+      try { await api('/api/admin/posts', { method: 'POST', form: fd }); toast('Musique ajoutée.'); render(); }
+      catch (e) { toast(e.message, true); $('#m-progress', panel).textContent = ''; }
+    });
+  }
+
+  // ------------------------------------------------------------- QR code
+  async function renderQr(panel) {
+    panel.innerHTML = `
+      <div class="card">
+        <h3>QR code pour la cérémonie</h3>
+        <p class="hint">À imprimer sur le livret, un chevalet ou une affiche : les invités scannent et arrivent directement sur le site.</p>
+        <div class="row">
+          <div><label>Adresse encodée</label><input id="qr-url" value="${esc(location.origin + '/')}"></div>
+          <div><label>Texte sous le code</label><input id="qr-text" value="Partagez vos souvenirs d'Alain"></div>
+        </div>
+        <div class="row" style="align-items:start">
+          <div id="qr-box" style="display:grid;justify-items:center;gap:.6em;background:#fff;color:#000;padding:1.2em;border-radius:12px;max-width:360px">
+            <div id="qr-canvas"></div>
+            <div id="qr-caption" style="font-family:var(--serif);font-size:1.3rem;text-align:center;color:#000"></div>
+            <div id="qr-url-text" style="font-size:.8rem;color:#444;text-align:center;word-break:break-all"></div>
+          </div>
+          <div style="display:grid;gap:.6em;align-content:start">
+            <button class="btn-sm" id="qr-download">Télécharger en PNG</button>
+            <button class="btn-soft btn-sm" id="qr-print">Imprimer</button>
+            <p class="hint">Testez-le avec votre téléphone avant d'imprimer.</p>
+          </div>
+        </div>
+      </div>`;
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
+    const draw = () => {
+      const box = $('#qr-canvas', panel); box.innerHTML = '';
+      new QRCode(box, { text: $('#qr-url', panel).value.trim(), width: 280, height: 280, correctLevel: QRCode.CorrectLevel.M });
+      $('#qr-caption', panel).textContent = $('#qr-text', panel).value;
+      $('#qr-url-text', panel).textContent = $('#qr-url', panel).value.trim();
+    };
+    draw();
+    $('#qr-url', panel).addEventListener('input', draw); $('#qr-text', panel).addEventListener('input', draw);
+    $('#qr-download', panel).addEventListener('click', () => {
+      const c = $('#qr-canvas canvas', panel); if (!c) return;
+      const a = document.createElement('a'); a.download = 'qr-code-hommage.png'; a.href = c.toDataURL('image/png'); a.click();
+    });
+    $('#qr-print', panel).addEventListener('click', () => {
+      const w = window.open('', '_blank');
+      w.document.write(`<title>QR code</title><body style="display:grid;place-items:center;height:100vh;margin:0;font-family:Georgia,serif;text-align:center"><div><img src="${$('#qr-canvas canvas', panel).toDataURL('image/png')}" style="width:70vmin"><div style="font-size:2.2em;margin-top:.5em">${esc($('#qr-text', panel).value)}</div><div style="color:#444;margin-top:.4em">${esc($('#qr-url', panel).value)}</div></div></body>`);
+      w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    });
+  }
+  function loadScript(src) {
+    return new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
   }
 
   // ------------------------------------------------------------- réglages

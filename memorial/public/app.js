@@ -93,6 +93,7 @@
     renderTimeline();
     renderGallery();
     renderMemories();
+    renderMusic();
     renderCandles();
     renderFamily();
     renderMap();
@@ -103,11 +104,15 @@
     const links = [
       ['#story', 'Sa vie', s.main_text], ['#timeline-section', 'Frise', data.events.length],
       ['#gallery-section', 'Photos', photos().length], ['#memories-section', 'Souvenirs', memories().length],
+      ['#music-section', 'Musiques', tracks().length],
       ['#candles', 'Bougies', s.show_candles === '1'], ['#family-section', 'Famille', s.show_family === '1' && data.family.length],
       ['#contribute', 'Participer', s.contributions_open === '1'],
     ];
     nav.innerHTML = links.filter(l => l[2]).map(l => `<a href="${l[0]}">${l[1]}</a>`).join('');
 
+    if (s.show_candles !== '1') $('#mb-candle').classList.add('hidden');
+    if (s.contributions_open !== '1') $('#mb-contribute').classList.add('hidden');
+    if (!photos().length) $('#mb-photos').classList.add('hidden');
     $('#print-btn').addEventListener('click', () => window.print());
     $('#share-btn').addEventListener('click', share);
     if (data.admin) $('#admin-link').textContent = 'Administration';
@@ -116,6 +121,7 @@
   function show(sel, text) { const el = $(sel); el.textContent = text; el.classList.remove('hidden'); }
   function photos() { return data.posts.filter(p => p.kind === 'photo' && p.media_id); }
   function memories() { return data.posts.filter(p => p.kind === 'memory' || p.kind === 'audio'); }
+  function tracks() { return data.posts.filter(p => p.kind === 'music' && p.media_id); }
 
   // ------------------------------------------------------------- frise de vie
   function renderTimeline() {
@@ -166,6 +172,60 @@
     $$('#memories img[data-full]').forEach(img => img.addEventListener('click', () => openLightbox([{ src: img.dataset.full, cap: '' }], 0)));
     $('#memories-section').classList.remove('hidden');
   }
+
+  // ------------------------------------------------------------- musiques
+  let audio = null, current = -1;
+  function renderMusic() {
+    const list = tracks();
+    if (!list.length) return;
+    $('#tracks').innerHTML = list.map((t, i) => `
+      <div class="track" data-i="${i}">
+        <button class="t-btn" aria-label="Écouter">▶</button>
+        <div><div class="t-title">${esc(t.title || 'Sans titre')}</div><div class="t-artist">${esc(t.author || '')}</div>${t.body ? `<div class="t-note">${esc(t.body)}</div>` : ''}</div>
+        <div class="t-dur" data-dur></div>
+      </div>`).join('');
+    $$('.track').forEach(el => el.addEventListener('click', () => { const i = +el.dataset.i; i === current ? toggle() : play(i); }));
+    $('#music-section').classList.remove('hidden');
+    $('#mb-music').classList.remove('hidden');
+
+    audio = new Audio(); audio.preload = 'none';
+    audio.addEventListener('ended', () => play((current + 1) % list.length));
+    audio.addEventListener('timeupdate', () => {
+      if (!audio.duration) return;
+      $('#p-progress').style.width = (audio.currentTime / audio.duration * 100) + '%';
+      $('#p-time').textContent = `${mmss(audio.currentTime)} / ${mmss(audio.duration)}`;
+      const d = $(`.track[data-i="${current}"] [data-dur]`); if (d) d.textContent = mmss(audio.duration);
+    });
+    audio.addEventListener('play', () => { $('#p-play').textContent = '❚❚'; mark(); });
+    audio.addEventListener('pause', () => { $('#p-play').textContent = '▶'; mark(); });
+    $('#p-play').addEventListener('click', toggle);
+    $('#p-prev').addEventListener('click', () => play((current - 1 + list.length) % list.length));
+    $('#p-next').addEventListener('click', () => play((current + 1) % list.length));
+    $('#p-close').addEventListener('click', () => { audio.pause(); audio.removeAttribute('src'); current = -1; $('#player').classList.add('hidden'); document.body.classList.remove('has-player'); mark(); });
+    $('.p-bar').addEventListener('click', e => { if (audio.duration) audio.currentTime = (e.offsetX / e.currentTarget.clientWidth) * audio.duration; });
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.setActionHandler('previoustrack', () => $('#p-prev').click());
+      navigator.mediaSession.setActionHandler('nexttrack', () => $('#p-next').click());
+    }
+
+    function play(i) {
+      current = i; const t = list[i];
+      audio.src = mediaUrl(t.media_id); audio.play().catch(() => {});
+      $('#p-title').textContent = t.title || 'Sans titre'; $('#p-artist').textContent = t.author || '';
+      $('#player').classList.remove('hidden'); document.body.classList.add('has-player');
+      if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: t.title || '', artist: t.author || '', album: `En mémoire de ${data.settings.name}` });
+      mark();
+    }
+    function toggle() { if (current < 0) return play(0); audio.paused ? audio.play() : audio.pause(); }
+    function mark() {
+      $$('.track').forEach(el => {
+        const on = +el.dataset.i === current;
+        el.classList.toggle('playing', on);
+        $('.t-btn', el).textContent = on && !audio.paused ? '❚❚' : '▶';
+      });
+    }
+  }
+  function mmss(s) { s = Math.floor(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 
   // ------------------------------------------------------------- bougies
   function renderCandles() {
