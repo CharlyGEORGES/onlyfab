@@ -57,6 +57,13 @@ async function route(request, env, ctx) {
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const method = request.method;
 
+  // Adresse principale (CANONICAL_HOST, ex. alain-georges.com) : les autres noms
+  // (alain-georges.fly.dev, www.) y renvoient, une fois le domaine et son certificat actifs.
+  const canonical = (env.CANONICAL_HOST || '').trim().toLowerCase();
+  if (canonical && url.hostname !== canonical && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname)) {
+    return Response.redirect(`https://${canonical}${url.pathname}${url.search}`, 301);
+  }
+
   if (path.startsWith('/media/')) return serveMedia(request, env, url);
 
   if (!path.startsWith('/api/')) return new Response('Introuvable', { status: 404 });

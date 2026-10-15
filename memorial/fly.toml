@@ -1,6 +1,8 @@
-# Déploiement Fly.io : https://alain-georges.fly.dev
+# Déploiement Fly.io : https://alain-georges.com (et alain-georges.fly.dev)
 # Première fois : fly launch --copy-config --no-deploy ; fly volumes create memorial_data --size 1 --region cdg
 #                 fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=... ; fly deploy
+# Domaine :       fly certs add alain-georges.com ; fly certs add www.alain-georges.com ; DNS chez OVH ;
+#                 une fois `fly certs check alain-georges.com` au vert : fly secrets set CANONICAL_HOST=alain-georges.com
 app = "alain-georges"
 primary_region = "cdg"
 

@@ -5,8 +5,8 @@ ses musiques, bougies virtuelles, et contributions des proches (textes, photos, 
 **validées par la famille avant publication**. Pensé d'abord pour le téléphone : le QR code
 imprimé pour la cérémonie mène directement au site.
 
-Le même code tourne sur **Fly.io** (adresse `alain-georges.fly.dev`, recommandé) ou sur
-**Cloudflare Workers** (gratuit, adresse `alain-georges.<compte>.workers.dev`).
+Adresse : **https://alain-georges.com** (domaine chez OVH, site hébergé sur Fly.io ; le même code
+tourne aussi sur Cloudflare Workers).
 
 ## Ce que fait le site
 
@@ -52,7 +52,7 @@ fly secrets set ADMIN_PASSWORD='motdepasse1,motdepasse2' SESSION_SECRET="$(opens
 fly deploy
 ```
 
-Le site est alors sur `https://alain-georges.fly.dev`, l'espace famille sur `/admin`.
+Le site est alors sur `https://alain-georges.fly.dev` (puis `https://alain-georges.com`, voir plus bas), l'espace famille sur `/admin`.
 Commencez par « Textes & réglages », puis ajoutez les photos et les musiques.
 Pour redéployer après une modification du code : `fly deploy`.
 
@@ -62,12 +62,33 @@ Notifications par courriel (facultatif) : créer une clé sur https://resend.com
 Sauvegarde : tout est dans le volume (`/data/memorial.db` et `/data/media/`).
 `fly ssh console -C "tar czf - /data" > sauvegarde.tgz` en fait une copie complète.
 
-### Nom de domaine personnalisé (facultatif)
+### Domaine alain-georges.com
 
-- `alain-georges.fly.dev` est fourni, sans frais.
-- Un sous-domaine d'un domaine que vous possédez déjà (`alain.g2i365.com`, `alain.onlyfab.fr`) ne coûte rien :
-  `fly certs add alain.g2i365.com`, puis ajouter chez votre registrar l'enregistrement CNAME indiqué.
-- Un domaine neuf (`alain-georges.fr`) coûte 7 à 12 € par an, même procédure.
+```bash
+fly certs add alain-georges.com
+fly certs add www.alain-georges.com
+```
+
+La première commande donne une adresse IPv4 et une IPv6. Dans l'espace client OVH, « Zone DNS »
+du domaine : supprimer les enregistrements A et AAAA de la racine posés par l'hébergement gratuit,
+puis créer :
+
+| Type  | Sous-domaine | Cible                       |
+|-------|--------------|-----------------------------|
+| A     | (vide)       | l'IPv4 donnée par Fly       |
+| AAAA  | (vide)       | l'IPv6 donnée par Fly       |
+| CNAME | www          | alain-georges.fly.dev.      |
+
+Le certificat HTTPS est délivré automatiquement ; `fly certs check alain-georges.com` doit passer au
+vert (jusqu'à une heure). Ensuite seulement, activer la redirection de `alain-georges.fly.dev` et de
+`www` vers l'adresse principale :
+
+```bash
+fly secrets set CANONICAL_HOST=alain-georges.com
+```
+
+(Ne pas l'activer avant : tant que le domaine ne répond pas, cette redirection rendrait le site
+injoignable.)
 
 ## Mise en ligne sur Cloudflare (alternative entièrement gratuite)
 

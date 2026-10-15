@@ -338,7 +338,7 @@
         <h3>QR code pour la cérémonie</h3>
         <p class="hint">À imprimer sur le livret, un chevalet ou une affiche : les invités scannent et arrivent directement sur le site.</p>
         <div class="row">
-          <div><label>Adresse encodée</label><input id="qr-url" value="${esc(location.origin + '/')}"></div>
+          <div><label>Adresse encodée</label><input id="qr-url" value="${esc(/fly\.dev$|^localhost$|^127\./.test(location.hostname) ? 'https://alain-georges.com/' : location.origin + '/')}"></div>
           <div><label>Texte sous le code</label><input id="qr-text" value="Partagez vos souvenirs d'Alain"></div>
         </div>
         <div class="row" style="align-items:start">

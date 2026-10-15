@@ -6,6 +6,7 @@
 //   PORT            port d'écoute. Défaut : 3000
 //   ADMIN_PASSWORD  mot(s) de passe de l'espace famille (séparés par des virgules)
 //   SESSION_SECRET  chaîne aléatoire longue
+//   CANONICAL_HOST  adresse principale (alain-georges.com) : les autres noms y sont redirigés
 //   RESEND_API_KEY, NOTIFY_EMAIL, SITE_NAME, MAX_UPLOAD_MB : facultatifs
 
 import http from 'node:http';
@@ -86,6 +87,11 @@ function staticFile(urlPath) {
 const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
   try {
+    const canonical = (process.env.CANONICAL_HOST || '').trim().toLowerCase();
+    const host = (req.headers.host || 'localhost').toLowerCase();
+    if (canonical && host !== canonical && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) {
+      res.writeHead(301, { Location: `https://${canonical}${url}` }); return res.end();
+    }
     if (!url.startsWith('/api/') && !url.startsWith('/media/')) {
       const st = staticFile(url);
       if (!st) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Introuvable'); }
@@ -94,7 +100,6 @@ const server = http.createServer(async (req, res) => {
       return fs.createReadStream(st.file).pipe(res);
     }
     const proto = req.headers['x-forwarded-proto'] || 'http';
-    const host = req.headers.host || 'localhost';
     const request = new Request(`${proto}://${host}${url}`, {
       method: req.method,
       headers: req.headers,
