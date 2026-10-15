@@ -79,8 +79,3 @@ dans l'atelier, groupe « Orientation du dragon », pour l'activer modèle par m
   passage, placés au clic, stockés dans `config.cine` (espace du modèle d'origine remis debout).
 - Validé sur les 5 modèles (Dragon-light, Rose, Baby Crystal, Baby Orchid, Crystalwing).
   Reste à juger par le client : qualité visuelle de l'animation et des plans caméra.
-
-## Site d'hommage (dossier `memorial/`, indépendant d'Onlyfab)
-Site mémorial pour Alain Georges : même code sur Fly.io (`server.js`, app `alain-georges`) ou Cloudflare Workers, aucun lien avec le
-serveur Fly ni avec Shopify. Voir `memorial/README.md` (installation : `npm run setup`). Le
-Dockerfile ne copie pas ce dossier : il n'a aucun effet sur le déploiement de test.
