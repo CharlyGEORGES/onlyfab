@@ -1,0 +1,3 @@
+# Copier en .dev.vars pour le développement local (npm run dev)
+ADMIN_PASSWORD=changez-moi
+SESSION_SECRET=une-longue-chaine-aleatoire-pour-le-dev

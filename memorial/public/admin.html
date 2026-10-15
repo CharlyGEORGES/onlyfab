@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Espace famille</title>
+<meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app"><div class="lock"><p class="muted">Chargement…</p></div></div>
+
+<template id="tpl-login">
+  <div class="lock">
+    <form class="card" id="login-form">
+      <h1 class="serif" style="font-size:2rem">Espace famille</h1>
+      <p class="muted">Réservé aux personnes qui gèrent le site.</p>
+      <div class="field"><input type="password" id="pw" placeholder="Mot de passe" autocomplete="current-password" required></div>
+      <button type="submit">Se connecter</button>
+      <p class="hint" id="login-error" style="color:var(--danger)"></p>
+      <p><a href="/" class="hint">← Retour au site</a></p>
+    </form>
+  </div>
+</template>
+
+<template id="tpl-admin">
+  <div class="admin-bar"><div class="wrap">
+    <span class="brand">Espace famille</span>
+    <a href="/" class="btn btn-ghost btn-sm" target="_blank">Voir le site ↗</a>
+    <button class="btn-soft btn-sm" id="logout">Déconnexion</button>
+  </div></div>
+  <div class="wrap">
+    <div class="tabs" id="tabs">
+      <button data-tab="pending" class="active">À valider <span class="badge hidden" id="pending-badge"></span></button>
+      <button data-tab="posts">Photos &amp; souvenirs</button>
+      <button data-tab="events">Frise de vie</button>
+      <button data-tab="family">Famille</button>
+      <button data-tab="settings">Textes &amp; réglages</button>
+    </div>
+    <div id="panel"></div>
+  </div>
+</template>
+
+<script src="/shared.js"></script>
+<script src="/admin.js"></script>
+</body>
+</html>

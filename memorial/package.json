@@ -1,0 +1,17 @@
+{
+  "name": "alain-georges-memorial",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Site d'hommage : photos, souvenirs partagés et modérés, frise de vie, bougies.",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "setup": "node scripts/setup.mjs",
+    "db:init": "wrangler d1 execute alain-georges --local --file=schema.sql",
+    "db:init:remote": "wrangler d1 execute alain-georges --remote --file=schema.sql",
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.151.0"
+  }
+}
